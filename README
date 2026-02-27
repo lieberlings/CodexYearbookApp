@@ -1,1 +1,45 @@
-#This is a file
+# YearBook App (MVP Scaffold)
+
+React Native + Expo app scaffold for capturing memories and exporting simple photobooks.
+
+## MVP Included
+- Create projects with a project type and optional thumbnail image.
+- Select an existing project from the home screen.
+- Create memories inside a project (each memory acts as a page/group).
+- Reorder memories within a project (Up/Down controls).
+- Pick photos from device library and attach them to a specific memory.
+- Persist memories and photos locally with AsyncStorage.
+- Generate prompt suggestions based on time interval since last memory update.
+- Generate prompt suggestions based on sudden increase in photos added.
+- Generate prompt suggestions based on presence of location metadata.
+- Export all memories from a project into one PDF in project memory order.
+
+## Project Structure
+- `app/index.tsx`: project selection + create project flow.
+- `app/project/[id].tsx`: project details, memory creation, memory ordering, project PDF export.
+- `app/memory/[id].tsx`: memory details + add photos.
+- `app/prompts.tsx`: prompt center.
+- `src/context/AppContext.tsx`: app state + data actions.
+- `src/services/photoService.ts`: image picking, local file copy, location fetch.
+- `src/services/promptEngine.ts`: prompt rules.
+- `src/services/exportService.ts`: HTML-to-PDF export + share.
+- `src/storage.ts`: local persistence.
+
+## Run
+1. Install dependencies:
+```bash
+npm install
+```
+2. Start Expo:
+```bash
+npm run start
+```
+3. Open Android emulator/device:
+```bash
+npm run android
+```
+
+## Notes
+- This repo is currently local-first (no backend yet).
+- iOS support can be enabled from the same Expo codebase when you are ready.
+- Multi-user collaboration and advanced template generation are planned for a later phase.
