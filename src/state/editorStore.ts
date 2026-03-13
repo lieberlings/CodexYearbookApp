@@ -8,7 +8,7 @@ export type SlotOverride = {
   y?: number;
   width?: number;
   height?: number;
-  photoId?: string;
+  photoId?: string | null;
   fitMode?: "contain" | "cover";
   photoScale?: number;
   photoOffsetX?: number;

@@ -17,7 +17,7 @@ export function applySlotOverridesToPage(
       }
       return {
         ...slot,
-        photoId: patch.photoId ?? slot.photoId,
+        photoId: patch.photoId !== undefined ? patch.photoId ?? undefined : slot.photoId,
         fitMode: patch.fitMode ?? slot.fitMode,
         photoScale: patch.photoScale ?? slot.photoScale,
         photoOffsetX: patch.photoOffsetX ?? slot.photoOffsetX,

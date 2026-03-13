@@ -30,6 +30,15 @@ export type MemoryPageSection = {
   memoryId: string;
   order: number;
   heroPhotoId?: string;
+  templateId?: string;
+  backgroundColor?: string;
+  slotBorderColor?: string;
+  slotBorderWidth?: number;
+  slotCornerRadius?: number;
+  textColor?: string;
+  textSize?: number;
+  textWeight?: string;
+  textFontFamily?: string;
   photoIds: string[];
 };
 

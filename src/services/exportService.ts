@@ -58,7 +58,7 @@ export async function exportProjectToPdf(
   pageSectionsByMemoryId?: Record<string, MemoryPageSection[]>,
   slotOverridesByPage?: Record<string, Record<string, SlotOverride>>
 ): Promise<string> {
-  const baseDocument = buildLayoutDocument(project, memories, photosByMemoryId, pageSectionsByMemoryId, "landscape");
+  const baseDocument = buildLayoutDocument(project, memories, photosByMemoryId, pageSectionsByMemoryId, "portrait");
   const pages = baseDocument.pages.map((page) => applySlotOverridesToPage(page, slotOverridesByPage?.[page.id]));
   const sourceCache = new Map<string, string | undefined>();
   const photosById = Object.fromEntries(Object.values(photosByMemoryId).flat().map((photo) => [photo.id, photo] as const));
@@ -91,6 +91,9 @@ export async function exportProjectToPdf(
             top:${(slot.frame.y * 100).toFixed(4)}%;
             width:${(slot.frame.width * 100).toFixed(4)}%;
             height:${(slot.frame.height * 100).toFixed(4)}%;
+            border-color:${escapeAttr(page.slotBorderColor ?? "#e2e8f0")};
+            border-width:${(page.slotBorderWidth ?? 1).toFixed(2)}px;
+            border-radius:${(page.slotCornerRadius ?? 10).toFixed(2)}px;
           "
         >
           ${
@@ -109,9 +112,14 @@ export async function exportProjectToPdf(
 
     pageHtml += `
       <section class="page">
-        <div class="page-title">${escapeHtml(pageTitle)}</div>
-        ${page.themeLabel ? `<div class="page-theme">${escapeHtml(page.themeLabel)}</div>` : ""}
-        <div class="canvas">
+        <div class="page-title" style="
+          color:${escapeAttr(page.textColor ?? "#0f172a")};
+          font-size:${(page.textSize ?? 22).toFixed(0)}px;
+          font-weight:${escapeAttr(page.textWeight ?? "700")};
+          font-family:${escapeAttr(page.textFontFamily ?? "Arial, sans-serif")};
+        ">${escapeHtml(pageTitle)}</div>
+        ${page.themeLabel ? `<div class="page-theme" style="color:${escapeAttr(page.textColor ?? "#64748b")};">${escapeHtml(page.themeLabel)}</div>` : ""}
+        <div class="canvas" style="background:${escapeAttr(page.backgroundColor ?? "#ffffff")}; border-radius:18px;">
           ${slotsHtml || '<div class="empty">No photos on this page.</div>'}
         </div>
       </section>
@@ -124,8 +132,8 @@ export async function exportProjectToPdf(
         <meta charset="utf-8" />
         <style>
           @page {
-            size: 11in 8in;
-            margin: 0.4in;
+            size: 20cm 20cm;
+            margin: 1cm;
           }
           body {
             font-family: Arial, sans-serif;
@@ -135,7 +143,7 @@ export async function exportProjectToPdf(
           }
           .project-cover {
             page-break-after: always;
-            min-height: 6.8in;
+            min-height: 18cm;
             display: flex;
             flex-direction: column;
             justify-content: center;
@@ -157,7 +165,7 @@ export async function exportProjectToPdf(
           }
           .page {
             page-break-after: always;
-            min-height: 6.8in;
+            min-height: 18cm;
             padding: 4px;
             box-sizing: border-box;
           }
@@ -177,7 +185,9 @@ export async function exportProjectToPdf(
           }
           .canvas {
             position: relative;
-            height: 5.75in;
+            width: 16.4cm;
+            height: 16.4cm;
+            margin-top: 0.3cm;
           }
           .slot {
             position: absolute;

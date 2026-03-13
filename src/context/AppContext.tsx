@@ -9,8 +9,6 @@ import {
   pickSingleImageFromLibrary
 } from "../services/photoService";
 
-const AUTO_PHOTOS_PER_PAGE = 4;
-
 type AppContextValue = {
   loading: boolean;
   projects: Project[];
@@ -32,8 +30,28 @@ type AppContextValue = {
   deletePhotos: (photoIds: string[]) => void;
   createPageSection: (memoryId: string) => void;
   deletePageSection: (pageSectionId: string) => void;
+  reorderPageSection: (memoryId: string, pageSectionId: string, toIndex: number) => void;
   movePhotoToPage: (photoId: string, toPageSectionId: string, toIndex?: number) => void;
+  removePhotoFromPage: (photoId: string) => void;
+  swapPhotos: (sourcePhotoId: string, targetPhotoId: string) => void;
   setPageHero: (pageSectionId: string, photoId: string) => void;
+  setPageSectionTemplate: (pageSectionId: string, templateId?: string) => void;
+  updatePageSectionStyle: (
+    pageSectionId: string,
+    updates: Partial<
+      Pick<
+        MemoryPageSection,
+        | "backgroundColor"
+        | "slotBorderColor"
+        | "slotBorderWidth"
+        | "slotCornerRadius"
+        | "textColor"
+        | "textSize"
+        | "textWeight"
+        | "textFontFamily"
+      >
+    >
+  ) => void;
   getMemoriesByProjectId: (projectId: string) => Memory[];
   getMemoryById: (id: string) => Memory | undefined;
   getPhotosByMemoryId: (memoryId: string) => PhotoItem[];
@@ -96,28 +114,19 @@ function reconcilePageSections(
             id: makeId("page"),
             memoryId: memory.id,
             order: 0,
+            templateId: undefined,
+            backgroundColor: undefined,
+            slotBorderColor: undefined,
+            slotBorderWidth: undefined,
+            slotCornerRadius: undefined,
+            textColor: undefined,
+            textSize: undefined,
+            textWeight: undefined,
+            textFontFamily: undefined,
             photoIds: [],
             heroPhotoId: undefined
           }
         ];
-
-    const assigned = new Set(sections.flatMap((section) => section.photoIds));
-    const unassignedIds = memoryPhotos.map((photo) => photo.id).filter((id) => !assigned.has(id));
-
-    for (const photoId of unassignedIds) {
-      const target = sections.find((section) => section.photoIds.length < AUTO_PHOTOS_PER_PAGE);
-      if (target) {
-        target.photoIds = [...target.photoIds, photoId];
-      } else {
-        sections.push({
-          id: makeId("page"),
-          memoryId: memory.id,
-          order: sections.length,
-          photoIds: [photoId],
-          heroPhotoId: undefined
-        });
-      }
-    }
 
     result.push(...normalizeSectionOrder(sections));
   }
@@ -275,6 +284,15 @@ export function AppProvider({ children }: PropsWithChildren) {
           id: makeId("page"),
           memoryId: createdMemoryId,
           order: 0,
+          templateId: undefined,
+          backgroundColor: undefined,
+          slotBorderColor: undefined,
+          slotBorderWidth: undefined,
+          slotCornerRadius: undefined,
+          textColor: undefined,
+          textSize: undefined,
+          textWeight: undefined,
+          textFontFamily: undefined,
           photoIds: [],
           heroPhotoId: undefined
         }
@@ -419,6 +437,15 @@ export function AppProvider({ children }: PropsWithChildren) {
           id: makeId("page"),
           memoryId,
           order: nextOrder,
+          templateId: undefined,
+          backgroundColor: undefined,
+          slotBorderColor: undefined,
+          slotBorderWidth: undefined,
+          slotCornerRadius: undefined,
+          textColor: undefined,
+          textSize: undefined,
+          textWeight: undefined,
+          textFontFamily: undefined,
           photoIds: [],
           heroPhotoId: undefined
         }
@@ -444,7 +471,16 @@ export function AppProvider({ children }: PropsWithChildren) {
             memoryId: target.memoryId,
             order: 0,
             photoIds: target.photoIds,
-            heroPhotoId: target.heroPhotoId
+            heroPhotoId: target.heroPhotoId,
+            templateId: target.templateId,
+            backgroundColor: target.backgroundColor,
+            slotBorderColor: target.slotBorderColor,
+            slotBorderWidth: target.slotBorderWidth,
+            slotCornerRadius: target.slotCornerRadius,
+            textColor: target.textColor,
+            textSize: target.textSize,
+            textWeight: target.textWeight,
+            textFontFamily: target.textFontFamily
           }
         ];
       }
@@ -458,6 +494,25 @@ export function AppProvider({ children }: PropsWithChildren) {
 
       const rebuilt = normalizeSectionOrder(remaining);
       return [...prev.filter((section) => section.memoryId !== target.memoryId), ...rebuilt];
+    });
+  }, []);
+
+  const reorderPageSection = useCallback((memoryId: string, pageSectionId: string, toIndex: number) => {
+    setPageSections((prev) => {
+      const memorySections = normalizeSectionOrder(prev.filter((section) => section.memoryId === memoryId));
+      const others = prev.filter((section) => section.memoryId !== memoryId);
+      const fromIndex = memorySections.findIndex((section) => section.id === pageSectionId);
+      if (fromIndex < 0) {
+        return prev;
+      }
+      const boundedToIndex = Math.max(0, Math.min(toIndex, memorySections.length - 1));
+      if (fromIndex === boundedToIndex) {
+        return prev;
+      }
+      const reordered = [...memorySections];
+      const [moved] = reordered.splice(fromIndex, 1);
+      reordered.splice(boundedToIndex, 0, moved);
+      return [...others, ...normalizeSectionOrder(reordered)];
     });
   }, []);
 
@@ -502,6 +557,81 @@ export function AppProvider({ children }: PropsWithChildren) {
     [photos]
   );
 
+  const swapPhotos = useCallback(
+    (sourcePhotoId: string, targetPhotoId: string) => {
+      if (sourcePhotoId === targetPhotoId) {
+        return;
+      }
+      const sourcePhoto = photos.find((item) => item.id === sourcePhotoId);
+      const targetPhoto = photos.find((item) => item.id === targetPhotoId);
+      if (!sourcePhoto || !targetPhoto || sourcePhoto.memoryId !== targetPhoto.memoryId) {
+        return;
+      }
+      setPageSections((prev) => {
+        const sourceSection = prev.find((section) => section.photoIds.includes(sourcePhotoId));
+        const targetSection = prev.find((section) => section.photoIds.includes(targetPhotoId));
+        if (!sourceSection || !targetSection) {
+          return prev;
+        }
+        return prev.map((section) => {
+          if (section.id !== sourceSection.id && section.id !== targetSection.id) {
+            return section;
+          }
+
+          const nextPhotoIds = [...section.photoIds];
+          if (sourceSection.id === targetSection.id) {
+            const sourceIndex = nextPhotoIds.indexOf(sourcePhotoId);
+            const targetIndex = nextPhotoIds.indexOf(targetPhotoId);
+            if (sourceIndex >= 0 && targetIndex >= 0) {
+              nextPhotoIds[sourceIndex] = targetPhotoId;
+              nextPhotoIds[targetIndex] = sourcePhotoId;
+            }
+          } else if (section.id === sourceSection.id) {
+            const sourceIndex = nextPhotoIds.indexOf(sourcePhotoId);
+            if (sourceIndex >= 0) {
+              nextPhotoIds[sourceIndex] = targetPhotoId;
+            }
+          } else if (section.id === targetSection.id) {
+            const targetIndex = nextPhotoIds.indexOf(targetPhotoId);
+            if (targetIndex >= 0) {
+              nextPhotoIds[targetIndex] = sourcePhotoId;
+            }
+          }
+
+          const nextHero =
+            section.heroPhotoId === sourcePhotoId
+              ? targetPhotoId
+              : section.heroPhotoId === targetPhotoId
+                ? sourcePhotoId
+                : section.heroPhotoId;
+
+          return {
+            ...section,
+            photoIds: nextPhotoIds,
+            heroPhotoId: nextHero
+          };
+        });
+      });
+    },
+    [photos]
+  );
+
+  const removePhotoFromPage = useCallback((photoId: string) => {
+    setPageSections((prev) =>
+      prev.map((section) => {
+        if (!section.photoIds.includes(photoId)) {
+          return section;
+        }
+        const nextPhotoIds = section.photoIds.filter((id) => id !== photoId);
+        return {
+          ...section,
+          photoIds: nextPhotoIds,
+          heroPhotoId: section.heroPhotoId === photoId ? undefined : section.heroPhotoId
+        };
+      })
+    );
+  }, []);
+
   const setPageHero = useCallback(
     (pageSectionId: string, photoId: string) => {
       setPageSections((prev) =>
@@ -510,6 +640,43 @@ export function AppProvider({ children }: PropsWithChildren) {
             ? { ...section, heroPhotoId: photoId }
             : section
         )
+      );
+    },
+    []
+  );
+
+  const setPageSectionTemplate = useCallback((pageSectionId: string, templateId?: string) => {
+    setPageSections((prev) =>
+      prev.map((section) =>
+        section.id === pageSectionId
+          ? {
+              ...section,
+              templateId
+            }
+          : section
+      )
+    );
+  }, []);
+
+  const updatePageSectionStyle = useCallback(
+    (
+      pageSectionId: string,
+      updates: Partial<
+        Pick<
+          MemoryPageSection,
+          | "backgroundColor"
+          | "slotBorderColor"
+          | "slotBorderWidth"
+          | "slotCornerRadius"
+          | "textColor"
+          | "textSize"
+          | "textWeight"
+          | "textFontFamily"
+        >
+      >
+    ) => {
+      setPageSections((prev) =>
+        prev.map((section) => (section.id === pageSectionId ? { ...section, ...updates } : section))
       );
     },
     []
@@ -553,25 +720,19 @@ export function AppProvider({ children }: PropsWithChildren) {
                 id: makeId("page"),
                 memoryId,
                 order: 0,
+                templateId: undefined,
+                backgroundColor: undefined,
+                slotBorderColor: undefined,
+                slotBorderWidth: undefined,
+                slotCornerRadius: undefined,
+                textColor: undefined,
+                textSize: undefined,
+                textWeight: undefined,
+                textFontFamily: undefined,
                 photoIds: [],
                 heroPhotoId: undefined
               }
             ];
-
-        for (const photo of createdPhotos) {
-          const target = sections.find((section) => section.photoIds.length < AUTO_PHOTOS_PER_PAGE);
-          if (target) {
-            target.photoIds = [...target.photoIds, photo.id];
-          } else {
-            sections.push({
-              id: makeId("page"),
-              memoryId,
-              order: sections.length,
-              photoIds: [photo.id],
-              heroPhotoId: undefined
-            });
-          }
-        }
 
         return [...others, ...normalizeSectionOrder(sections)];
       });
@@ -723,8 +884,13 @@ export function AppProvider({ children }: PropsWithChildren) {
       deletePhotos,
       createPageSection,
       deletePageSection,
+      reorderPageSection,
       movePhotoToPage,
+      removePhotoFromPage,
+      swapPhotos,
       setPageHero,
+      setPageSectionTemplate,
+      updatePageSectionStyle,
       getMemoriesByProjectId,
       getMemoryById,
       getPhotosByMemoryId,
@@ -750,13 +916,18 @@ export function AppProvider({ children }: PropsWithChildren) {
       memories,
       moveMemory,
       reorderMemory,
+      reorderPageSection,
       movePhotoToPage,
+      removePhotoFromPage,
+      swapPhotos,
       pageSections,
       photos,
       pickProjectThumbnail,
       projects,
       setMemoryPrimaryPhoto,
       setPageHero,
+      setPageSectionTemplate,
+      updatePageSectionStyle,
       updateMemory,
       updateProject
     ]
