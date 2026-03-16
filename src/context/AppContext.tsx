@@ -1,7 +1,7 @@
 import { PropsWithChildren, createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { makeId } from "../lib/id";
 import { loadAppData, saveAppData } from "../storage";
-import { Memory, MemoryPageSection, PhotoItem, Project, ProjectType } from "../types";
+import { Memory, MemoryPageSection, PageTextBox, PhotoItem, Project, ProjectType } from "../types";
 import {
   copyImageToAppStorage,
   getCurrentLocation,
@@ -20,20 +20,27 @@ type AppContextValue = {
   updateProject: (projectId: string, updates: { name?: string; projectType?: ProjectType; thumbnailUri?: string }) => void;
   deleteProject: (projectId: string) => void;
   getProjectById: (id: string) => Project | undefined;
-  createMemory: (projectId: string, title: string, themeLabel?: string) => Promise<void>;
+  createMemory: (projectId: string, title: string, themeLabel?: string) => Promise<string>;
   updateMemory: (memoryId: string, updates: { title?: string; themeLabel?: string }) => void;
   deleteMemory: (memoryId: string) => void;
   moveMemory: (projectId: string, memoryId: string, direction: "up" | "down") => void;
   reorderMemory: (projectId: string, memoryId: string, toIndex: number) => void;
   setMemoryPrimaryPhoto: (memoryId: string, photoId: string) => void;
   addPhotosToMemory: (memoryId: string) => Promise<number>;
+  addPhotoAssetsToMemory: (
+    memoryId: string,
+    assets: { uri: string; fileName?: string | null; width?: number; height?: number }[]
+  ) => Promise<string[]>;
   deletePhotos: (photoIds: string[]) => void;
   createPageSection: (memoryId: string) => void;
-  deletePageSection: (pageSectionId: string) => void;
+  deletePageSection: (pageSectionId: string, options?: { photoMode?: "merge" | "keep" | "discard" }) => void;
   reorderPageSection: (memoryId: string, pageSectionId: string, toIndex: number) => void;
   movePhotoToPage: (photoId: string, toPageSectionId: string, toIndex?: number) => void;
   removePhotoFromPage: (photoId: string) => void;
   swapPhotos: (sourcePhotoId: string, targetPhotoId: string) => void;
+  addPageTextBox: (pageSectionId: string, initial?: Partial<PageTextBox>) => string | undefined;
+  updatePageTextBox: (pageSectionId: string, textBoxId: string, updates: Partial<PageTextBox>) => void;
+  deletePageTextBox: (pageSectionId: string, textBoxId: string) => void;
   setPageHero: (pageSectionId: string, photoId: string) => void;
   setPageSectionTemplate: (pageSectionId: string, templateId?: string) => void;
   updatePageSectionStyle: (
@@ -101,6 +108,7 @@ function reconcilePageSections(
         const uniqueValidPhotoIds = section.photoIds.filter((id, idx, arr) => arr.indexOf(id) === idx && photoIdSet.has(id));
         return {
           ...section,
+          textBoxes: Array.isArray(section.textBoxes) ? section.textBoxes : [],
           photoIds: uniqueValidPhotoIds,
           heroPhotoId: section.heroPhotoId && uniqueValidPhotoIds.includes(section.heroPhotoId) ? section.heroPhotoId : undefined
         };
@@ -123,6 +131,7 @@ function reconcilePageSections(
             textSize: undefined,
             textWeight: undefined,
             textFontFamily: undefined,
+            textBoxes: [],
             photoIds: [],
             heroPhotoId: undefined
           }
@@ -293,6 +302,7 @@ export function AppProvider({ children }: PropsWithChildren) {
           textSize: undefined,
           textWeight: undefined,
           textFontFamily: undefined,
+          textBoxes: [],
           photoIds: [],
           heroPhotoId: undefined
         }
@@ -301,6 +311,7 @@ export function AppProvider({ children }: PropsWithChildren) {
     setProjects((prev) =>
       prev.map((project) => (project.id === projectId ? { ...project, updatedAt: now } : project))
     );
+    return createdMemoryId;
   }, []);
 
   const updateMemory = useCallback((memoryId: string, updates: { title?: string; themeLabel?: string }) => {
@@ -453,49 +464,88 @@ export function AppProvider({ children }: PropsWithChildren) {
     });
   }, []);
 
-  const deletePageSection = useCallback((pageSectionId: string) => {
+  const deletePageSection = useCallback((pageSectionId: string, options?: { photoMode?: "merge" | "keep" | "discard" }) => {
+    const photoMode = options?.photoMode ?? "merge";
+    let discardedPhotoIds: string[] = [];
+    let touchedMemoryId = "";
+
     setPageSections((prev) => {
       const target = prev.find((section) => section.id === pageSectionId);
       if (!target) {
         return prev;
       }
+      touchedMemoryId = target.memoryId;
       const siblings = normalizeSectionOrder(prev.filter((section) => section.memoryId === target.memoryId));
       const targetIndex = siblings.findIndex((section) => section.id === pageSectionId);
       const remaining = siblings.filter((section) => section.id !== pageSectionId);
 
       if (remaining.length === 0) {
+        const replacementPhotoIds = photoMode === "merge" ? target.photoIds : [];
+        const replacementHeroPhotoId =
+          photoMode === "merge" && target.heroPhotoId && replacementPhotoIds.includes(target.heroPhotoId)
+            ? target.heroPhotoId
+            : undefined;
+        if (photoMode === "discard") {
+          discardedPhotoIds = target.photoIds;
+        }
         return [
           ...prev.filter((section) => section.memoryId !== target.memoryId),
           {
             id: makeId("page"),
             memoryId: target.memoryId,
             order: 0,
-            photoIds: target.photoIds,
-            heroPhotoId: target.heroPhotoId,
-            templateId: target.templateId,
-            backgroundColor: target.backgroundColor,
-            slotBorderColor: target.slotBorderColor,
-            slotBorderWidth: target.slotBorderWidth,
-            slotCornerRadius: target.slotCornerRadius,
-            textColor: target.textColor,
-            textSize: target.textSize,
-            textWeight: target.textWeight,
-            textFontFamily: target.textFontFamily
-          }
-        ];
+            photoIds: replacementPhotoIds,
+            heroPhotoId: replacementHeroPhotoId,
+            templateId: photoMode === "merge" ? target.templateId : undefined,
+            backgroundColor: photoMode === "merge" ? target.backgroundColor : undefined,
+            slotBorderColor: photoMode === "merge" ? target.slotBorderColor : undefined,
+            slotBorderWidth: photoMode === "merge" ? target.slotBorderWidth : undefined,
+            slotCornerRadius: photoMode === "merge" ? target.slotCornerRadius : undefined,
+          textColor: photoMode === "merge" ? target.textColor : undefined,
+          textSize: photoMode === "merge" ? target.textSize : undefined,
+          textWeight: photoMode === "merge" ? target.textWeight : undefined,
+          textFontFamily: photoMode === "merge" ? target.textFontFamily : undefined,
+          textBoxes: []
+        }
+      ];
       }
 
-      const fallbackIndex = targetIndex > 0 ? targetIndex - 1 : 0;
-      const fallback = remaining[fallbackIndex];
-      fallback.photoIds = [...fallback.photoIds, ...target.photoIds];
-      if (!fallback.heroPhotoId && target.heroPhotoId && fallback.photoIds.includes(target.heroPhotoId)) {
-        fallback.heroPhotoId = target.heroPhotoId;
+      if (photoMode === "merge") {
+        const fallbackIndex = targetIndex > 0 ? targetIndex - 1 : 0;
+        const fallback = remaining[fallbackIndex];
+        fallback.photoIds = [...fallback.photoIds, ...target.photoIds];
+        if (!fallback.heroPhotoId && target.heroPhotoId && fallback.photoIds.includes(target.heroPhotoId)) {
+          fallback.heroPhotoId = target.heroPhotoId;
+        }
+      } else if (photoMode === "discard") {
+        discardedPhotoIds = target.photoIds;
       }
 
       const rebuilt = normalizeSectionOrder(remaining);
       return [...prev.filter((section) => section.memoryId !== target.memoryId), ...rebuilt];
     });
-  }, []);
+
+    if (photoMode === "discard" && discardedPhotoIds.length > 0) {
+      const removed = new Set(discardedPhotoIds);
+      const now = new Date().toISOString();
+      setPhotos((prev) => prev.filter((photo) => !removed.has(photo.id)));
+      setMemories((prev) =>
+        prev.map((memory) => {
+          if (memory.id !== touchedMemoryId || !memory.primaryPhotoId || !removed.has(memory.primaryPhotoId)) {
+            return memory;
+          }
+          const remainingPhotos = sortByAddedAt(
+            photos.filter((photo) => photo.memoryId === touchedMemoryId && !removed.has(photo.id))
+          );
+          return {
+            ...memory,
+            primaryPhotoId: remainingPhotos[0]?.id,
+            updatedAt: now
+          };
+        })
+      );
+    }
+  }, [photos]);
 
   const reorderPageSection = useCallback((memoryId: string, pageSectionId: string, toIndex: number) => {
     setPageSections((prev) => {
@@ -632,6 +682,70 @@ export function AppProvider({ children }: PropsWithChildren) {
     );
   }, []);
 
+  const addPageTextBox = useCallback((pageSectionId: string, initial?: Partial<PageTextBox>) => {
+    let createdId: string | undefined;
+    setPageSections((prev) =>
+      prev.map((section) => {
+        if (section.id !== pageSectionId) {
+          return section;
+        }
+        createdId = makeId("textbox");
+        const textBox: PageTextBox = {
+          id: createdId,
+          text: initial?.text ?? "",
+          x: initial?.x ?? 0.18,
+          y: initial?.y ?? 0.12,
+          width: initial?.width ?? 0.64,
+          height: initial?.height ?? 0.16,
+          textColor: initial?.textColor ?? "#0f172a",
+          fontSize: initial?.fontSize ?? 26,
+          fontWeight: initial?.fontWeight ?? "700",
+          fontStyle: initial?.fontStyle ?? "normal",
+          fontFamily: initial?.fontFamily ?? "System",
+          textAlign: initial?.textAlign ?? "center",
+          borderWidth: initial?.borderWidth ?? 0,
+          borderColor: initial?.borderColor ?? "#0f172a",
+          fillColor: initial?.fillColor ?? "#ffffff",
+          fillOpacity: initial?.fillOpacity ?? 0,
+          autoSize: initial?.autoSize ?? true
+        };
+        return {
+          ...section,
+          textBoxes: [...(section.textBoxes ?? []), textBox]
+        };
+      })
+    );
+    return createdId;
+  }, []);
+
+  const updatePageTextBox = useCallback((pageSectionId: string, textBoxId: string, updates: Partial<PageTextBox>) => {
+    setPageSections((prev) =>
+      prev.map((section) =>
+        section.id === pageSectionId
+          ? {
+              ...section,
+              textBoxes: (section.textBoxes ?? []).map((textBox) =>
+                textBox.id === textBoxId ? { ...textBox, ...updates } : textBox
+              )
+            }
+          : section
+      )
+    );
+  }, []);
+
+  const deletePageTextBox = useCallback((pageSectionId: string, textBoxId: string) => {
+    setPageSections((prev) =>
+      prev.map((section) =>
+        section.id === pageSectionId
+          ? {
+              ...section,
+              textBoxes: (section.textBoxes ?? []).filter((textBox) => textBox.id !== textBoxId)
+            }
+          : section
+      )
+    );
+  }, []);
+
   const setPageHero = useCallback(
     (pageSectionId: string, photoId: string) => {
       setPageSections((prev) =>
@@ -682,20 +796,23 @@ export function AppProvider({ children }: PropsWithChildren) {
     []
   );
 
-  const addPhotosToMemory = useCallback(
-    async (memoryId: string): Promise<number> => {
-      const selected = await pickImagesFromLibrary();
+  const addPhotoAssetsToMemory = useCallback(
+    async (
+      memoryId: string,
+      selected: { uri: string; fileName?: string | null; width?: number; height?: number }[]
+    ): Promise<string[]> => {
       if (selected.length === 0) {
-        return 0;
+        return [];
       }
-
       const location = await getCurrentLocation();
       const createdPhotos: PhotoItem[] = [];
+      const createdPhotoIds: string[] = [];
       const now = new Date().toISOString();
 
       for (const asset of selected) {
         const photoId = makeId("photo");
         const localUri = await copyImageToAppStorage(asset.uri, photoId, asset.fileName);
+        createdPhotoIds.push(photoId);
         createdPhotos.push({
           id: photoId,
           memoryId,
@@ -729,6 +846,7 @@ export function AppProvider({ children }: PropsWithChildren) {
                 textSize: undefined,
                 textWeight: undefined,
                 textFontFamily: undefined,
+                textBoxes: [],
                 photoIds: [],
                 heroPhotoId: undefined
               }
@@ -757,9 +875,21 @@ export function AppProvider({ children }: PropsWithChildren) {
         );
       }
 
-      return createdPhotos.length;
+      return createdPhotoIds;
     },
     []
+  );
+
+  const addPhotosToMemory = useCallback(
+    async (memoryId: string): Promise<number> => {
+      const selected = await pickImagesFromLibrary();
+      if (selected.length === 0) {
+        return 0;
+      }
+      const createdPhotoIds = await addPhotoAssetsToMemory(memoryId, selected);
+      return createdPhotoIds.length;
+    },
+    [addPhotoAssetsToMemory]
   );
 
   const deletePhotos = useCallback((photoIds: string[]) => {
@@ -881,6 +1011,7 @@ export function AppProvider({ children }: PropsWithChildren) {
       reorderMemory,
       setMemoryPrimaryPhoto,
       addPhotosToMemory,
+      addPhotoAssetsToMemory,
       deletePhotos,
       createPageSection,
       deletePageSection,
@@ -888,6 +1019,9 @@ export function AppProvider({ children }: PropsWithChildren) {
       movePhotoToPage,
       removePhotoFromPage,
       swapPhotos,
+      addPageTextBox,
+      updatePageTextBox,
+      deletePageTextBox,
       setPageHero,
       setPageSectionTemplate,
       updatePageSectionStyle,
@@ -898,6 +1032,7 @@ export function AppProvider({ children }: PropsWithChildren) {
       getMemoryThumbnailUri
     }),
     [
+      addPhotoAssetsToMemory,
       addPhotosToMemory,
       createMemory,
       createPageSection,
@@ -920,6 +1055,9 @@ export function AppProvider({ children }: PropsWithChildren) {
       movePhotoToPage,
       removePhotoFromPage,
       swapPhotos,
+      addPageTextBox,
+      updatePageTextBox,
+      deletePageTextBox,
       pageSections,
       photos,
       pickProjectThumbnail,

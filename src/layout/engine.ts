@@ -74,6 +74,7 @@ export function buildLayoutPage(
     textSize: section.textSize,
     textWeight: section.textWeight,
     textFontFamily: section.textFontFamily,
+    textBoxes: section.textBoxes ?? [],
     pageIndex,
     pageCount,
     templateId: selected?.template.id ?? "empty",

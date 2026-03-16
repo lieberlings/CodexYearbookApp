@@ -4,7 +4,24 @@ import { Image, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "
 import { useAppData } from "../../../src/context/AppContext";
 import { buildLayoutDocument } from "../../../src/layout/engine";
 import { applySlotOverridesToPage } from "../../../src/layout/overrides";
+import { getPhotoAspect, getPhotoRenderMetrics } from "../../../src/layout/photoMetrics";
 import { useEditorStore } from "../../../src/state/editorStore";
+
+function applyColorOpacity(color: string | undefined, opacity: number | undefined): string {
+  if (!color) {
+    return "transparent";
+  }
+  const normalizedOpacity = Math.max(0, Math.min(1, opacity ?? 1));
+  const hex = color.replace("#", "");
+  const safeHex = hex.length === 3 ? hex.split("").map((part) => part + part).join("") : hex;
+  const r = Number.parseInt(safeHex.slice(0, 2), 16);
+  const g = Number.parseInt(safeHex.slice(2, 4), 16);
+  const b = Number.parseInt(safeHex.slice(4, 6), 16);
+  if ([r, g, b].some((value) => Number.isNaN(value))) {
+    return color;
+  }
+  return `rgba(${r}, ${g}, ${b}, ${normalizedOpacity})`;
+}
 
 export default function ProjectPreviewScreen() {
   const params = useLocalSearchParams<{ id: string }>();
@@ -66,30 +83,19 @@ export default function ProjectPreviewScreen() {
 
       {renderedPages.map((entry) => {
         const page = entry.applied;
-        const title = page.pageCount > 1 ? `${page.memoryTitle} (${page.pageIndex + 1}/${page.pageCount})` : page.memoryTitle;
         return (
           <View key={page.id} style={[styles.pageCard, { width: pageWidth, minHeight: pageHeight }]}>
-            <Text
-              style={[
-                styles.pageTitle,
-                {
-                  color: page.textColor ?? "#0f172a",
-                  fontSize: page.textSize ?? 22,
-                  fontWeight: (page.textWeight as "400" | "500" | "600" | "700") ?? "700",
-                  fontFamily: page.textFontFamily
-                }
-              ]}
-            >
-              {title}
-            </Text>
-            {page.themeLabel ? <Text style={[styles.pageTheme, { color: page.textColor ?? "#475569" }]}>{page.themeLabel}</Text> : null}
-
             <View style={[styles.canvasArea, { width: pageInnerWidth, height: pageContentHeight, backgroundColor: page.backgroundColor ?? "#ffffff", borderRadius: 18 }]}>
               {page.slots.map((slot) => {
                 const photo = slot.photoId ? photosById[slot.photoId] : undefined;
-                const sizePercent = slot.photoScale * 100;
-                const leftPercent = 50 - slot.photoScale * 50 + slot.photoOffsetX * 100;
-                const topPercent = 50 - slot.photoScale * 50 + slot.photoOffsetY * 100;
+                const photoMetrics = getPhotoRenderMetrics({
+                  containerAspect: slot.frame.width / Math.max(0.0001, slot.frame.height),
+                  imageAspect: getPhotoAspect(photo),
+                  fitMode: slot.fitMode,
+                  scale: slot.photoScale ?? 1,
+                  offsetX: slot.photoOffsetX ?? 0,
+                  offsetY: slot.photoOffsetY ?? 0
+                });
                 return (
                   <View
                     key={slot.id}
@@ -112,21 +118,53 @@ export default function ProjectPreviewScreen() {
                         style={[
                           styles.slotImage,
                           {
-                            width: `${sizePercent}%`,
-                            height: `${sizePercent}%`,
-                            left: `${leftPercent}%`,
-                            top: `${topPercent}%`
+                            width: `${photoMetrics.width * 100}%`,
+                            height: `${photoMetrics.height * 100}%`,
+                            left: `${photoMetrics.leftPercent}%`,
+                            top: `${photoMetrics.topPercent}%`
                           }
                         ]}
-                        resizeMode={slot.fitMode}
+                        resizeMode="stretch"
                       />
                     ) : null}
                   </View>
                 );
               })}
+              {page.textBoxes.map((textBox) => (
+                <View
+                  key={textBox.id}
+                  style={[
+                    styles.textBox,
+                    {
+                      left: `${textBox.x * 100}%`,
+                      top: `${textBox.y * 100}%`,
+                      width: `${textBox.width * 100}%`,
+                      height: `${textBox.height * 100}%`,
+                      borderWidth: textBox.borderWidth ?? 0,
+                      borderColor: textBox.borderColor ?? "#0f172a",
+                      backgroundColor: applyColorOpacity(textBox.fillColor ?? "#ffffff", textBox.fillOpacity ?? 0)
+                    }
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.textBoxText,
+                      {
+                        color: textBox.textColor ?? page.textColor ?? "#0f172a",
+                        fontSize: textBox.fontSize ?? page.textSize ?? 24,
+                        fontWeight: (textBox.fontWeight as "400" | "500" | "600" | "700") ?? "700",
+                        fontStyle: (textBox.fontStyle as "normal" | "italic") ?? "normal",
+                        fontFamily: textBox.fontFamily ?? page.textFontFamily,
+                        textAlign: (textBox.textAlign ?? "center") as "left" | "center" | "right"
+                      }
+                    ]}
+                  >
+                    {textBox.text}
+                  </Text>
+                </View>
+              ))}
             </View>
 
-            {page.slots.length === 0 ? <Text style={styles.emptyPage}>No photos on this page.</Text> : null}
           </View>
         );
       })}
@@ -170,18 +208,6 @@ const styles = StyleSheet.create({
     borderColor: "#e2e8f0",
     padding: 10
   },
-  pageTitle: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: "#0f172a",
-    lineHeight: 26
-  },
-  pageTheme: {
-    marginTop: 4,
-    marginBottom: 8,
-    color: "#475569",
-    fontSize: 14
-  },
   canvasArea: {
     position: "relative"
   },
@@ -196,13 +222,20 @@ const styles = StyleSheet.create({
   slotImage: {
     position: "absolute"
   },
+  textBox: {
+    position: "absolute",
+    justifyContent: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    zIndex: 5
+  },
+  textBoxText: {
+    lineHeight: 28
+  },
   empty: {
     color: "#64748b",
     width: "100%",
     maxWidth: 520
   },
-  emptyPage: {
-    marginTop: 10,
-    color: "#64748b"
-  }
+  emptyPage: {}
 });

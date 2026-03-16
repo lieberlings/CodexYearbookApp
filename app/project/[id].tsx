@@ -1,9 +1,14 @@
-import { Link, router, useLocalSearchParams } from "expo-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Ionicons } from "@expo/vector-icons";
+import { StatusBar } from "expo-status-bar";
+import { router, Stack, useLocalSearchParams } from "expo-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   Image,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,136 +16,427 @@ import {
   TextInput,
   View
 } from "react-native";
+import DraggableFlatList, { ScaleDecorator } from "react-native-draggable-flatlist";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppData } from "../../src/context/AppContext";
 import { exportProjectToPdf, sharePdf } from "../../src/services/exportService";
+import { pickImagesFromLibrary } from "../../src/services/photoService";
 import { useEditorStore } from "../../src/state/editorStore";
+import { Memory, PhotoItem } from "../../src/types";
 
-type Rect = {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
+type MemoryComposerMode = "create" | "edit";
+
+type StagedAsset = {
+  key: string;
+  uri: string;
+  fileName?: string | null;
+  width?: number;
+  height?: number;
 };
 
-type MemoryDragState = {
-  memoryId: string;
-  pageX: number;
-  pageY: number;
-};
+type ThumbnailChoice =
+  | { kind: "existing"; photoId: string }
+  | { kind: "staged"; stagedKey: string };
 
-const AUTO_SCROLL_EDGE_PX = 96;
-const AUTO_SCROLL_STEP_PX = 20;
-const AUTO_SCROLL_TICK_MS = 42;
+function orderKey(items: { id: string }[]): string {
+  return items.map((item) => item.id).join("|");
+}
 
-function isPointInside(rect: Rect, x: number, y: number): boolean {
-  return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
+function pluralize(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function prioritizePrimary(photos: PhotoItem[], primaryPhotoId?: string): PhotoItem[] {
+  if (!primaryPhotoId) {
+    return photos;
+  }
+  const primary = photos.find((photo) => photo.id === primaryPhotoId);
+  if (!primary) {
+    return photos;
+  }
+  return [primary, ...photos.filter((photo) => photo.id !== primaryPhotoId)];
+}
+
+function formatProjectStats(memoryCount: number, photoCount: number, pageCount: number): string {
+  return `${pluralize(memoryCount, "Memory")} | ${pluralize(photoCount, "Photo")} | ${pluralize(pageCount, "Page")}`;
+}
+
+function buildStagedAssets(
+  assets: { uri: string; fileName?: string | null; width?: number; height?: number }[]
+): StagedAsset[] {
+  return assets.map((asset, index) => ({
+    key: `staged-${Date.now()}-${index}-${asset.fileName ?? "photo"}`,
+    uri: asset.uri,
+    fileName: asset.fileName,
+    width: asset.width,
+    height: asset.height
+  }));
+}
+
+function getThumbnailUri(
+  choice: ThumbnailChoice | undefined,
+  existingPhotos: PhotoItem[],
+  stagedAssets: StagedAsset[]
+): string | undefined {
+  if (!choice) {
+    return undefined;
+  }
+  if (choice.kind === "existing") {
+    return existingPhotos.find((photo) => photo.id === choice.photoId)?.uri;
+  }
+  return stagedAssets.find((asset) => asset.key === choice.stagedKey)?.uri;
+}
+
+function resolveThumbnailPhotoId(
+  choice: ThumbnailChoice | undefined,
+  stagedAssets: StagedAsset[],
+  createdPhotoIds: string[]
+): string | undefined {
+  if (!choice) {
+    return undefined;
+  }
+  if (choice.kind === "existing") {
+    return choice.photoId;
+  }
+  const stagedIndex = stagedAssets.findIndex((asset) => asset.key === choice.stagedKey);
+  if (stagedIndex < 0) {
+    return undefined;
+  }
+  return createdPhotoIds[stagedIndex];
+}
+
+function MemoryCollagePreview({ photos }: { photos: PhotoItem[] }) {
+  if (photos.length === 0) {
+    return (
+      <View style={[styles.previewPanel, styles.previewEmpty]}>
+        <Ionicons name="images-outline" size={34} color="#6b7da7" />
+        <Text style={styles.previewEmptyText}>Add photos inside the memory</Text>
+      </View>
+    );
+  }
+
+  if (photos.length === 1) {
+    return (
+      <View style={styles.previewPanel}>
+        <Image source={{ uri: photos[0]?.uri }} style={styles.previewSingle} />
+      </View>
+    );
+  }
+
+  if (photos.length === 2) {
+    return (
+      <View style={styles.previewPanel}>
+        <View style={styles.previewRow}>
+          {photos.slice(0, 2).map((photo) => (
+            <Image key={photo.id} source={{ uri: photo.uri }} style={styles.previewHalf} />
+          ))}
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.previewPanel}>
+      <View style={styles.previewRow}>
+        {photos.slice(0, 3).map((photo, index) => {
+          const remaining = photos.length - 3;
+          const isOverflow = index === 2 && remaining > 0;
+          return (
+            <View key={photo.id} style={styles.previewThirdWrap}>
+              <Image source={{ uri: photo.uri }} style={styles.previewThird} />
+              {isOverflow ? (
+                <View style={styles.previewOverlay}>
+                  <Text style={styles.previewOverlayText}>{`+${remaining}`}</Text>
+                </View>
+              ) : null}
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
 }
 
 export default function ProjectDetailsScreen() {
   const params = useLocalSearchParams<{ id: string }>();
   const projectId = Array.isArray(params.id) ? (params.id[0] ?? "") : (params.id ?? "");
+  const insets = useSafeAreaInsets();
   const {
     getProjectById,
     getMemoriesByProjectId,
     getPhotosByMemoryId,
     getPageSectionsByMemoryId,
-    getMemoryThumbnailUri,
     createMemory,
     updateMemory,
     deleteMemory,
-    addPhotosToMemory,
-    moveMemory,
     reorderMemory,
     updateProject,
     deleteProject,
-    pickProjectThumbnail
+    pickProjectThumbnail,
+    setMemoryPrimaryPhoto,
+    addPhotoAssetsToMemory
   } = useAppData();
+  const slotOverridesByPage = useEditorStore((state) => state.slotOverridesByPage);
 
-  const [memoryTitle, setMemoryTitle] = useState("");
-  const [memoryTheme, setMemoryTheme] = useState("");
-  const [creating, setCreating] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [busyMemoryId, setBusyMemoryId] = useState<string | null>(null);
-  const [editingMemoryId, setEditingMemoryId] = useState<string | null>(null);
-  const [editMemoryTitle, setEditMemoryTitle] = useState("");
-  const [editMemoryTheme, setEditMemoryTheme] = useState("");
-  const [projectNameDraft, setProjectNameDraft] = useState("");
-  const [savingProject, setSavingProject] = useState(false);
-  const [pickingThumb, setPickingThumb] = useState(false);
-  const [memoryDragState, setMemoryDragState] = useState<MemoryDragState | undefined>(undefined);
-  const [dropMemoryId, setDropMemoryId] = useState<string | undefined>(undefined);
-
-  const scrollRef = useRef<ScrollView | null>(null);
-  const memoryCardRefs = useRef<Record<string, View | null>>({});
-  const memoryRectsRef = useRef<Record<string, Rect>>({});
-  const scrollRectRef = useRef<Rect | undefined>(undefined);
-  const scrollOffsetYRef = useRef(0);
-  const scrollViewportHeightRef = useRef(0);
-  const scrollContentHeightRef = useRef(0);
-  const memoryDragRef = useRef<MemoryDragState | undefined>(undefined);
-  const autoScrollDirectionRef = useRef<-1 | 0 | 1>(0);
-  const autoScrollTimerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  const [composerVisible, setComposerVisible] = useState(false);
+  const [composerMode, setComposerMode] = useState<MemoryComposerMode>("create");
+  const [composerMemoryId, setComposerMemoryId] = useState<string | null>(null);
+  const [composerTitle, setComposerTitle] = useState("");
+  const [composerStagedAssets, setComposerStagedAssets] = useState<StagedAsset[]>([]);
+  const [composerThumbnailChoice, setComposerThumbnailChoice] = useState<ThumbnailChoice | undefined>(undefined);
+  const [composerSaving, setComposerSaving] = useState(false);
+  const [composerPicking, setComposerPicking] = useState(false);
+  const [projectMenuBusy, setProjectMenuBusy] = useState(false);
+  const [memoryListData, setMemoryListData] = useState<Memory[]>([]);
+  const [pendingMemoryOrderKey, setPendingMemoryOrderKey] = useState<string | undefined>(undefined);
 
   const project = getProjectById(projectId);
   const memories = useMemo(() => getMemoriesByProjectId(projectId), [getMemoriesByProjectId, projectId]);
-  const slotOverridesByPage = useEditorStore((state) => state.slotOverridesByPage);
-  const draggedMemory = memoryDragState ? memories.find((memory) => memory.id === memoryDragState.memoryId) : undefined;
 
   useEffect(() => {
-    if (project) {
-      setProjectNameDraft(project.name);
-    }
-  }, [project]);
+    setMemoryListData((prev) => (prev.length === 0 ? memories : prev));
+  }, [memories]);
 
   useEffect(() => {
-    memoryDragRef.current = memoryDragState;
-  }, [memoryDragState]);
+    const contextOrder = orderKey(memories);
+    const localOrder = orderKey(memoryListData);
 
-  useEffect(() => {
-    return () => {
-      if (autoScrollTimerRef.current) {
-        clearInterval(autoScrollTimerRef.current);
+    if (pendingMemoryOrderKey) {
+      if (contextOrder === pendingMemoryOrderKey) {
+        setPendingMemoryOrderKey(undefined);
+        if (localOrder !== contextOrder) {
+          setMemoryListData(memories);
+        }
       }
-    };
-  }, []);
-
-  async function onCreateMemory() {
-    if (!memoryTitle.trim()) {
       return;
     }
-    try {
-      setCreating(true);
-      await createMemory(projectId, memoryTitle, memoryTheme);
-      setMemoryTitle("");
-      setMemoryTheme("");
-    } finally {
-      setCreating(false);
-    }
-  }
 
-  async function onAddPhotos(memoryId: string) {
-    try {
-      setBusyMemoryId(memoryId);
-      const count = await addPhotosToMemory(memoryId);
-      if (count > 0) {
-        Alert.alert("Photos added", `${count} photo(s) added.`);
+    if (localOrder !== contextOrder) {
+      setMemoryListData(memories);
+    }
+  }, [memories, memoryListData, pendingMemoryOrderKey]);
+
+  const projectStats = useMemo(() => {
+    let photoCount = 0;
+    let pageCount = 0;
+    for (const memory of memories) {
+      photoCount += getPhotosByMemoryId(memory.id).length;
+      pageCount += getPageSectionsByMemoryId(memory.id).length;
+    }
+    return {
+      memoryCount: memories.length,
+      photoCount,
+      pageCount,
+      text: formatProjectStats(memories.length, photoCount, pageCount)
+    };
+  }, [getPageSectionsByMemoryId, getPhotosByMemoryId, memories]);
+
+  const composerMemory = useMemo(
+    () => (composerMemoryId ? memories.find((memory) => memory.id === composerMemoryId) : undefined),
+    [composerMemoryId, memories]
+  );
+
+  const composerExistingPhotos = useMemo(() => {
+    if (!composerMemory) {
+      return [];
+    }
+    return prioritizePrimary(getPhotosByMemoryId(composerMemory.id), composerMemory.primaryPhotoId);
+  }, [composerMemory, getPhotosByMemoryId]);
+
+  const composerThumbnailUri = useMemo(
+    () => getThumbnailUri(composerThumbnailChoice, composerExistingPhotos, composerStagedAssets),
+    [composerExistingPhotos, composerStagedAssets, composerThumbnailChoice]
+  );
+
+  const closeComposer = useCallback(() => {
+    setComposerVisible(false);
+    setComposerMode("create");
+    setComposerMemoryId(null);
+    setComposerTitle("");
+    setComposerStagedAssets([]);
+    setComposerThumbnailChoice(undefined);
+    setComposerSaving(false);
+    setComposerPicking(false);
+  }, []);
+
+  const openCreateComposer = useCallback(() => {
+    setComposerMode("create");
+    setComposerMemoryId(null);
+    setComposerTitle("");
+    setComposerStagedAssets([]);
+    setComposerThumbnailChoice(undefined);
+    setComposerVisible(true);
+  }, []);
+
+  const openEditComposer = useCallback(
+    (memoryId: string) => {
+      const memory = memories.find((item) => item.id === memoryId);
+      if (!memory) {
+        return;
       }
+      const existingPhotos = prioritizePrimary(getPhotosByMemoryId(memory.id), memory.primaryPhotoId);
+      setComposerMode("edit");
+      setComposerMemoryId(memory.id);
+      setComposerTitle(memory.title);
+      setComposerStagedAssets([]);
+      if (memory.primaryPhotoId && existingPhotos.some((photo) => photo.id === memory.primaryPhotoId)) {
+        setComposerThumbnailChoice({ kind: "existing", photoId: memory.primaryPhotoId });
+      } else if (existingPhotos[0]) {
+        setComposerThumbnailChoice({ kind: "existing", photoId: existingPhotos[0].id });
+      } else {
+        setComposerThumbnailChoice(undefined);
+      }
+      setComposerVisible(true);
+    },
+    [getPhotosByMemoryId, memories]
+  );
+
+  const onPickComposerPhotos = useCallback(async () => {
+    try {
+      setComposerPicking(true);
+      const selected = await pickImagesFromLibrary();
+      if (selected.length === 0) {
+        return;
+      }
+      const nextAssets = buildStagedAssets(selected);
+      setComposerStagedAssets((prev) => [...prev, ...nextAssets]);
+      setComposerThumbnailChoice((prev) => {
+        if (prev) {
+          return prev;
+        }
+        const first = nextAssets[0];
+        return first ? { kind: "staged", stagedKey: first.key } : undefined;
+      });
     } catch (error) {
       Alert.alert("Unable to add photos", (error as Error).message);
     } finally {
-      setBusyMemoryId(null);
+      setComposerPicking(false);
     }
-  }
+  }, []);
 
-  async function onExportProjectPdf() {
-    if (!project) {
+  const onSaveComposer = useCallback(async () => {
+    const trimmedTitle = composerTitle.trim();
+    if (!trimmedTitle || composerSaving) {
+      return;
+    }
+
+    try {
+      setComposerSaving(true);
+
+      if (composerMode === "create") {
+        const createdMemoryId = await createMemory(projectId, trimmedTitle);
+        const createdPhotoIds = await addPhotoAssetsToMemory(createdMemoryId, composerStagedAssets);
+        const selectedPhotoId = resolveThumbnailPhotoId(
+          composerThumbnailChoice,
+          composerStagedAssets,
+          createdPhotoIds
+        );
+        if (selectedPhotoId) {
+          setMemoryPrimaryPhoto(createdMemoryId, selectedPhotoId);
+        }
+      } else if (composerMemoryId) {
+        updateMemory(composerMemoryId, { title: trimmedTitle });
+        const createdPhotoIds = await addPhotoAssetsToMemory(composerMemoryId, composerStagedAssets);
+        const selectedPhotoId = resolveThumbnailPhotoId(
+          composerThumbnailChoice,
+          composerStagedAssets,
+          createdPhotoIds
+        );
+        if (selectedPhotoId) {
+          setMemoryPrimaryPhoto(composerMemoryId, selectedPhotoId);
+        }
+      }
+
+      closeComposer();
+    } catch (error) {
+      Alert.alert("Unable to save memory", (error as Error).message);
+      setComposerSaving(false);
+    }
+  }, [
+    addPhotoAssetsToMemory,
+    closeComposer,
+    composerMemoryId,
+    composerMode,
+    composerSaving,
+    composerStagedAssets,
+    composerThumbnailChoice,
+    composerTitle,
+    createMemory,
+    projectId,
+    setMemoryPrimaryPhoto,
+    updateMemory
+  ]);
+
+  const onDeleteComposerMemory = useCallback(() => {
+    if (!composerMemoryId) {
+      return;
+    }
+    Alert.alert("Delete memory", "Delete this memory and all its photos?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: () => {
+          deleteMemory(composerMemoryId);
+          closeComposer();
+        }
+      }
+    ]);
+  }, [closeComposer, composerMemoryId, deleteMemory]);
+
+  const onOpenProjectMenu = useCallback(() => {
+    Alert.alert(project?.name ?? "Project", "", [
+      {
+        text: projectMenuBusy ? "Working..." : "Change Cover Photo",
+        onPress: async () => {
+          if (!project || projectMenuBusy) {
+            return;
+          }
+          try {
+            setProjectMenuBusy(true);
+            const uri = await pickProjectThumbnail();
+            if (uri) {
+              updateProject(project.id, { thumbnailUri: uri });
+            }
+          } catch (error) {
+            Alert.alert("Unable to change project cover", (error as Error).message);
+          } finally {
+            setProjectMenuBusy(false);
+          }
+        }
+      },
+      {
+        text: "Delete Project",
+        style: "destructive",
+        onPress: () => {
+          if (!project) {
+            return;
+          }
+          Alert.alert("Delete project", "Delete this project, all memories, and all photos inside it?", [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Delete",
+              style: "destructive",
+              onPress: () => {
+                deleteProject(project.id);
+                router.replace("/");
+              }
+            }
+          ]);
+        }
+      },
+      { text: "Cancel", style: "cancel" }
+    ]);
+  }, [deleteProject, pickProjectThumbnail, project, projectMenuBusy, updateProject]);
+
+  const onOrderProject = useCallback(async () => {
+    if (!project || exporting) {
       return;
     }
     try {
       setExporting(true);
-      const photosByMemoryId = Object.fromEntries(
-        memories.map((memory) => [memory.id, getPhotosByMemoryId(memory.id)])
-      );
+      const photosByMemoryId = Object.fromEntries(memories.map((memory) => [memory.id, getPhotosByMemoryId(memory.id)]));
       const pageSectionsByMemoryId = Object.fromEntries(
         memories.map((memory) => [memory.id, getPageSectionsByMemoryId(memory.id)])
       );
@@ -153,687 +449,687 @@ export default function ProjectDetailsScreen() {
       );
       await sharePdf(pdfUri);
     } catch (error) {
-      Alert.alert("Export failed", (error as Error).message);
+      Alert.alert("Unable to prepare order", (error as Error).message);
     } finally {
       setExporting(false);
     }
-  }
+  }, [exporting, getPageSectionsByMemoryId, getPhotosByMemoryId, memories, project, slotOverridesByPage]);
 
-  function startMemoryEdit(memoryId: string) {
-    const target = memories.find((memory) => memory.id === memoryId);
-    if (!target) {
-      return;
-    }
-    setEditingMemoryId(memoryId);
-    setEditMemoryTitle(target.title);
-    setEditMemoryTheme(target.themeLabel ?? "");
-  }
-
-  function saveMemoryEdit() {
-    if (!editingMemoryId) {
-      return;
-    }
-    updateMemory(editingMemoryId, { title: editMemoryTitle, themeLabel: editMemoryTheme });
-    setEditingMemoryId(null);
-  }
-
-  function onDeleteMemory(memoryId: string) {
-    Alert.alert("Delete memory", "Delete this memory and all its photos?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: () => deleteMemory(memoryId)
-      }
-    ]);
-  }
-
-  function onDeleteProject() {
-    Alert.alert("Delete project", "Delete this project, all memories, and all photos inside it?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: () => {
-          deleteProject(projectId);
-          router.replace("/");
-        }
-      }
-    ]);
-  }
-
-  function onSaveProjectTitle() {
-    if (!project || !projectNameDraft.trim()) {
-      return;
-    }
-    setSavingProject(true);
-    updateProject(project.id, { name: projectNameDraft });
-    setSavingProject(false);
-  }
-
-  async function onPickProjectThumbnail() {
-    if (!project) {
-      return;
-    }
-    try {
-      setPickingThumb(true);
-      const uri = await pickProjectThumbnail();
-      if (uri) {
-        updateProject(project.id, { thumbnailUri: uri });
-      }
-    } catch (error) {
-      Alert.alert("Thumbnail failed", (error as Error).message);
-    } finally {
-      setPickingThumb(false);
-    }
-  }
-
-  async function measureNode(node: View | null): Promise<Rect | undefined> {
-    if (!node) {
-      return undefined;
-    }
-    return new Promise((resolve) => {
-      node.measureInWindow((x, y, width, height) => {
-        if (width <= 0 || height <= 0) {
-          resolve(undefined);
-          return;
-        }
-        resolve({ x, y, width, height });
-      });
-    });
-  }
-
-  async function measureScrollRect() {
-    const rect = await measureNode(scrollRef.current as unknown as View);
-    scrollRectRef.current = rect;
-  }
-
-  async function primeMemoryRects() {
-    const nextRects: Record<string, Rect> = {};
-    const entries = Object.entries(memoryCardRefs.current);
-    const results = await Promise.all(entries.map(async ([id, node]) => [id, await measureNode(node)] as const));
-    for (const [id, rect] of results) {
-      if (rect) {
-        nextRects[id] = rect;
-      }
-    }
-    memoryRectsRef.current = nextRects;
-  }
-
-  function stopAutoScroll() {
-    autoScrollDirectionRef.current = 0;
-    if (autoScrollTimerRef.current) {
-      clearInterval(autoScrollTimerRef.current);
-      autoScrollTimerRef.current = undefined;
-    }
-  }
-
-  function resolveDropMemoryId(pageX: number, pageY: number, draggingMemoryId: string): string | undefined {
-    for (const [memoryId, rect] of Object.entries(memoryRectsRef.current)) {
-      if (memoryId === draggingMemoryId) {
-        continue;
-      }
-      if (isPointInside(rect, pageX, pageY)) {
-        return memoryId;
-      }
-    }
-    return undefined;
-  }
-
-  function updateDropMemory(pageX: number, pageY: number, draggingMemoryId: string) {
-    const nextDrop = resolveDropMemoryId(pageX, pageY, draggingMemoryId);
-    setDropMemoryId((prev) => (prev === nextDrop ? prev : nextDrop));
-  }
-
-  function startAutoScroll(direction: -1 | 0 | 1) {
-    if (direction === autoScrollDirectionRef.current) {
-      return;
-    }
-    stopAutoScroll();
-    autoScrollDirectionRef.current = direction;
-    if (direction === 0) {
-      return;
-    }
-    autoScrollTimerRef.current = setInterval(() => {
-      const activeDrag = memoryDragRef.current;
-      if (!activeDrag) {
-        stopAutoScroll();
-        return;
-      }
-      const maxOffset = Math.max(0, scrollContentHeightRef.current - scrollViewportHeightRef.current);
-      if (maxOffset <= 0) {
-        return;
-      }
-      const nextOffset = Math.max(
-        0,
-        Math.min(maxOffset, scrollOffsetYRef.current + direction * AUTO_SCROLL_STEP_PX)
-      );
-      if (nextOffset === scrollOffsetYRef.current) {
-        return;
-      }
-      scrollOffsetYRef.current = nextOffset;
-      scrollRef.current?.scrollTo({ y: nextOffset, animated: false });
-      void primeMemoryRects().then(() => {
-        const dragNow = memoryDragRef.current;
-        if (!dragNow) {
-          return;
-        }
-        updateDropMemory(dragNow.pageX, dragNow.pageY, dragNow.memoryId);
-      });
-    }, AUTO_SCROLL_TICK_MS);
-  }
-
-  function handleAutoScrollByPointer(pageY: number) {
-    const scrollRect = scrollRectRef.current;
-    if (!scrollRect) {
-      startAutoScroll(0);
-      return;
-    }
-    const topEdge = scrollRect.y + AUTO_SCROLL_EDGE_PX;
-    const bottomEdge = scrollRect.y + scrollRect.height - AUTO_SCROLL_EDGE_PX;
-    if (pageY <= topEdge) {
-      startAutoScroll(-1);
-    } else if (pageY >= bottomEdge) {
-      startAutoScroll(1);
-    } else {
-      startAutoScroll(0);
-    }
-  }
-
-  function onMemoryDragStart(memoryId: string, pageX: number, pageY: number) {
-    const nextDrag = { memoryId, pageX, pageY };
-    memoryDragRef.current = nextDrag;
-    setMemoryDragState(nextDrag);
-    setDropMemoryId(undefined);
-    void Promise.all([measureScrollRect(), primeMemoryRects()]);
-  }
-
-  function onMemoryDragMove(pageX: number, pageY: number) {
-    const activeDrag = memoryDragRef.current;
-    if (!activeDrag) {
-      return;
-    }
-    const nextDrag = { ...activeDrag, pageX, pageY };
-    memoryDragRef.current = nextDrag;
-    setMemoryDragState(nextDrag);
-    updateDropMemory(pageX, pageY, activeDrag.memoryId);
-    handleAutoScrollByPointer(pageY);
-  }
-
-  function onMemoryDragEnd() {
-    const activeDrag = memoryDragRef.current;
-    if (!activeDrag) {
-      return;
-    }
-    stopAutoScroll();
-    const fallbackDropMemoryId = resolveDropMemoryId(activeDrag.pageX, activeDrag.pageY, activeDrag.memoryId);
-    const finalDropMemoryId = dropMemoryId ?? fallbackDropMemoryId;
-    if (finalDropMemoryId) {
-      const toIndex = memories.findIndex((memory) => memory.id === finalDropMemoryId);
-      if (toIndex >= 0) {
-        reorderMemory(projectId, activeDrag.memoryId, toIndex);
-      }
-    }
-    memoryDragRef.current = undefined;
-    setMemoryDragState(undefined);
-    setDropMemoryId(undefined);
-  }
+  const toolbarBottom = insets.bottom + 24;
+  const bottomToolbarHeight = insets.bottom + 102;
+  const composerCanSave = composerTitle.trim().length > 0 && !composerSaving;
 
   if (!project) {
     return (
-      <View style={styles.centered}>
-        <Text>Project not found.</Text>
+      <View style={[styles.missingScreen, { paddingTop: insets.top + 24 }]}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <StatusBar style="light" />
+        <Text style={styles.missingTitle}>Project not found</Text>
+        <Pressable style={styles.primaryAction} onPress={() => router.replace("/")}>
+          <Text style={styles.primaryActionText}>Go Home</Text>
+        </Pressable>
       </View>
     );
   }
 
   return (
     <View style={styles.screen}>
-      <ScrollView
-        ref={scrollRef}
-        contentContainerStyle={styles.container}
-        scrollEnabled={!memoryDragState}
-        onLayout={(event) => {
-          scrollViewportHeightRef.current = event.nativeEvent.layout.height;
-          void measureScrollRect();
-        }}
-        onContentSizeChange={(_width, height) => {
-          scrollContentHeightRef.current = height;
-        }}
-        onScroll={(event) => {
-          scrollOffsetYRef.current = event.nativeEvent.contentOffset.y;
-        }}
-        scrollEventThrottle={16}
-        onTouchMove={(event) => {
-          if (!memoryDragRef.current) {
-            return;
-          }
-          const touch = event.nativeEvent.touches[0];
-          if (!touch) {
-            return;
-          }
-          onMemoryDragMove(touch.pageX, touch.pageY);
-        }}
-        onTouchEnd={() => {
-          if (memoryDragRef.current) {
-            onMemoryDragEnd();
-          }
-        }}
-        onTouchCancel={() => {
-          if (memoryDragRef.current) {
-            onMemoryDragEnd();
-          }
-        }}
-      >
-        <View style={styles.headerCard}>
-          <View style={styles.headerRow}>
-            {project.thumbnailUri ? <Image source={{ uri: project.thumbnailUri }} style={styles.thumb} /> : null}
-            <View style={styles.headerText}>
-              <Text style={styles.meta}>{project.projectType}</Text>
-              <TextInput
-                style={styles.projectTitleInput}
-                value={projectNameDraft}
-                onChangeText={setProjectNameDraft}
-                placeholder="Project name"
-              />
-            </View>
-          </View>
-          <View style={styles.headerActions}>
-            <Pressable style={styles.tinyButtonWide} onPress={onSaveProjectTitle} disabled={savingProject}>
-              <Text>{savingProject ? "Saving..." : "Save Title"}</Text>
-            </Pressable>
-            <Pressable style={styles.tinyButtonWide} onPress={onPickProjectThumbnail} disabled={pickingThumb}>
-              <Text>{pickingThumb ? "Picking..." : "Change Thumbnail"}</Text>
-            </Pressable>
-          </View>
-          <View style={styles.headerActions}>
-            <Link href={{ pathname: "/project/[id]/preview", params: { id: project.id } }} asChild>
-              <Pressable style={styles.secondaryButton}>
-                <Text style={styles.secondaryButtonText}>Preview Project</Text>
-              </Pressable>
-            </Link>
-            <Pressable style={styles.secondaryButton} onPress={onExportProjectPdf} disabled={exporting}>
-              {exporting ? <ActivityIndicator /> : <Text style={styles.secondaryButtonText}>Export Project PDF</Text>}
-            </Pressable>
-            <Pressable style={styles.deleteButton} onPress={onDeleteProject}>
-              <Text style={styles.deleteButtonText}>Delete Project</Text>
-            </Pressable>
-          </View>
+      <Stack.Screen options={{ headerShown: false }} />
+      <StatusBar style="light" />
+
+      <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
+        <Pressable style={styles.topIconButton} onPress={() => router.replace("/")}>
+          <Ionicons name="chevron-back" size={28} color="#f8fbff" />
+        </Pressable>
+        <View style={styles.topBarTextWrap}>
+          <Text numberOfLines={1} style={styles.projectTitle}>
+            {project.name}
+          </Text>
+          <Text style={styles.projectStats}>{projectStats.text}</Text>
+        </View>
+        <Pressable style={styles.topIconButton} onPress={onOpenProjectMenu}>
+          <Ionicons name="ellipsis-horizontal" size={24} color="#f8fbff" />
+        </Pressable>
+      </View>
+
+      <View style={styles.contentArea}>
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionHeading}>Memories</Text>
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Create Memory (page/group)</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Memory title"
-            value={memoryTitle}
-            onChangeText={setMemoryTitle}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Theme label (optional)"
-            value={memoryTheme}
-            onChangeText={setMemoryTheme}
-          />
-          <Pressable style={styles.primaryButton} onPress={onCreateMemory} disabled={creating}>
-            <Text style={styles.primaryButtonText}>{creating ? "Creating..." : "Create Memory"}</Text>
-          </Pressable>
-        </View>
+        <DraggableFlatList
+          data={memoryListData}
+          keyExtractor={(item) => item.id}
+          activationDistance={12}
+          autoscrollThreshold={96}
+          autoscrollSpeed={180}
+          contentContainerStyle={{
+            paddingHorizontal: 20,
+            paddingTop: 8,
+            paddingBottom: bottomToolbarHeight + 72
+          }}
+          ItemSeparatorComponent={() => <View style={{ height: 18 }} />}
+          onDragEnd={({ data, from, to }) => {
+            setMemoryListData(data);
+            if (from === to) {
+              return;
+            }
+            const movedId = data[to]?.id;
+            if (!movedId) {
+              return;
+            }
+            const nextKey = orderKey(data);
+            setPendingMemoryOrderKey(nextKey);
+            reorderMemory(projectId, movedId, to);
+          }}
+          renderItem={({ item, drag, isActive }) => {
+            const memoryPhotos = prioritizePrimary(getPhotosByMemoryId(item.id), item.primaryPhotoId);
+            const pageCount = getPageSectionsByMemoryId(item.id).length;
+            const photoCount = memoryPhotos.length;
 
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Memories (ordered)</Text>
-          <Text style={styles.helper}>Long press and drag a memory card to reorder.</Text>
-          {memories.length === 0 ? <Text style={styles.empty}>No memories yet.</Text> : null}
-          {memories.map((memory, index) => {
-            const photoCount = getPhotosByMemoryId(memory.id).length;
-            const pageCount = getPageSectionsByMemoryId(memory.id).length;
-            const busy = busyMemoryId === memory.id;
-            const thumbnailUri = getMemoryThumbnailUri(memory.id);
-            const isEditing = editingMemoryId === memory.id;
-            const isDragging = memoryDragState?.memoryId === memory.id;
-            const isDropTarget = dropMemoryId === memory.id;
             return (
-              <View
-                key={memory.id}
-                ref={(node) => {
-                  memoryCardRefs.current[memory.id] = node;
-                }}
-                collapsable={false}
-                style={[
-                  styles.memoryCardWrap,
-                  isDropTarget ? styles.memoryDropTarget : null,
-                  isDragging ? styles.memoryDragging : null
-                ]}
-              >
-                <Pressable
-                  delayLongPress={180}
-                  onLongPress={(event) => {
-                    if (!isEditing) {
-                      onMemoryDragStart(memory.id, event.nativeEvent.pageX, event.nativeEvent.pageY);
-                    }
-                  }}
-                  style={styles.memoryCard}
-                >
-                  <View style={styles.memoryHead}>
-                    {thumbnailUri ? <Image source={{ uri: thumbnailUri }} style={styles.memoryThumb} /> : null}
-                    <View style={styles.memoryTextWrap}>
-                      {isEditing ? (
-                        <>
-                          <TextInput
-                            style={styles.inputCompact}
-                            value={editMemoryTitle}
-                            onChangeText={setEditMemoryTitle}
-                            placeholder="Memory title"
-                          />
-                          <TextInput
-                            style={styles.inputCompact}
-                            value={editMemoryTheme}
-                            onChangeText={setEditMemoryTheme}
-                            placeholder="Theme label (optional)"
-                          />
-                        </>
-                      ) : (
-                        <>
-                          <Text style={styles.memoryTitle}>
-                            {index + 1}. {memory.title}
-                          </Text>
-                          {memory.themeLabel ? <Text style={styles.memoryTheme}>{memory.themeLabel}</Text> : null}
-                          <Text style={styles.memoryMeta}>{photoCount} photos | {pageCount} pages</Text>
-                        </>
-                      )}
+              <ScaleDecorator>
+                <View style={[styles.memoryCardShell, isActive ? styles.memoryCardShellActive : null]}>
+                  <Pressable
+                    delayLongPress={180}
+                    onLongPress={drag}
+                    onPress={() => {
+                      if (!isActive) {
+                        router.push({ pathname: "/memory/[id]", params: { id: item.id } });
+                      }
+                    }}
+                    style={styles.memoryCard}
+                  >
+                    <MemoryCollagePreview photos={memoryPhotos} />
+                    <View style={styles.memoryBody}>
+                      <Text numberOfLines={1} style={styles.memoryName}>
+                        {item.title}
+                      </Text>
+                      <Text style={styles.memorySummary}>
+                        {pluralize(photoCount, "photo")} â€¢ {pluralize(pageCount, "page")}
+                      </Text>
                     </View>
-                  </View>
-                  <View style={styles.memoryActionsWrap}>
-                    <View style={styles.memoryActions}>
-                      <Pressable style={styles.tinyButton} onPress={() => moveMemory(projectId, memory.id, "up")}>
-                        <Text>Up</Text>
-                      </Pressable>
-                      <Pressable style={styles.tinyButton} onPress={() => moveMemory(projectId, memory.id, "down")}>
-                        <Text>Down</Text>
-                      </Pressable>
-                      <Pressable style={styles.tinyButton} onPress={() => onAddPhotos(memory.id)} disabled={busy}>
-                        {busy ? <ActivityIndicator /> : <Text>Add Photos</Text>}
-                      </Pressable>
-                      <Link href={{ pathname: "/memory/[id]", params: { id: memory.id } }} asChild>
-                        <Pressable style={styles.tinyButton}>
-                          <Text>View</Text>
-                        </Pressable>
-                      </Link>
-                    </View>
-                    <View style={styles.memoryActions}>
-                      {isEditing ? (
-                        <>
-                          <Pressable style={styles.tinyButton} onPress={saveMemoryEdit}>
-                            <Text>Save</Text>
-                          </Pressable>
-                          <Pressable style={styles.tinyButton} onPress={() => setEditingMemoryId(null)}>
-                            <Text>Cancel</Text>
-                          </Pressable>
-                        </>
-                      ) : (
-                        <Pressable style={styles.tinyButton} onPress={() => startMemoryEdit(memory.id)}>
-                          <Text>Edit</Text>
-                        </Pressable>
-                      )}
-                      <Pressable style={styles.tinyButtonDanger} onPress={() => onDeleteMemory(memory.id)}>
-                        <Text style={styles.deleteText}>Delete</Text>
-                      </Pressable>
-                    </View>
-                  </View>
+                  </Pressable>
+                  <Pressable hitSlop={10} onPress={() => openEditComposer(item.id)} style={styles.memoryMenuButton}>
+                    <Ionicons name="ellipsis-horizontal" size={18} color="#d7e2ff" />
+                  </Pressable>
+                </View>
+              </ScaleDecorator>
+            );
+          }}
+          ListEmptyComponent={
+            <View style={styles.emptyCard}>
+              <Ionicons name="images-outline" size={34} color="#5d7097" />
+              <Text style={styles.emptyTitle}>No memories yet</Text>
+              <Text style={styles.emptyText}>Create the first memory with the add button below.</Text>
+            </View>
+          }
+        />
+      </View>
+
+      <Pressable onPress={openCreateComposer} style={[styles.addButton, { bottom: toolbarBottom + 22 }]}>
+        <Ionicons name="add" size={34} color="#ffffff" />
+      </Pressable>
+
+      <View style={[styles.bottomToolbar, { height: bottomToolbarHeight, paddingBottom: insets.bottom + 18 }]}>
+        <Pressable style={styles.toolbarItem} onPress={() => router.replace("/")}>
+          <Ionicons name="home-outline" size={22} color="#d2def5" />
+          <Text style={styles.toolbarLabel}>Home</Text>
+        </Pressable>
+        <Pressable
+          style={styles.toolbarItem}
+          onPress={() => router.push({ pathname: "/project/[id]/preview", params: { id: project.id } })}
+        >
+          <Ionicons name="book-outline" size={22} color="#d2def5" />
+          <Text style={styles.toolbarLabel}>Preview</Text>
+        </Pressable>
+        <View style={styles.toolbarCenterSpacer} />
+        <Pressable style={styles.toolbarItem} onPress={onOrderProject} disabled={exporting}>
+          {exporting ? <ActivityIndicator color="#d2def5" /> : <Ionicons name="cart-outline" size={22} color="#d2def5" />}
+          <Text style={styles.toolbarLabel}>Order</Text>
+        </Pressable>
+        <Pressable style={styles.toolbarItem} onPress={() => router.push("/prompts")}>
+          <Ionicons name="notifications-outline" size={22} color="#d2def5" />
+          <Text style={styles.toolbarLabel}>Notifications</Text>
+        </Pressable>
+      </View>
+
+      <Modal transparent animationType="slide" visible={composerVisible} onRequestClose={closeComposer}>
+        <View style={styles.modalBackdrop}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            style={styles.modalAvoider}
+          >
+            <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 18 }]}>
+              <View style={styles.modalHeader}>
+                <View>
+                  <Text style={styles.modalTitle}>{composerMode === "create" ? "New Memory" : "Edit Memory"}</Text>
+                  <Text style={styles.modalSubtitle}>
+                    Set a title, pick starting photos, and choose the memory thumbnail.
+                  </Text>
+                </View>
+                <Pressable style={styles.modalCloseButton} onPress={closeComposer}>
+                  <Ionicons name="close" size={22} color="#eef4ff" />
                 </Pressable>
               </View>
-            );
-          })}
-        </View>
-      </ScrollView>
 
-      {memoryDragState && draggedMemory ? (
-        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-          <View style={[styles.dragPreview, { left: memoryDragState.pageX - 110, top: memoryDragState.pageY - 34 }]}>
-            {getMemoryThumbnailUri(draggedMemory.id) ? (
-              <Image source={{ uri: getMemoryThumbnailUri(draggedMemory.id) }} style={styles.dragPreviewThumb} />
-            ) : null}
-            <Text numberOfLines={1} style={styles.dragPreviewText}>
-              {draggedMemory.title}
-            </Text>
-          </View>
+              <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
+                <Text style={styles.fieldLabel}>Memory Title</Text>
+                <TextInput
+                  value={composerTitle}
+                  onChangeText={setComposerTitle}
+                  placeholder="Memory title"
+                  placeholderTextColor="#6f7f9f"
+                  style={styles.modalInput}
+                />
+
+                <View style={styles.inlineActionRow}>
+                  <Text style={styles.fieldLabel}>Photos</Text>
+                  <Pressable style={styles.inlineButton} onPress={onPickComposerPhotos} disabled={composerPicking}>
+                    {composerPicking ? (
+                      <ActivityIndicator color="#eef4ff" />
+                    ) : (
+                      <Text style={styles.inlineButtonText}>Add Photos</Text>
+                    )}
+                  </Pressable>
+                </View>
+
+                <View style={styles.thumbnailPreviewCard}>
+                  {composerThumbnailUri ? (
+                    <Image source={{ uri: composerThumbnailUri }} style={styles.thumbnailPreviewImage} />
+                  ) : (
+                    <View style={styles.thumbnailPreviewPlaceholder}>
+                      <Ionicons name="image-outline" size={32} color="#6c7c9d" />
+                      <Text style={styles.thumbnailPreviewPlaceholderText}>Select a thumbnail</Text>
+                    </View>
+                  )}
+                </View>
+
+                <Text style={styles.fieldLabel}>Thumbnail</Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.thumbnailPickerRow}
+                >
+                  {composerExistingPhotos.map((photo) => {
+                    const selected =
+                      composerThumbnailChoice?.kind === "existing" && composerThumbnailChoice.photoId === photo.id;
+                    return (
+                      <Pressable
+                        key={photo.id}
+                        onPress={() => setComposerThumbnailChoice({ kind: "existing", photoId: photo.id })}
+                        style={[styles.thumbnailOption, selected ? styles.thumbnailOptionSelected : null]}
+                      >
+                        <Image source={{ uri: photo.uri }} style={styles.thumbnailOptionImage} />
+                        <View style={styles.thumbTagExisting}>
+                          <Text style={styles.thumbTagText}>Current</Text>
+                        </View>
+                      </Pressable>
+                    );
+                  })}
+                  {composerStagedAssets.map((asset) => {
+                    const selected =
+                      composerThumbnailChoice?.kind === "staged" &&
+                      composerThumbnailChoice.stagedKey === asset.key;
+                    return (
+                      <Pressable
+                        key={asset.key}
+                        onPress={() => setComposerThumbnailChoice({ kind: "staged", stagedKey: asset.key })}
+                        style={[styles.thumbnailOption, selected ? styles.thumbnailOptionSelected : null]}
+                      >
+                        <Image source={{ uri: asset.uri }} style={styles.thumbnailOptionImage} />
+                        <View style={styles.thumbTagNew}>
+                          <Text style={styles.thumbTagText}>New</Text>
+                        </View>
+                      </Pressable>
+                    );
+                  })}
+                  {composerExistingPhotos.length === 0 && composerStagedAssets.length === 0 ? (
+                    <View style={[styles.thumbnailOption, styles.thumbnailOptionEmpty]}>
+                      <Ionicons name="images-outline" size={28} color="#607296" />
+                    </View>
+                  ) : null}
+                </ScrollView>
+
+                <View style={styles.modalActions}>
+                  {composerMode === "edit" ? (
+                    <Pressable style={styles.deleteMemoryButton} onPress={onDeleteComposerMemory}>
+                      <Text style={styles.deleteMemoryButtonText}>Delete Memory</Text>
+                    </Pressable>
+                  ) : null}
+                  <Pressable
+                    style={[styles.primaryAction, !composerCanSave ? styles.primaryActionDisabled : null]}
+                    onPress={onSaveComposer}
+                    disabled={!composerCanSave}
+                  >
+                    <Text style={styles.primaryActionText}>
+                      {composerSaving ? "Saving..." : composerMode === "create" ? "Create Memory" : "Save Changes"}
+                    </Text>
+                  </Pressable>
+                </View>
+              </ScrollView>
+            </View>
+          </KeyboardAvoidingView>
         </View>
-      ) : null}
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   screen: {
-    flex: 1
-  },
-  container: {
-    padding: 16,
-    gap: 12
-  },
-  centered: {
     flex: 1,
+    backgroundColor: "#0a1220"
+  },
+  missingScreen: {
+    flex: 1,
+    backgroundColor: "#0a1220",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+    gap: 16
+  },
+  missingTitle: {
+    color: "#f8fbff",
+    fontSize: 22,
+    fontWeight: "700"
+  },
+  topBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingBottom: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#20304d"
+  },
+  topIconButton: {
+    width: 40,
+    height: 40,
     alignItems: "center",
     justifyContent: "center"
   },
-  headerCard: {
-    backgroundColor: "#ffffff",
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    borderRadius: 12,
-    padding: 14,
-    gap: 10
-  },
-  headerRow: {
-    flexDirection: "row",
-    gap: 10,
+  topBarTextWrap: {
+    flex: 1,
     alignItems: "center"
   },
-  headerText: {
+  projectTitle: {
+    color: "#f8fbff",
+    fontSize: 20,
+    fontWeight: "800"
+  },
+  projectStats: {
+    marginTop: 4,
+    color: "#9fb2d9",
+    fontSize: 13
+  },
+  contentArea: {
     flex: 1
   },
-  headerActions: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8
+  sectionHeaderRow: {
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 6
   },
-  thumb: {
-    width: 54,
-    height: 54,
-    borderRadius: 12,
-    backgroundColor: "#e2e8f0"
+  sectionHeading: {
+    color: "#f8fbff",
+    fontSize: 22,
+    fontWeight: "800"
   },
-  meta: {
-    color: "#475569",
-    marginBottom: 4
-  },
-  projectTitleInput: {
+  memoryCardShell: {
+    borderRadius: 24,
+    backgroundColor: "#101a2d",
     borderWidth: 1,
-    borderColor: "#cbd5e1",
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#0f172a"
+    borderColor: "#20304d",
+    overflow: "hidden",
+    shadowColor: "#000000",
+    shadowOpacity: 0.24,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8
   },
-  card: {
-    backgroundColor: "#ffffff",
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    borderRadius: 12,
-    padding: 14
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    marginBottom: 8,
-    color: "#0f172a"
-  },
-  helper: {
-    marginBottom: 8,
-    color: "#64748b"
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 8
-  },
-  inputCompact: {
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    marginBottom: 6
-  },
-  primaryButton: {
-    marginTop: 2,
-    backgroundColor: "#0f766e",
-    borderRadius: 10,
-    paddingVertical: 10,
-    alignItems: "center"
-  },
-  primaryButtonText: {
-    color: "#ffffff",
-    fontWeight: "600"
-  },
-  secondaryButton: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: "#94a3b8",
-    borderRadius: 10,
-    paddingVertical: 10,
-    alignItems: "center"
-  },
-  secondaryButtonText: {
-    color: "#0f172a",
-    fontWeight: "600"
-  },
-  deleteButton: {
-    borderWidth: 1,
-    borderColor: "#fecaca",
-    backgroundColor: "#fef2f2",
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  deleteButtonText: {
-    color: "#b91c1c",
-    fontWeight: "600"
-  },
-  deleteText: {
-    color: "#b91c1c"
-  },
-  empty: {
-    color: "#64748b"
-  },
-  memoryCardWrap: {
-    borderRadius: 10
-  },
-  memoryDropTarget: {
-    borderWidth: 2,
-    borderColor: "#1d4ed8",
-    backgroundColor: "#eff6ff"
-  },
-  memoryDragging: {
-    opacity: 0.28
+  memoryCardShellActive: {
+    opacity: 0.92
   },
   memoryCard: {
-    borderTopWidth: 1,
-    borderTopColor: "#f1f5f9",
-    paddingVertical: 10,
-    gap: 8
+    padding: 12,
+    gap: 14
   },
-  memoryHead: {
+  memoryMenuButton: {
+    position: "absolute",
+    right: 10,
+    top: 10,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "rgba(12, 20, 36, 0.86)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#223456"
+  },
+  previewPanel: {
+    height: 196,
+    borderRadius: 18,
+    overflow: "hidden",
+    backgroundColor: "#1a2843"
+  },
+  previewEmpty: {
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+    borderWidth: 1,
+    borderColor: "#233556",
+    borderStyle: "dashed"
+  },
+  previewEmptyText: {
+    color: "#9badcf",
+    fontSize: 14
+  },
+  previewSingle: {
+    width: "100%",
+    height: "100%"
+  },
+  previewRow: {
+    flex: 1,
     flexDirection: "row",
+    gap: 3,
+    padding: 3
+  },
+  previewHalf: {
+    flex: 1,
+    height: "100%",
+    borderRadius: 14
+  },
+  previewThirdWrap: {
+    flex: 1,
+    borderRadius: 14,
+    overflow: "hidden"
+  },
+  previewThird: {
+    width: "100%",
+    height: "100%"
+  },
+  previewOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(5, 10, 20, 0.45)",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  previewOverlayText: {
+    color: "#ffffff",
+    fontSize: 28,
+    fontWeight: "800"
+  },
+  memoryBody: {
+    gap: 6,
+    paddingHorizontal: 4,
+    paddingBottom: 4
+  },
+  memoryName: {
+    color: "#f8fbff",
+    fontSize: 19,
+    fontWeight: "800",
+    paddingRight: 36
+  },
+  memorySummary: {
+    color: "#9fb2d9",
+    fontSize: 14
+  },
+  emptyCard: {
+    marginTop: 12,
+    padding: 24,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: "#223456",
+    borderStyle: "dashed",
+    backgroundColor: "#10192c",
+    alignItems: "center",
     gap: 10
   },
-  memoryThumb: {
-    width: 64,
-    height: 64,
-    borderRadius: 10,
-    backgroundColor: "#e2e8f0"
+  emptyTitle: {
+    color: "#f3f7ff",
+    fontWeight: "700",
+    fontSize: 18
   },
-  memoryTextWrap: {
-    flex: 1
+  emptyText: {
+    color: "#8ea4cf",
+    textAlign: "center"
   },
-  memoryTitle: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#0f172a"
-  },
-  memoryTheme: {
-    marginTop: 2,
-    color: "#334155"
-  },
-  memoryMeta: {
-    marginTop: 2,
-    color: "#64748b",
-    fontSize: 12
-  },
-  memoryActionsWrap: {
-    gap: 8
-  },
-  memoryActions: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8
-  },
-  tinyButton: {
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: "#f8fafc"
-  },
-  tinyButtonWide: {
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    backgroundColor: "#f8fafc",
-    minWidth: 120,
-    alignItems: "center"
-  },
-  tinyButtonDanger: {
-    borderWidth: 1,
-    borderColor: "#fecaca",
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: "#fef2f2"
-  },
-  dragPreview: {
+  addButton: {
     position: "absolute",
-    width: 220,
-    height: 68,
-    borderRadius: 12,
+    alignSelf: "center",
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: "#2f80ff",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#2f80ff",
+    shadowOpacity: 0.45,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 12,
+    zIndex: 20
+  },
+  bottomToolbar: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 92,
+    backgroundColor: "#0d1729",
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#223456",
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingTop: 12
+  },
+  toolbarItem: {
+    flex: 1,
+    alignItems: "center",
+    gap: 6
+  },
+  toolbarCenterSpacer: {
+    width: 76
+  },
+  toolbarLabel: {
+    color: "#d2def5",
+    fontSize: 12,
+    fontWeight: "600"
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(2, 6, 14, 0.76)",
+    justifyContent: "flex-end"
+  },
+  modalAvoider: {
+    flex: 1,
+    justifyContent: "flex-end"
+  },
+  modalSheet: {
+    maxHeight: "88%",
+    backgroundColor: "#0f182a",
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    borderTopWidth: 1,
+    borderColor: "#223456",
+    paddingHorizontal: 20,
+    paddingTop: 18
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 16,
+    marginBottom: 14
+  },
+  modalTitle: {
+    color: "#f8fbff",
+    fontSize: 22,
+    fontWeight: "800"
+  },
+  modalSubtitle: {
+    marginTop: 6,
+    color: "#8ea4cf",
+    fontSize: 13,
+    lineHeight: 18,
+    maxWidth: 280
+  },
+  modalCloseButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#17223a",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  modalContent: {
+    paddingBottom: 12,
+    gap: 16
+  },
+  fieldLabel: {
+    color: "#dce7ff",
+    fontSize: 13,
+    fontWeight: "700",
+    letterSpacing: 0.4,
+    textTransform: "uppercase"
+  },
+  modalInput: {
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#0f766e",
-    backgroundColor: "#ffffff",
+    borderColor: "#233456",
+    backgroundColor: "#111d31",
+    color: "#f8fbff",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 16
+  },
+  inlineActionRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    padding: 8,
-    opacity: 0.96
+    justifyContent: "space-between",
+    gap: 12
   },
-  dragPreviewThumb: {
-    width: 50,
-    height: 50,
-    borderRadius: 8,
-    backgroundColor: "#e2e8f0"
+  inlineButton: {
+    minWidth: 108,
+    borderRadius: 14,
+    backgroundColor: "#2f80ff",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 10
   },
-  dragPreviewText: {
+  inlineButtonText: {
+    color: "#ffffff",
+    fontWeight: "700"
+  },
+  thumbnailPreviewCard: {
+    height: 190,
+    borderRadius: 22,
+    backgroundColor: "#14223a",
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#223456"
+  },
+  thumbnailPreviewImage: {
+    width: "100%",
+    height: "100%"
+  },
+  thumbnailPreviewPlaceholder: {
     flex: 1,
-    color: "#0f172a",
-    fontWeight: "600"
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10
+  },
+  thumbnailPreviewPlaceholderText: {
+    color: "#8ea4cf"
+  },
+  thumbnailPickerRow: {
+    gap: 10,
+    paddingRight: 12
+  },
+  thumbnailOption: {
+    width: 92,
+    height: 92,
+    borderRadius: 18,
+    borderWidth: 2,
+    borderColor: "#20304d",
+    overflow: "hidden",
+    backgroundColor: "#14223a"
+  },
+  thumbnailOptionSelected: {
+    borderColor: "#2f80ff"
+  },
+  thumbnailOptionImage: {
+    width: "100%",
+    height: "100%"
+  },
+  thumbnailOptionEmpty: {
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  thumbTagExisting: {
+    position: "absolute",
+    left: 6,
+    bottom: 6,
+    backgroundColor: "rgba(16, 35, 61, 0.9)",
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4
+  },
+  thumbTagNew: {
+    position: "absolute",
+    left: 6,
+    bottom: 6,
+    backgroundColor: "rgba(47, 128, 255, 0.9)",
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4
+  },
+  thumbTagText: {
+    color: "#ffffff",
+    fontSize: 11,
+    fontWeight: "700"
+  },
+  modalActions: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 6
+  },
+  primaryAction: {
+    flex: 1,
+    minHeight: 52,
+    borderRadius: 16,
+    backgroundColor: "#2f80ff",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 18
+  },
+  primaryActionDisabled: {
+    opacity: 0.5
+  },
+  primaryActionText: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "800"
+  },
+  deleteMemoryButton: {
+    minHeight: 52,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#6f2432",
+    backgroundColor: "#28131a",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 18
+  },
+  deleteMemoryButtonText: {
+    color: "#ff8ea2",
+    fontSize: 14,
+    fontWeight: "700"
   }
 });
+

@@ -1,10 +1,14 @@
-import { Stack, useLocalSearchParams } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+import { StatusBar } from "expo-status-bar";
+import { router, Stack, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   Image,
+  Keyboard,
   Modal,
+  TextInput,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -13,6 +17,7 @@ import {
   View
 } from "react-native";
 import DraggableFlatList from "react-native-draggable-flatlist";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppData } from "../../src/context/AppContext";
 import { DragOverlay } from "../../src/editor/drag/DragOverlay";
 import { DragTargetRegistry } from "../../src/editor/drag/dragTargets";
@@ -20,9 +25,10 @@ import { useDragInteraction } from "../../src/editor/drag/useDragInteraction";
 import { DragPayload, DragResolution, DropTarget, Rect } from "../../src/editor/drag/types";
 import { buildLayoutDocument } from "../../src/layout/engine";
 import { applySlotOverridesToPage } from "../../src/layout/overrides";
+import { clampPhotoOffset, getPhotoAspect, getPhotoRenderMetrics, getPhotoScaleBounds } from "../../src/layout/photoMetrics";
 import { listTemplatesForPhotoCount, TemplateDefinition } from "../../src/layout/templates";
 import { SlotOverride, useEditorStore } from "../../src/state/editorStore";
-import { MemoryPageSection } from "../../src/types";
+import { MemoryPageSection, PageTextBox, TextBoxAlignment } from "../../src/types";
 
 type InspectorKind = "layout" | "background" | "border" | "text";
 type IconKind = "layout" | "text" | "border" | "background";
@@ -32,12 +38,39 @@ type PhotoEditorState = {
   slotId: string;
 };
 
+type TextBoxGestureState = {
+  mode?: "move" | "resize";
+  textBoxId?: string;
+  startPageX: number;
+  startPageY: number;
+  startBox?: PageTextBox;
+};
+
 const COLOR_PALETTE = ["#ffffff", "#fff7ed", "#fef3c7", "#ecfccb", "#e0f2fe", "#ede9fe", "#fce7f3", "#f1f5f9"];
+const TEXT_COLORS = ["#0f172a", "#1d4ed8", "#0f766e", "#b45309", "#be123c", "#6d28d9", "#ffffff"];
 const BORDER_COLORS = ["#e2e8f0", "#0f172a", "#334155", "#0f766e", "#c2410c", "#b91c1c"];
-const TEXT_COLORS = ["#0f172a", "#334155", "#0f766e", "#7c3aed", "#c2410c", "#be185d"];
-const FONT_FAMILIES = ["System", "serif", "sans-serif", "monospace"];
-const FONT_WEIGHTS = ["400", "500", "600", "700"];
+const FONT_FAMILIES = [
+  { id: "System", label: "Sans" },
+  { id: "serif", label: "Serif" },
+  { id: "monospace", label: "Mono" }
+];
 const DRAG_HOLD_MS = 220;
+
+function applyColorOpacity(color: string | undefined, opacity: number | undefined) {
+  if (!color) {
+    return "transparent";
+  }
+  const normalizedOpacity = clamp(opacity ?? 1, 0, 1);
+  const hex = color.replace("#", "");
+  const safeHex = hex.length === 3 ? hex.split("").map((part) => part + part).join("") : hex;
+  const r = Number.parseInt(safeHex.slice(0, 2), 16);
+  const g = Number.parseInt(safeHex.slice(2, 4), 16);
+  const b = Number.parseInt(safeHex.slice(4, 6), 16);
+  if ([r, g, b].some((value) => Number.isNaN(value))) {
+    return color;
+  }
+  return `rgba(${r}, ${g}, ${b}, ${normalizedOpacity})`;
+}
 
 function sameSectionOrder(left: MemoryPageSection[], right: MemoryPageSection[]) {
   if (left.length !== right.length) {
@@ -57,6 +90,18 @@ function sectionOrderKey(sections: MemoryPageSection[]) {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function estimateTextBoxSize(text: string, fontSize: number, canvasSize: number) {
+  const lines = (text || "Text").split("\n");
+  const longestLineLength = Math.max(...lines.map((line) => line.trim().length), 4);
+  const safeCanvasSize = Math.max(canvasSize, 1);
+  const widthPx = clamp(longestLineLength * fontSize * 0.56 + 28, fontSize * 3.2, safeCanvasSize * 0.88);
+  const heightPx = clamp(lines.length * fontSize * 1.24 + 22, fontSize * 1.9, safeCanvasSize * 0.52);
+  return {
+    width: clamp(widthPx / safeCanvasSize, 0.18, 0.9),
+    height: clamp(heightPx / safeCanvasSize, 0.1, 0.56)
+  };
 }
 
 function MiniTemplatePreview({ template, active }: { template: TemplateDefinition; active: boolean }) {
@@ -130,6 +175,7 @@ function IconOrb({
 export default function MemoryDetailsScreen() {
   const params = useLocalSearchParams<{ id: string }>();
   const memoryId = Array.isArray(params.id) ? (params.id[0] ?? "") : (params.id ?? "");
+  const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const {
     getProjectById,
@@ -138,9 +184,14 @@ export default function MemoryDetailsScreen() {
     getPageSectionsByMemoryId,
     addPhotosToMemory,
     createPageSection,
+    deletePageSection,
+    deletePhotos,
     reorderPageSection,
     movePhotoToPage,
     removePhotoFromPage,
+    addPageTextBox,
+    updatePageTextBox,
+    deletePageTextBox,
     setPageSectionTemplate,
     updatePageSectionStyle
   } = useAppData();
@@ -154,9 +205,12 @@ export default function MemoryDetailsScreen() {
   const clearPageOverrides = useEditorStore((state) => state.clearPageOverrides);
 
   const [adding, setAdding] = useState(false);
-  const [selectedPhotoIds, setSelectedPhotoIds] = useState<string[]>([]);
   const [openInspector, setOpenInspector] = useState<{ pageId: string; kind: InspectorKind } | undefined>(undefined);
   const [photoEditor, setPhotoEditor] = useState<PhotoEditorState | undefined>(undefined);
+  const [selectedTextBoxId, setSelectedTextBoxId] = useState<string | undefined>(undefined);
+  const [editingTextBoxId, setEditingTextBoxId] = useState<string | undefined>(undefined);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [galleryDeletePhotoId, setGalleryDeletePhotoId] = useState<string | undefined>(undefined);
   const [pageRailDragging, setPageRailDragging] = useState(false);
   const [pageRailData, setPageRailData] = useState<MemoryPageSection[]>([]);
   const [pendingPageRailOrderKey, setPendingPageRailOrderKey] = useState<string | undefined>(undefined);
@@ -188,6 +242,11 @@ export default function MemoryDetailsScreen() {
     startDistance: 0,
     startX: 0,
     startY: 0
+  });
+  const textInputRef = useRef<TextInput | null>(null);
+  const textBoxGestureRef = useRef<TextBoxGestureState>({
+    startPageX: 0,
+    startPageY: 0
   });
 
   const memory = getMemoryById(memoryId);
@@ -247,6 +306,7 @@ export default function MemoryDetailsScreen() {
     () => pageSections.find((section) => section.id === activePageId),
     [activePageId, pageSections]
   );
+  const activeTextBoxes = useMemo(() => activeSection?.textBoxes ?? [], [activeSection]);
   const activeRenderedPage = activePageId ? renderedPageById[activePageId] : undefined;
   const selectedPage = useMemo(
     () => renderedPages.find((entry) => entry.applied.id === selectedPageId)?.applied,
@@ -257,35 +317,40 @@ export default function MemoryDetailsScreen() {
     [selectedPage, selectedSlotId]
   );
   const selectedSlotPhoto = selectedSlot?.photoId ? photosById[selectedSlot.photoId] : undefined;
+  const selectedTextBox = activeTextBoxes.find((textBox) => textBox.id === selectedTextBoxId);
   const canvasSize = Math.min(width - 64, height * 0.33, 352);
   const pageCardWidth = Math.min(width - 30, 460);
   const editorSize = Math.min(width - 32, height * 0.56);
   const stageButtonSize = 64;
   const stagingPhotos = useMemo(() => photos.filter((photo) => !assignedPhotoIds.has(photo.id)), [assignedPhotoIds, photos]);
-  const modalFocus = useMemo(() => {
+  const galleryDeletePhoto = galleryDeletePhotoId ? photosById[galleryDeletePhotoId] : undefined;
+  const activePageIndex = useMemo(
+    () => (activeSection ? pageSections.findIndex((section) => section.id === activeSection.id) + 1 : 0),
+    [activeSection, pageSections]
+  );
+  const topBarMeta = activePageIndex > 0 ? `PAGE ${activePageIndex} OF ${pageSections.length}` : `${pageSections.length} PAGES`;
+  const modalCrop = useMemo(() => {
     if (!selectedSlot) {
       return {
-        pageSize: editorSize,
-        left: 0,
-        top: 0
+        width: editorSize * 0.82,
+        height: editorSize * 0.82,
+        left: editorSize * 0.09,
+        top: editorSize * 0.09
       };
     }
-    const available = 0.82;
-    const focusScale = clamp(
-      Math.min(
-        available / Math.max(0.18, selectedSlot.frame.width),
-        available / Math.max(0.18, selectedSlot.frame.height)
-      ),
-      1,
-      3.25
-    );
-    const pageSize = editorSize * focusScale;
-    const centerX = selectedSlot.frame.x + selectedSlot.frame.width / 2;
-    const centerY = selectedSlot.frame.y + selectedSlot.frame.height / 2;
+    const aspect = Math.max(0.2, selectedSlot.frame.width) / Math.max(0.2, selectedSlot.frame.height);
+    const maxSize = editorSize * 0.82;
+    let width = maxSize;
+    let height = width / aspect;
+    if (height > maxSize) {
+      height = maxSize;
+      width = height * aspect;
+    }
     return {
-      pageSize,
-      left: editorSize / 2 - centerX * pageSize,
-      top: editorSize / 2 - centerY * pageSize
+      width,
+      height,
+      left: (editorSize - width) / 2,
+      top: (editorSize - height) / 2
     };
   }, [editorSize, selectedSlot]);
 
@@ -310,13 +375,6 @@ export default function MemoryDetailsScreen() {
   }, [layoutDocument, setDocument]);
 
   useEffect(() => {
-    setSelectedPhotoIds((prev) => {
-      const next = prev.filter((photoId) => Boolean(photosById[photoId]));
-      return next.length === prev.length ? prev : next;
-    });
-  }, [photosById]);
-
-  useEffect(() => {
     if (!selectedPageId || !selectedSlotId) {
       return;
     }
@@ -329,21 +387,213 @@ export default function MemoryDetailsScreen() {
   }, [renderedPageById, selectedPageId, selectedSlotId, setSelection]);
 
   useEffect(() => {
+    if (!selectedTextBoxId) {
+      return;
+    }
+    if (!activeTextBoxes.some((textBox) => textBox.id === selectedTextBoxId)) {
+      setSelectedTextBoxId(undefined);
+      setEditingTextBoxId(undefined);
+    }
+  }, [activeTextBoxes, selectedTextBoxId]);
+
+  useEffect(() => {
     if (activePageId && activePageId !== selectedPageId) {
       setSelection(activePageId, undefined);
     }
   }, [activePageId, selectedPageId, setSelection]);
 
-  function togglePhotoSelection(photoId: string) {
-    setSelectedPhotoIds((prev) => (prev.includes(photoId) ? prev.filter((id) => id !== photoId) : [...prev, photoId]));
-  }
+  useEffect(() => {
+    const showSubscription = Keyboard.addListener("keyboardDidShow", () => setKeyboardVisible(true));
+    const hideSubscription = Keyboard.addListener("keyboardDidHide", () => {
+      setKeyboardVisible(false);
+      setEditingTextBoxId(undefined);
+    });
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (editingTextBoxId && textInputRef.current) {
+      const timeoutId = setTimeout(() => textInputRef.current?.focus(), 60);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [editingTextBoxId]);
 
   function onPhotoPress(photoId: string) {
     if (suppressNextPressPhotoIdRef.current === photoId) {
       suppressNextPressPhotoIdRef.current = undefined;
       return;
     }
-    togglePhotoSelection(photoId);
+    setGalleryDeletePhotoId(photoId);
+  }
+
+  function confirmDeleteActivePage() {
+    if (!activeSection) {
+      return;
+    }
+    Alert.alert("Delete page?", "Choose what to do with the photos on this page.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Keep Photos",
+        onPress: () => {
+          clearPageOverrides(activeSection.id);
+          deletePageSection(activeSection.id, { photoMode: "keep" });
+          setSelection(undefined, undefined);
+          setPhotoEditor(undefined);
+          setOpenInspector(undefined);
+        }
+      },
+      {
+        text: "Discard Photos",
+        style: "destructive",
+        onPress: () => {
+          clearPageOverrides(activeSection.id);
+          deletePageSection(activeSection.id, { photoMode: "discard" });
+          setSelection(undefined, undefined);
+          setPhotoEditor(undefined);
+          setOpenInspector(undefined);
+        }
+      }
+    ]);
+  }
+
+  function handleAddTextBox() {
+    if (!activeSection) {
+      return;
+    }
+    const sectionStyle = getSectionStyle(activeSection.id);
+    const defaultFontSize = Math.max(18, sectionStyle.textSize);
+    const defaultSize = estimateTextBoxSize("", defaultFontSize, canvasSize);
+    const createdId = addPageTextBox(activeSection.id, {
+      textColor: sectionStyle.textColor,
+      fontFamily: sectionStyle.textFontFamily,
+      fontWeight: sectionStyle.textWeight,
+      fontSize: defaultFontSize,
+      fontStyle: "normal",
+      fillColor: "#ffffff",
+      fillOpacity: 0,
+      width: defaultSize.width,
+      height: defaultSize.height,
+      autoSize: true
+    });
+    if (!createdId) {
+      return;
+    }
+    setSelectedTextBoxId(createdId);
+    setEditingTextBoxId(createdId);
+    setOpenInspector({ pageId: activeSection.id, kind: "text" });
+  }
+
+  function buildTextBoxUpdates(textBox: PageTextBox, updates: Partial<PageTextBox>): Partial<PageTextBox> {
+    const merged = { ...textBox, ...updates };
+    if (!merged.autoSize) {
+      return updates;
+    }
+    const nextFontSize = merged.fontSize ?? getSectionStyle(activeSection?.id ?? "").textSize;
+    const nextSize = estimateTextBoxSize(merged.text ?? "", nextFontSize, canvasSize);
+    return {
+      ...updates,
+      width: nextSize.width,
+      height: nextSize.height,
+      x: clamp(merged.x, 0, 1 - nextSize.width),
+      y: clamp(merged.y, 0, 1 - nextSize.height)
+    };
+  }
+
+  function updateTextBox(textBox: PageTextBox, updates: Partial<PageTextBox>) {
+    if (!activeSection) {
+      return;
+    }
+    updatePageTextBox(activeSection.id, textBox.id, buildTextBoxUpdates(textBox, updates));
+  }
+
+  function updateSelectedTextBox(updates: Partial<PageTextBox>) {
+    if (!selectedTextBox) {
+      return;
+    }
+    updateTextBox(selectedTextBox, updates);
+  }
+
+  function clearTextBoxSelection() {
+    setSelectedTextBoxId(undefined);
+    setEditingTextBoxId(undefined);
+    if (openInspector?.kind === "text") {
+      setOpenInspector(undefined);
+    }
+  }
+
+  function exitTextMode() {
+    Keyboard.dismiss();
+    setSelectedTextBoxId(undefined);
+    setEditingTextBoxId(undefined);
+    if (activeSection) {
+      setOpenInspector((prev) => (prev?.pageId === activeSection.id && prev.kind === "text" ? undefined : prev));
+    }
+  }
+
+  function saveTextEditing() {
+    exitTextMode();
+  }
+
+  function updateTextBoxFromContentSize(textBox: PageTextBox, widthPx: number, heightPx: number) {
+    if (!activeSection || !textBox.autoSize) {
+      return;
+    }
+    const width = clamp((widthPx + 22) / Math.max(canvasSize, 1), 0.18, 0.9);
+    const height = clamp((heightPx + 18) / Math.max(canvasSize, 1), 0.1, 0.56);
+    const widthChanged = Math.abs((textBox.width ?? 0) - width) > 0.01;
+    const heightChanged = Math.abs((textBox.height ?? 0) - height) > 0.01;
+    if (!widthChanged && !heightChanged) {
+      return;
+    }
+    updatePageTextBox(activeSection.id, textBox.id, {
+      width,
+      height,
+      x: clamp(textBox.x, 0, 1 - width),
+      y: clamp(textBox.y, 0, 1 - height)
+    });
+  }
+
+  function beginTextBoxGesture(mode: "move" | "resize", textBox: PageTextBox, pageX: number, pageY: number) {
+    Keyboard.dismiss();
+    textBoxGestureRef.current = {
+      mode,
+      textBoxId: textBox.id,
+      startPageX: pageX,
+      startPageY: pageY,
+      startBox: textBox
+    };
+  }
+
+  function updateTextBoxGesture(pageX: number, pageY: number) {
+    const gesture = textBoxGestureRef.current;
+    if (!activeSection || !gesture.mode || !gesture.textBoxId || !gesture.startBox) {
+      return;
+    }
+    const deltaX = (pageX - gesture.startPageX) / canvasSize;
+    const deltaY = (pageY - gesture.startPageY) / canvasSize;
+    if (gesture.mode === "move") {
+      const nextX = clamp(gesture.startBox.x + deltaX, 0, 1 - gesture.startBox.width);
+      const nextY = clamp(gesture.startBox.y + deltaY, 0, 1 - gesture.startBox.height);
+      updatePageTextBox(activeSection.id, gesture.textBoxId, { x: nextX, y: nextY });
+      return;
+    }
+    const nextWidth = clamp(gesture.startBox.width + deltaX, 0.14, 1 - gesture.startBox.x);
+    const nextHeight = clamp(gesture.startBox.height + deltaY, 0.08, 1 - gesture.startBox.y);
+    updatePageTextBox(activeSection.id, gesture.textBoxId, {
+      width: nextWidth,
+      height: nextHeight,
+      autoSize: false
+    });
+  }
+
+  function endTextBoxGesture() {
+    textBoxGestureRef.current = {
+      startPageX: 0,
+      startPageY: 0
+    };
   }
 
   function getSectionStyle(pageSectionId: string) {
@@ -363,32 +613,6 @@ export default function MemoryDetailsScreen() {
   function openSlotEditor(pageId: string, slotId: string) {
     setSelection(pageId, slotId);
     setPhotoEditor({ pageId, slotId });
-  }
-
-  function setSelectedFitMode(mode: "contain" | "cover") {
-    if (!selectedPageId || !selectedSlotId) {
-      return;
-    }
-    setSlotOverride(selectedPageId, selectedSlotId, { fitMode: mode });
-  }
-
-  function nudgeSelectedScale(delta: number) {
-    if (!selectedPageId || !selectedSlot) {
-      return;
-    }
-    setSlotOverride(selectedPageId, selectedSlot.id, {
-      photoScale: clamp((selectedSlot.photoScale ?? 1) + delta, 0.5, 3)
-    });
-  }
-
-  function nudgeSelectedOffset(deltaX: number, deltaY: number) {
-    if (!selectedPageId || !selectedSlot) {
-      return;
-    }
-    setSlotOverride(selectedPageId, selectedSlot.id, {
-      photoOffsetX: clamp((selectedSlot.photoOffsetX ?? 0) + deltaX, -1, 1),
-      photoOffsetY: clamp((selectedSlot.photoOffsetY ?? 0) + deltaY, -1, 1)
-    });
   }
 
   function beginEditorGesture(touches: readonly { pageX: number; pageY: number }[]) {
@@ -428,13 +652,20 @@ export default function MemoryDetailsScreen() {
       return;
     }
     const gesture = editorGestureRef.current;
-    const slotWidthPx = Math.max(1, modalFocus.pageSize * selectedSlot.frame.width);
-    const slotHeightPx = Math.max(1, modalFocus.pageSize * selectedSlot.frame.height);
+    const slotWidthPx = Math.max(1, modalCrop.width);
+    const slotHeightPx = Math.max(1, modalCrop.height);
+    const scaleBounds = getPhotoScaleBounds(selectedSlot.fitMode);
+    const containerAspect = selectedSlot.frame.width / Math.max(0.0001, selectedSlot.frame.height);
+    const imageAspect = getPhotoAspect(selectedSlotPhoto);
     if (touches.length >= 2 && gesture.mode === "pinch") {
       const [a, b] = touches;
       const distance = Math.hypot(b.pageX - a.pageX, b.pageY - a.pageY);
-      const scale = clamp(gesture.startScale * (distance / Math.max(1, gesture.startDistance)), 0.5, 3);
-      setSlotOverride(selectedPageId, selectedSlot.id, { photoScale: scale });
+      const scale = clamp(gesture.startScale * (distance / Math.max(1, gesture.startDistance)), scaleBounds.min, scaleBounds.max);
+      setSlotOverride(selectedPageId, selectedSlot.id, {
+        photoScale: scale,
+        photoOffsetX: clampPhotoOffset("x", gesture.startOffsetX, scale, selectedSlot.fitMode, containerAspect, imageAspect),
+        photoOffsetY: clampPhotoOffset("y", gesture.startOffsetY, scale, selectedSlot.fitMode, containerAspect, imageAspect)
+      });
       return;
     }
     const [touch] = touches;
@@ -444,8 +675,8 @@ export default function MemoryDetailsScreen() {
     const deltaX = (touch.pageX - gesture.startX) / slotWidthPx;
     const deltaY = (touch.pageY - gesture.startY) / slotHeightPx;
     setSlotOverride(selectedPageId, selectedSlot.id, {
-      photoOffsetX: clamp(gesture.startOffsetX + deltaX, -1, 1),
-      photoOffsetY: clamp(gesture.startOffsetY + deltaY, -1, 1)
+      photoOffsetX: clampPhotoOffset("x", gesture.startOffsetX + deltaX, selectedSlot.photoScale ?? 1, selectedSlot.fitMode, containerAspect, imageAspect),
+      photoOffsetY: clampPhotoOffset("y", gesture.startOffsetY + deltaY, selectedSlot.photoScale ?? 1, selectedSlot.fitMode, containerAspect, imageAspect)
     });
   }
 
@@ -593,12 +824,7 @@ export default function MemoryDetailsScreen() {
       targets.push({
         id: "gallery-strip",
         targetType: "gallery-strip" as const,
-        rect: {
-          x: stagingRectRef.current.x + stageButtonSize + 14,
-          y: stagingRectRef.current.y,
-          width: Math.max(0, stagingRectRef.current.width - stageButtonSize - 14),
-          height: stagingRectRef.current.height
-        },
+        rect: stagingRectRef.current,
         priority: 3,
         hitSlop: 8,
         stickySlop: 16
@@ -795,13 +1021,27 @@ export default function MemoryDetailsScreen() {
 
   return (
     <View style={styles.screen}>
-      <Stack.Screen options={{ title: memory.title }} />
-      <View style={styles.container}>
+      <Stack.Screen options={{ headerShown: false }} />
+      <StatusBar style="light" />
+      <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
+        <Pressable style={styles.topBarButton} onPress={() => router.back()}>
+          <Ionicons name="chevron-back" size={30} color="#f8fbff" />
+        </Pressable>
+        <View style={styles.topBarTextWrap}>
+          <Text numberOfLines={1} style={styles.topBarTitle}>
+            {memory.title}
+          </Text>
+          <Text style={styles.topBarSubtitle}>{topBarMeta}</Text>
+        </View>
+        <View style={styles.topBarGhost} />
+      </View>
+      <View style={[styles.container, { paddingBottom: Math.max(insets.bottom + 16, 28) }]}>
         {activeSection && activeRenderedPage ? (() => {
           const section = activeSection;
           const renderedPage = activeRenderedPage;
           const pageStyle = getSectionStyle(section.id);
           const inspectorOpen = openInspector?.pageId === section.id ? openInspector.kind : undefined;
+          const textModeActive = inspectorOpen === "text";
           const templates = listTemplatesForPhotoCount(section.photoIds.length);
           return (
             <View
@@ -815,19 +1055,43 @@ export default function MemoryDetailsScreen() {
                   : null
               ]}
             >
+              {!selectedTextBox ? (
+                <Pressable
+                  style={styles.pageDeleteCornerButton}
+                  onPress={confirmDeleteActivePage}
+                  hitSlop={10}
+                  accessibilityRole="button"
+                  accessibilityLabel="Delete page"
+                >
+                  <Ionicons name="trash-outline" size={20} color="#ff9cad" />
+                </Pressable>
+              ) : null}
               <View
                 ref={pageCanvasRef}
                 collapsable={false}
                 style={[styles.canvasWrap, styles.primaryCanvasWrap, { width: canvasSize, height: canvasSize, backgroundColor: pageStyle.backgroundColor }]}
+                onStartShouldSetResponder={() => Boolean(textModeActive && selectedTextBoxId)}
+                onResponderRelease={() => {
+                  if (textModeActive && selectedTextBoxId) {
+                    Keyboard.dismiss();
+                    setEditingTextBoxId(undefined);
+                    setSelectedTextBoxId(undefined);
+                  }
+                }}
               >
                 {renderedPage.slots.map((slot) => {
                   const photo = slot.photoId ? photosById[slot.photoId] : undefined;
                   const isSelected = selectedPageId === renderedPage.id && selectedSlotId === slot.id;
-                  const sizePercent = slot.photoScale * 100;
-                  const leftPercent = 50 - slot.photoScale * 50 + slot.photoOffsetX * 100;
-                  const topPercent = 50 - slot.photoScale * 50 + slot.photoOffsetY * 100;
+                  const photoMetrics = getPhotoRenderMetrics({
+                    containerAspect: slot.frame.width / Math.max(0.0001, slot.frame.height),
+                    imageAspect: getPhotoAspect(photo),
+                    fitMode: slot.fitMode,
+                    scale: slot.photoScale ?? 1,
+                    offsetX: slot.photoOffsetX ?? 0,
+                    offsetY: slot.photoOffsetY ?? 0
+                  });
                   const slotRefKey = `${renderedPage.id}:${slot.id}`;
-                  const slotPanHandlers = photo
+                  const slotPanHandlers = !textModeActive && photo
                     ? createLongPressDragHandlers({
                         onTap: () => {
                           if (suppressNextPressPhotoIdRef.current === photo.id) {
@@ -839,11 +1103,13 @@ export default function MemoryDetailsScreen() {
                         onBeginDrag: (point) => startPhotoDrag(photo.id, photo.uri, point, section.id, slot.id)
                       })
                     : undefined;
-                  const slotPressHandlers = photo
+                  const slotPressHandlers = !textModeActive && photo
                     ? slotPanHandlers
-                    : {
+                    : !textModeActive
+                    ? {
                         onPress: () => openSlotEditor(renderedPage.id, slot.id)
-                      };
+                      }
+                    : undefined;
                   return (
                     <View
                       key={slot.id}
@@ -881,14 +1147,137 @@ export default function MemoryDetailsScreen() {
                             style={[
                               styles.slotImage,
                               {
-                                width: `${sizePercent}%`,
-                                height: `${sizePercent}%`,
-                                left: `${leftPercent}%`,
-                                top: `${topPercent}%`
+                                width: `${photoMetrics.width * 100}%`,
+                                height: `${photoMetrics.height * 100}%`,
+                                left: `${photoMetrics.leftPercent}%`,
+                                top: `${photoMetrics.topPercent}%`
                               }
                             ]}
-                            resizeMode={slot.fitMode}
+                            resizeMode="stretch"
                           />
+                        ) : null}
+                      </Pressable>
+                    </View>
+                  );
+                })}
+                {activeTextBoxes.map((textBox) => {
+                  const isSelectedTextBox = textBox.id === selectedTextBoxId;
+                  const isEditingTextBox = textBox.id === editingTextBoxId;
+                  return (
+                    <View
+                      key={textBox.id}
+                      style={[
+                        styles.textBoxWrap,
+                        {
+                          left: `${textBox.x * 100}%`,
+                          top: `${textBox.y * 100}%`,
+                          width: `${textBox.width * 100}%`,
+                          height: `${textBox.height * 100}%`
+                        }
+                      ]}
+                      pointerEvents={textModeActive ? "box-none" : "none"}
+                    >
+                      <Pressable
+                        disabled={!textModeActive}
+                        style={[
+                          styles.textBoxFrame,
+                          isSelectedTextBox ? styles.textBoxFrameSelected : null,
+                          {
+                            borderWidth: textBox.borderWidth ?? 0,
+                            borderColor: textBox.borderColor ?? "#0f172a",
+                            backgroundColor: applyColorOpacity(textBox.fillColor ?? "#ffffff", textBox.fillOpacity ?? 0)
+                          }
+                        ]}
+                        onPress={() => {
+                          if (!textModeActive || textBoxGestureRef.current.mode) {
+                            return;
+                          }
+                          setSelectedTextBoxId(textBox.id);
+                          setOpenInspector({ pageId: section.id, kind: "text" });
+                        }}
+                        onLongPress={(event) => {
+                          if (!textModeActive || keyboardVisible) {
+                            return;
+                          }
+                          setSelectedTextBoxId(textBox.id);
+                          setOpenInspector({ pageId: section.id, kind: "text" });
+                          beginTextBoxGesture("move", textBox, event.nativeEvent.pageX, event.nativeEvent.pageY);
+                        }}
+                        delayLongPress={180}
+                        onTouchMove={(event) => {
+                          if (!textModeActive || keyboardVisible || textBoxGestureRef.current.mode !== "move") {
+                            return;
+                          }
+                          const touch = event.nativeEvent.touches[0];
+                          if (touch) {
+                            updateTextBoxGesture(touch.pageX, touch.pageY);
+                          }
+                        }}
+                        onTouchEnd={endTextBoxGesture}
+                        onTouchCancel={endTextBoxGesture}
+                      >
+                        {isEditingTextBox ? (
+                          <TextInput
+                            ref={textInputRef}
+                            value={textBox.text}
+                            onChangeText={(text) => updateTextBox(textBox, { text })}
+                            onContentSizeChange={(event) =>
+                              updateTextBoxFromContentSize(
+                                textBox,
+                                event.nativeEvent.contentSize.width,
+                                event.nativeEvent.contentSize.height
+                              )
+                            }
+                            placeholder="Enter text"
+                            multiline
+                            blurOnSubmit
+                            style={[
+                              styles.textBoxInput,
+                              {
+                                color: textBox.textColor ?? pageStyle.textColor,
+                                fontSize: textBox.fontSize ?? pageStyle.textSize,
+                                fontFamily: textBox.fontFamily ?? pageStyle.textFontFamily,
+                                fontWeight: (textBox.fontWeight as "400" | "500" | "600" | "700") ?? "700",
+                                fontStyle: (textBox.fontStyle as "normal" | "italic") ?? "normal",
+                                textAlign: (textBox.textAlign ?? "center") as "left" | "center" | "right"
+                              }
+                            ]}
+                            onBlur={() => setEditingTextBoxId(undefined)}
+                          />
+                        ) : (
+                          <Text
+                            style={[
+                              styles.textBoxText,
+                              {
+                                color: textBox.textColor ?? pageStyle.textColor,
+                                fontSize: textBox.fontSize ?? pageStyle.textSize,
+                                fontFamily: textBox.fontFamily ?? pageStyle.textFontFamily,
+                                fontWeight: (textBox.fontWeight as "400" | "500" | "600" | "700") ?? "700",
+                                fontStyle: (textBox.fontStyle as "normal" | "italic") ?? "normal",
+                                textAlign: (textBox.textAlign ?? "center") as "left" | "center" | "right"
+                              }
+                            ]}
+                          >
+                            {textBox.text || "Tap to edit"}
+                          </Text>
+                        )}
+                        {isSelectedTextBox && !isEditingTextBox ? (
+                          <>
+                            <View style={styles.textBoxHandle} />
+                            <Pressable
+                              style={styles.textBoxResizeHandle}
+                              hitSlop={16}
+                              onTouchStart={(event) => beginTextBoxGesture("resize", textBox, event.nativeEvent.pageX, event.nativeEvent.pageY)}
+                              onTouchMove={(event) => {
+                                const touch = event.nativeEvent.touches[0];
+                                if (touch) {
+                                  updateTextBoxGesture(touch.pageX, touch.pageY);
+                                }
+                              }}
+                              onTouchEnd={endTextBoxGesture}
+                              onTouchCancel={endTextBoxGesture}
+                            />
+                          </>
                         ) : null}
                       </Pressable>
                     </View>
@@ -896,35 +1285,206 @@ export default function MemoryDetailsScreen() {
                 })}
               </View>
 
-              <View style={styles.composerBar}>
-                <IconOrb
-                  label="LAYOUT"
-                  kind="layout"
-                  active={inspectorOpen === "layout"}
-                  onPress={() => setOpenInspector((prev) => (prev?.pageId === section.id && prev.kind === "layout" ? undefined : { pageId: section.id, kind: "layout" }))}
-                />
-                <IconOrb
-                  label="TEXT"
-                  kind="text"
-                  active={inspectorOpen === "text"}
-                  onPress={() => setOpenInspector((prev) => (prev?.pageId === section.id && prev.kind === "text" ? undefined : { pageId: section.id, kind: "text" }))}
-                />
-                <IconOrb
-                  label="BORDER"
-                  kind="border"
-                  active={inspectorOpen === "border"}
-                  onPress={() => setOpenInspector((prev) => (prev?.pageId === section.id && prev.kind === "border" ? undefined : { pageId: section.id, kind: "border" }))}
-                />
-                <IconOrb
-                  label="BG"
-                  kind="background"
-                  active={inspectorOpen === "background"}
-                  onPress={() => setOpenInspector((prev) => (prev?.pageId === section.id && prev.kind === "background" ? undefined : { pageId: section.id, kind: "background" }))}
-                />
-              </View>
+              {selectedTextBox ? (
+                <View
+                  style={[
+                    styles.textCompactToolbarShell,
+                    { maxHeight: Math.min(Math.max(height * 0.24, 196), 288) }
+                  ]}
+                >
+                  <ScrollView
+                    style={styles.textCompactToolbarScroll}
+                    contentContainerStyle={styles.textCompactToolbar}
+                    showsVerticalScrollIndicator
+                    keyboardShouldPersistTaps="handled"
+                    nestedScrollEnabled
+                  >
+                    <View style={styles.textCompactRow}>
+                      <View style={styles.fontDropdown}>
+                        {FONT_FAMILIES.map((fontFamily) => (
+                          <Pressable
+                            key={fontFamily.id}
+                            style={[styles.fontDropdownOption, selectedTextBox.fontFamily === fontFamily.id ? styles.fontDropdownOptionActive : null]}
+                            onPress={() => updateSelectedTextBox({ fontFamily: fontFamily.id })}
+                          >
+                            <Text style={[styles.fontDropdownText, { fontFamily: fontFamily.id === "System" ? undefined : fontFamily.id }]}>{fontFamily.label}</Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                      <Pressable
+                        style={[styles.toggleChip, selectedTextBox.fontWeight === "700" ? styles.toggleChipActive : null]}
+                        onPress={() => updateSelectedTextBox({ fontWeight: selectedTextBox.fontWeight === "700" ? "400" : "700" })}
+                      >
+                        <Text style={styles.toggleChipText}>B</Text>
+                      </Pressable>
+                      <Pressable
+                        style={[styles.toggleChip, selectedTextBox.fontStyle === "italic" ? styles.toggleChipActive : null]}
+                        onPress={() => updateSelectedTextBox({ fontStyle: selectedTextBox.fontStyle === "italic" ? "normal" : "italic" })}
+                      >
+                        <Text style={[styles.toggleChipText, styles.toggleChipItalic]}>I</Text>
+                      </Pressable>
+                    </View>
 
-              <View style={styles.inspectorArea}>
-                {inspectorOpen === "layout" ? (
+                  <View style={styles.textCompactRow}>
+                    <View style={styles.sliderGroup}>
+                      <Text style={styles.sliderLabel}>Size</Text>
+                      <View style={styles.sliderButtons}>
+                        <Pressable
+                          style={styles.sliderButton}
+                          onPress={() => updateSelectedTextBox({ fontSize: clamp((selectedTextBox.fontSize ?? 26) - 2, 10, 72) })}
+                        >
+                          <Text style={styles.sliderButtonText}>-</Text>
+                        </Pressable>
+                        <Text style={styles.metricText}>{selectedTextBox.fontSize ?? 26}</Text>
+                        <Pressable
+                          style={styles.sliderButton}
+                          onPress={() => updateSelectedTextBox({ fontSize: clamp((selectedTextBox.fontSize ?? 26) + 2, 10, 72) })}
+                        >
+                          <Text style={styles.sliderButtonText}>+</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                    <View style={styles.alignGroup}>
+                      {(["left", "center", "right"] as TextBoxAlignment[]).map((alignment) => (
+                        <Pressable
+                          key={alignment}
+                          style={[styles.alignButton, selectedTextBox.textAlign === alignment ? styles.alignButtonActive : null]}
+                          onPress={() => updateSelectedTextBox({ textAlign: alignment })}
+                        >
+                          <Text style={styles.alignButtonText}>{alignment === "left" ? "L" : alignment === "center" ? "C" : "R"}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  </View>
+
+                  <View style={styles.controlGroup}>
+                    <Text style={styles.controlGroupLabel}>Text</Text>
+                    <View style={styles.paletteRow}>
+                      {TEXT_COLORS.map((color) => (
+                        <Pressable
+                          key={color}
+                          style={[styles.colorSwatch, { backgroundColor: color }, selectedTextBox.textColor === color ? styles.colorSwatchActive : null]}
+                          onPress={() => updateSelectedTextBox({ textColor: color })}
+                        />
+                      ))}
+                    </View>
+                  </View>
+
+                  <View style={styles.controlGroup}>
+                    <Text style={styles.controlGroupLabel}>Border</Text>
+                    <View style={styles.controlRow}>
+                      <Pressable
+                        style={styles.stepperButton}
+                        onPress={() => updateSelectedTextBox({ borderWidth: clamp((selectedTextBox.borderWidth ?? 0) - 1, 0, 12) })}
+                      >
+                        <Text style={styles.stepperButtonText}>- Width</Text>
+                      </Pressable>
+                      <Text style={styles.metricText}>{selectedTextBox.borderWidth ?? 0}</Text>
+                      <Pressable
+                        style={styles.stepperButton}
+                        onPress={() => updateSelectedTextBox({ borderWidth: clamp((selectedTextBox.borderWidth ?? 0) + 1, 0, 12) })}
+                      >
+                        <Text style={styles.stepperButtonText}>+ Width</Text>
+                      </Pressable>
+                    </View>
+                    <View style={styles.paletteRow}>
+                      {BORDER_COLORS.map((color) => (
+                        <Pressable
+                          key={color}
+                          style={[styles.colorSwatch, { backgroundColor: color }, selectedTextBox.borderColor === color ? styles.colorSwatchActive : null]}
+                          onPress={() => updateSelectedTextBox({ borderColor: color })}
+                        />
+                      ))}
+                    </View>
+                  </View>
+
+                  <View style={styles.controlGroup}>
+                    <Text style={styles.controlGroupLabel}>Fill</Text>
+                    <View style={styles.paletteRow}>
+                      {COLOR_PALETTE.map((color) => (
+                        <Pressable
+                          key={color}
+                          style={[styles.colorSwatch, { backgroundColor: color }, selectedTextBox.fillColor === color ? styles.colorSwatchActive : null]}
+                          onPress={() => updateSelectedTextBox({ fillColor: color })}
+                        />
+                      ))}
+                    </View>
+                    <View style={styles.controlRow}>
+                      <Pressable
+                        style={styles.stepperButton}
+                        onPress={() => updateSelectedTextBox({ fillOpacity: clamp((selectedTextBox.fillOpacity ?? 0) - 0.1, 0, 1) })}
+                      >
+                        <Text style={styles.stepperButtonText}>- Opacity</Text>
+                      </Pressable>
+                      <Text style={styles.metricText}>{Math.round((selectedTextBox.fillOpacity ?? 0) * 100)}%</Text>
+                      <Pressable
+                        style={styles.stepperButton}
+                        onPress={() => updateSelectedTextBox({ fillOpacity: clamp((selectedTextBox.fillOpacity ?? 0) + 0.1, 0, 1) })}
+                      >
+                        <Text style={styles.stepperButtonText}>+ Opacity</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+
+                    <View style={styles.controlRow}>
+                      <Pressable style={styles.stepperButton} onPress={() => setEditingTextBoxId(selectedTextBox.id)}>
+                        <Text style={styles.stepperButtonText}>{editingTextBoxId ? "Editing..." : "Edit Text"}</Text>
+                      </Pressable>
+                      <Pressable style={[styles.stepperButton, styles.stepperButtonActive]} onPress={saveTextEditing}>
+                        <Text style={[styles.stepperButtonText, styles.stepperButtonTextActive]}>Save Text</Text>
+                      </Pressable>
+                      <Pressable
+                        style={styles.tinyButtonDanger}
+                        onPress={() => {
+                          deletePageTextBox(section.id, selectedTextBox.id);
+                          clearTextBoxSelection();
+                        }}
+                      >
+                        <Text style={styles.deleteText}>Delete Text</Text>
+                      </Pressable>
+                    </View>
+                  </ScrollView>
+                </View>
+              ) : (
+                <View style={styles.composerBar}>
+                  <IconOrb
+                    label="LAYOUT"
+                    kind="layout"
+                    active={inspectorOpen === "layout"}
+                    onPress={() => setOpenInspector((prev) => (prev?.pageId === section.id && prev.kind === "layout" ? undefined : { pageId: section.id, kind: "layout" }))}
+                  />
+                  <IconOrb
+                    label="TEXT"
+                    kind="text"
+                    active={inspectorOpen === "text"}
+                    onPress={() => {
+                      if (inspectorOpen === "text") {
+                        exitTextMode();
+                        return;
+                      }
+                      setOpenInspector({ pageId: section.id, kind: "text" });
+                      setSelectedTextBoxId(undefined);
+                      setEditingTextBoxId(undefined);
+                    }}
+                  />
+                  <IconOrb
+                    label="BORDERS"
+                    kind="border"
+                    active={inspectorOpen === "border"}
+                    onPress={() => setOpenInspector((prev) => (prev?.pageId === section.id && prev.kind === "border" ? undefined : { pageId: section.id, kind: "border" }))}
+                  />
+                  <IconOrb
+                    label="BACKGROUND"
+                    kind="background"
+                    active={inspectorOpen === "background"}
+                    onPress={() => setOpenInspector((prev) => (prev?.pageId === section.id && prev.kind === "background" ? undefined : { pageId: section.id, kind: "background" }))}
+                  />
+                </View>
+              )}
+
+              {inspectorOpen ? (
+                <View style={styles.inspectorArea}>
+                  {inspectorOpen === "layout" ? (
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.templateRow}>
                     <Pressable
                       style={[styles.templateChoice, !section.templateId ? styles.templateChoiceActive : null]}
@@ -945,88 +1505,70 @@ export default function MemoryDetailsScreen() {
                       );
                     })}
                   </ScrollView>
-                ) : null}
+                  ) : null}
 
-                {inspectorOpen === "background" ? (
-                  <View style={styles.paletteRow}>
-                    {COLOR_PALETTE.map((color) => (
-                      <Pressable
-                        key={color}
-                        style={[styles.colorSwatch, { backgroundColor: color }, section.backgroundColor === color ? styles.colorSwatchActive : null]}
-                        onPress={() => updatePageSectionStyle(section.id, { backgroundColor: color })}
-                      />
-                    ))}
-                  </View>
-                ) : null}
+                  {inspectorOpen === "background" ? (
+                    <View style={styles.paletteRow}>
+                      {COLOR_PALETTE.map((color) => (
+                        <Pressable
+                          key={color}
+                          style={[styles.colorSwatch, { backgroundColor: color }, section.backgroundColor === color ? styles.colorSwatchActive : null]}
+                          onPress={() => updatePageSectionStyle(section.id, { backgroundColor: color })}
+                        />
+                      ))}
+                    </View>
+                  ) : null}
 
-                {inspectorOpen === "border" ? (
-                  <View style={styles.controlRow}>
-                    {BORDER_COLORS.map((color) => (
-                      <Pressable
-                        key={color}
-                        style={[styles.colorSwatch, { backgroundColor: color }, pageStyle.slotBorderColor === color ? styles.colorSwatchActive : null]}
-                        onPress={() => updatePageSectionStyle(section.id, { slotBorderColor: color })}
-                      />
-                    ))}
-                    <Pressable style={styles.stepperButton} onPress={() => updatePageSectionStyle(section.id, { slotBorderWidth: clamp((section.slotBorderWidth ?? 1) - 1, 0, 12) })}>
-                      <Text>- Border</Text>
-                    </Pressable>
-                    <Pressable style={styles.stepperButton} onPress={() => updatePageSectionStyle(section.id, { slotBorderWidth: clamp((section.slotBorderWidth ?? 1) + 1, 0, 12) })}>
-                      <Text>+ Border</Text>
-                    </Pressable>
-                    <Pressable style={styles.stepperButton} onPress={() => updatePageSectionStyle(section.id, { slotCornerRadius: clamp((section.slotCornerRadius ?? 10) - 2, 0, 28) })}>
-                      <Text>- Corner</Text>
-                    </Pressable>
-                    <Pressable style={styles.stepperButton} onPress={() => updatePageSectionStyle(section.id, { slotCornerRadius: clamp((section.slotCornerRadius ?? 10) + 2, 0, 28) })}>
-                      <Text>+ Corner</Text>
-                    </Pressable>
-                  </View>
-                ) : null}
-
-                {inspectorOpen === "text" ? (
-                  <View style={styles.controlRow}>
-                    {TEXT_COLORS.map((color) => (
-                      <Pressable
-                        key={color}
-                        style={[styles.colorSwatch, { backgroundColor: color }, pageStyle.textColor === color ? styles.colorSwatchActive : null]}
-                        onPress={() => updatePageSectionStyle(section.id, { textColor: color })}
-                      />
-                    ))}
-                    {FONT_FAMILIES.map((fontFamily) => (
-                      <Pressable
-                        key={fontFamily}
-                        style={[styles.stepperButton, pageStyle.textFontFamily === fontFamily ? styles.stepperButtonActive : null]}
-                        onPress={() => updatePageSectionStyle(section.id, { textFontFamily: fontFamily })}
-                      >
-                        <Text style={{ fontFamily }}>{fontFamily}</Text>
+                  {inspectorOpen === "border" ? (
+                    <View style={styles.controlRow}>
+                      {BORDER_COLORS.map((color) => (
+                        <Pressable
+                          key={color}
+                          style={[styles.colorSwatch, { backgroundColor: color }, pageStyle.slotBorderColor === color ? styles.colorSwatchActive : null]}
+                          onPress={() => updatePageSectionStyle(section.id, { slotBorderColor: color })}
+                        />
+                      ))}
+                      <Pressable style={styles.stepperButton} onPress={() => updatePageSectionStyle(section.id, { slotBorderWidth: clamp((section.slotBorderWidth ?? 1) - 1, 0, 12) })}>
+                        <Text style={styles.stepperButtonText}>- Border</Text>
                       </Pressable>
-                    ))}
-                    {FONT_WEIGHTS.map((weight) => (
-                      <Pressable
-                        key={weight}
-                        style={[styles.stepperButton, pageStyle.textWeight === weight ? styles.stepperButtonActive : null]}
-                        onPress={() => updatePageSectionStyle(section.id, { textWeight: weight })}
-                      >
-                        <Text style={{ fontWeight: weight as "400" | "500" | "600" | "700" }}>{weight}</Text>
+                      <Pressable style={styles.stepperButton} onPress={() => updatePageSectionStyle(section.id, { slotBorderWidth: clamp((section.slotBorderWidth ?? 1) + 1, 0, 12) })}>
+                        <Text style={styles.stepperButtonText}>+ Border</Text>
                       </Pressable>
-                    ))}
-                  </View>
-                ) : null}
-              </View>
+                      <Pressable style={styles.stepperButton} onPress={() => updatePageSectionStyle(section.id, { slotCornerRadius: clamp((section.slotCornerRadius ?? 10) - 2, 0, 28) })}>
+                        <Text style={styles.stepperButtonText}>- Corner</Text>
+                      </Pressable>
+                      <Pressable style={styles.stepperButton} onPress={() => updatePageSectionStyle(section.id, { slotCornerRadius: clamp((section.slotCornerRadius ?? 10) + 2, 0, 28) })}>
+                        <Text style={styles.stepperButtonText}>+ Corner</Text>
+                      </Pressable>
+                    </View>
+                  ) : null}
+
+                  {inspectorOpen === "text" && !selectedTextBox ? (
+                    <View style={styles.textInspector}>
+                      <Pressable style={styles.addTextButton} onPress={handleAddTextBox}>
+                        <Text style={styles.addTextButtonText}>Add Text</Text>
+                      </Pressable>
+                      <Text style={styles.textInspectorHelp}>Add a text box or tap one on the page to edit it.</Text>
+                    </View>
+                  ) : null}
+                </View>
+              ) : null}
             </View>
           );
         })() : (
           <Text style={styles.empty}>No page selected.</Text>
         )}
 
-        <View
-          ref={stagingRef}
-          collapsable={false}
-          style={[
-            styles.stagingStrip,
-            hoveredTarget?.targetType === "gallery-strip" ? styles.stagingStripActive : null
-          ]}
-        >
+        <View style={styles.stagingBlock}>
+          <Text style={styles.blockLabel}>Extra Photos</Text>
+          <View
+            ref={stagingRef}
+            collapsable={false}
+            style={[
+              styles.stagingStrip,
+              hoveredTarget?.targetType === "gallery-strip" ? styles.stagingStripActive : null
+            ]}
+          >
           <Pressable
             ref={removePhotoTileRef}
             collapsable={false}
@@ -1047,7 +1589,6 @@ export default function MemoryDetailsScreen() {
             contentContainerStyle={styles.stagingPhotosRow}
           >
             {stagingPhotos.map((photo) => {
-              const selected = selectedPhotoIds.includes(photo.id);
               const isDragging = drag.session.payload?.dragType === "gallery-photo" && drag.session.payload.itemId === photo.id;
               const galleryPanHandlers = createLongPressDragHandlers({
                 onTap: () => onPhotoPress(photo.id),
@@ -1061,7 +1602,7 @@ export default function MemoryDetailsScreen() {
                   }}
                   collapsable={false}
                   {...galleryPanHandlers}
-                  style={[styles.stagingTile, selected ? styles.thumbCardSelected : null, isDragging ? styles.thumbCardDragging : null]}
+                  style={[styles.stagingTile, galleryDeletePhotoId === photo.id ? styles.thumbCardSelected : null, isDragging ? styles.thumbCardDragging : null]}
                 >
                   <Image source={{ uri: photo.uri }} style={styles.thumbImage} />
                   {hoveredTarget?.targetType === "gallery-photo" && hoveredTarget.targetPhotoId === photo.id ? (
@@ -1071,9 +1612,11 @@ export default function MemoryDetailsScreen() {
               );
             })}
           </ScrollView>
+          </View>
         </View>
 
-        <View style={styles.pageRail}>
+        <View style={[styles.pageRailSection, { paddingBottom: Math.max(insets.bottom + 64, 84) }]}>
+          <View style={styles.pageRail}>
           {/* Page reorder is owned by DraggableFlatList. Other editor drags still use the custom drag controller. */}
           <DraggableFlatList
             data={pageRailData}
@@ -1148,7 +1691,13 @@ export default function MemoryDetailsScreen() {
                       isActive ? styles.pageRailCardDragging : null
                     ]}
                   >
-                    <View style={[styles.pageRailPreview, { backgroundColor: getSectionStyle(item.id).backgroundColor }]}>
+                    <View
+                      style={[
+                        styles.pageRailPreview,
+                        isSelected ? styles.pageRailPreviewSelected : null,
+                        { backgroundColor: getSectionStyle(item.id).backgroundColor }
+                      ]}
+                    >
                       {renderedPage?.slots.slice(0, 4).map((slot) => (
                         <View
                           key={slot.id}
@@ -1164,7 +1713,9 @@ export default function MemoryDetailsScreen() {
                         />
                       ))}
                     </View>
-                    <Text style={styles.pageRailLabel}>Page {(index >= 0 ? index : 0) + 1}</Text>
+                    <Text style={[styles.pageRailLabel, isSelected ? styles.pageRailLabelActive : null]}>
+                      Page {(index >= 0 ? index : 0) + 1}
+                    </Text>
                   </Pressable>
                 </View>
               );
@@ -1180,6 +1731,7 @@ export default function MemoryDetailsScreen() {
               </View>
             }
           />
+          </View>
         </View>
 
         {photos.length === 0 ? (
@@ -1191,6 +1743,37 @@ export default function MemoryDetailsScreen() {
       </View>
 
       <Modal
+        visible={Boolean(galleryDeletePhoto)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setGalleryDeletePhotoId(undefined)}
+      >
+        <Pressable style={styles.deleteBackdrop} onPress={() => setGalleryDeletePhotoId(undefined)}>
+          <Pressable style={styles.deletePopover} onPress={() => undefined}>
+            {galleryDeletePhoto ? <Image source={{ uri: galleryDeletePhoto.uri }} style={styles.deletePreview} /> : null}
+            <Text style={styles.deleteTitle}>Delete photo?</Text>
+            <Text style={styles.deleteCopy}>This removes it from the memory entirely.</Text>
+            <View style={styles.deleteActions}>
+              <Pressable style={styles.deleteCancelButton} onPress={() => setGalleryDeletePhotoId(undefined)}>
+                <Text style={styles.deleteCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={styles.deleteConfirmButton}
+                onPress={() => {
+                  if (galleryDeletePhotoId) {
+                    deletePhotos([galleryDeletePhotoId]);
+                  }
+                  setGalleryDeletePhotoId(undefined);
+                }}
+              >
+                <Text style={styles.deleteConfirmText}>Delete</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
         visible={Boolean(photoEditor && selectedPage && selectedSlot && selectedSlotPhoto)}
         transparent
         animationType="slide"
@@ -1199,6 +1782,16 @@ export default function MemoryDetailsScreen() {
         <View style={styles.modalBackdrop}>
           <View style={styles.modalSheet}>
             <View style={styles.modalHeader}>
+              <Pressable
+                style={styles.modalIconButton}
+                onPress={() => {
+                  if (selectedPage && selectedSlot) {
+                    clearSlotOverride(selectedPage.id, selectedSlot.id);
+                  }
+                }}
+              >
+                <Ionicons name="arrow-undo-outline" size={24} color="#f8fbff" />
+              </Pressable>
               <Text style={styles.modalTitle}>Edit Photo</Text>
               <Pressable onPress={() => setPhotoEditor(undefined)}>
                 <Text style={styles.modalDone}>Done</Text>
@@ -1216,97 +1809,51 @@ export default function MemoryDetailsScreen() {
                   editorGestureRef.current.mode = undefined;
                 }}
               >
+                {(() => {
+                  const photoMetrics = getPhotoRenderMetrics({
+                    containerAspect: selectedSlot.frame.width / Math.max(0.0001, selectedSlot.frame.height),
+                    imageAspect: getPhotoAspect(selectedSlotPhoto),
+                    fitMode: selectedSlot.fitMode,
+                    scale: selectedSlot.photoScale ?? 1,
+                    offsetX: selectedSlot.photoOffsetX ?? 0,
+                    offsetY: selectedSlot.photoOffsetY ?? 0
+                  });
+                  return (
+                    <>
+                <View style={styles.modalDimLayer} />
                 <View
                   style={[
-                    styles.modalPageFocus,
+                    styles.modalCropFrame,
                     {
-                      width: modalFocus.pageSize,
-                      height: modalFocus.pageSize,
-                      left: modalFocus.left,
-                      top: modalFocus.top,
-                      backgroundColor: getSectionStyle(selectedPage.id).backgroundColor
+                      left: modalCrop.left,
+                      top: modalCrop.top,
+                      width: modalCrop.width,
+                      height: modalCrop.height,
+                      borderColor: getSectionStyle(selectedPage.id).slotBorderColor,
+                      borderWidth: getSectionStyle(selectedPage.id).slotBorderWidth,
+                      borderRadius: getSectionStyle(selectedPage.id).slotCornerRadius
                     }
                   ]}
                 >
-                  {selectedPage.slots.map((slot) => {
-                    const photo = slot.photoId ? photosById[slot.photoId] : undefined;
-                    const isFocused = slot.id === selectedSlot.id;
-                    return (
-                      <View
-                        key={slot.id}
-                        style={[
-                          styles.modalSlotFrame,
-                          !isFocused ? styles.modalSlotFrameMuted : null,
-                          isFocused ? styles.modalSlotFrameFocused : null,
-                          {
-                            left: `${slot.frame.x * 100}%`,
-                            top: `${slot.frame.y * 100}%`,
-                            width: `${slot.frame.width * 100}%`,
-                            height: `${slot.frame.height * 100}%`,
-                            borderColor: getSectionStyle(selectedPage.id).slotBorderColor,
-                            borderWidth: getSectionStyle(selectedPage.id).slotBorderWidth,
-                            borderRadius: getSectionStyle(selectedPage.id).slotCornerRadius
-                          }
-                        ]}
-                      >
-                        {photo ? (
-                          <Image
-                            source={{ uri: photo.uri }}
-                            style={[
-                              styles.modalSlotImage,
-                              {
-                                width: `${slot.photoScale * 100}%`,
-                                height: `${slot.photoScale * 100}%`,
-                                left: `${50 - slot.photoScale * 50 + slot.photoOffsetX * 100}%`,
-                                top: `${50 - slot.photoScale * 50 + slot.photoOffsetY * 100}%`
-                              }
-                            ]}
-                            resizeMode={slot.fitMode}
-                          />
-                        ) : null}
-                      </View>
-                    );
-                  })}
+                  <Image
+                    source={{ uri: selectedSlotPhoto.uri }}
+                    style={[
+                      styles.modalCropImage,
+                      {
+                        width: `${photoMetrics.width * 100}%`,
+                        height: `${photoMetrics.height * 100}%`,
+                        left: `${photoMetrics.leftPercent}%`,
+                        top: `${photoMetrics.topPercent}%`
+                      }
+                    ]}
+                    resizeMode="stretch"
+                  />
                 </View>
+                    </>
+                  );
+                })()}
               </View>
             ) : null}
-            <Text style={styles.modalHelp}>Tap Fill or Fit, then use the directional nudges and zoom controls below.</Text>
-            <View style={styles.modalActions}>
-              <Pressable style={styles.modalAction} onPress={() => setSelectedFitMode("cover")}>
-                <Text style={styles.modalActionText}>Fill</Text>
-              </Pressable>
-              <Pressable style={styles.modalAction} onPress={() => setSelectedFitMode("contain")}>
-                <Text style={styles.modalActionText}>Fit</Text>
-              </Pressable>
-              <Pressable style={styles.modalAction} onPress={() => nudgeSelectedScale(-0.1)}>
-                <Text style={styles.modalActionText}>Zoom -</Text>
-              </Pressable>
-              <Pressable style={styles.modalAction} onPress={() => nudgeSelectedScale(0.1)}>
-                <Text style={styles.modalActionText}>Zoom +</Text>
-              </Pressable>
-              <Pressable style={styles.modalAction} onPress={() => nudgeSelectedOffset(-0.05, 0)}>
-                <Text style={styles.modalActionText}>Left</Text>
-              </Pressable>
-              <Pressable style={styles.modalAction} onPress={() => nudgeSelectedOffset(0.05, 0)}>
-                <Text style={styles.modalActionText}>Right</Text>
-              </Pressable>
-              <Pressable style={styles.modalAction} onPress={() => nudgeSelectedOffset(0, -0.05)}>
-                <Text style={styles.modalActionText}>Up</Text>
-              </Pressable>
-              <Pressable style={styles.modalAction} onPress={() => nudgeSelectedOffset(0, 0.05)}>
-                <Text style={styles.modalActionText}>Down</Text>
-              </Pressable>
-              <Pressable
-                style={styles.modalAction}
-                onPress={() => {
-                  if (selectedPage && selectedSlot) {
-                    clearSlotOverride(selectedPage.id, selectedSlot.id);
-                  }
-                }}
-              >
-                <Text style={styles.modalActionText}>Undo</Text>
-              </Pressable>
-            </View>
           </View>
         </View>
       </Modal>
@@ -1316,14 +1863,50 @@ export default function MemoryDetailsScreen() {
 
 const styles = StyleSheet.create({
   screen: {
-    flex: 1
+    flex: 1,
+    backgroundColor: "#0a1220"
+  },
+  topBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingBottom: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#20304d"
+  },
+  topBarButton: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  topBarTextWrap: {
+    flex: 1,
+    alignItems: "flex-end"
+  },
+  topBarTitle: {
+    color: "#f8fbff",
+    fontSize: 20,
+    fontWeight: "800"
+  },
+  topBarSubtitle: {
+    marginTop: 4,
+    color: "#7f90b3",
+    fontSize: 13,
+    fontWeight: "700",
+    letterSpacing: 1.1
+  },
+  topBarGhost: {
+    width: 40,
+    height: 40
   },
   container: {
     flex: 1,
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 10,
-    gap: 12
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 12,
+    gap: 18
   },
   containerWithFloatingActions: {
     paddingBottom: 180
@@ -1446,15 +2029,21 @@ const styles = StyleSheet.create({
     color: "#0f172a"
   },
   pageCard: {
-    backgroundColor: "#ffffff",
+    position: "relative",
+    backgroundColor: "#101a2d",
     borderWidth: 1,
-    borderColor: "#e2e8f0",
-    borderRadius: 20,
-    padding: 10
+    borderColor: "#20304d",
+    borderRadius: 26,
+    padding: 16,
+    shadowColor: "#000000",
+    shadowOpacity: 0.22,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8
   },
   activePageCard: {
     alignSelf: "center",
-    paddingBottom: 14
+    paddingBottom: 18
   },
   pageInsertMarker: {
     alignSelf: "center",
@@ -1464,9 +2053,9 @@ const styles = StyleSheet.create({
     marginVertical: 2
   },
   pageCardDropTarget: {
-    borderColor: "#0f766e",
+    borderColor: "#2f80ff",
     borderWidth: 2,
-    backgroundColor: "#f0fdfa"
+    backgroundColor: "#111f37"
   },
   pageCardDragging: {
     opacity: 0.45
@@ -1518,24 +2107,163 @@ const styles = StyleSheet.create({
     marginBottom: 8
   },
   composerBar: {
-    marginTop: 6,
+    marginTop: 8,
     flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderRadius: 30,
+    borderWidth: 1,
+    borderColor: "#20304d",
+    backgroundColor: "#10192c"
+  },
+  textCompactToolbarShell: {
+    marginTop: 12,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: "#20304d",
+    backgroundColor: "#10192c",
+    overflow: "hidden"
+  },
+  textCompactToolbarScroll: {
+    flexGrow: 0
+  },
+  textCompactToolbar: {
+    gap: 12,
+    padding: 16,
+    paddingBottom: 18
+  },
+  textCompactRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10
+  },
+  fontDropdown: {
+    flex: 1,
+    flexDirection: "row",
+    gap: 6
+  },
+  fontDropdownOption: {
+    flex: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#2a3b5d",
+    backgroundColor: "#18243b",
+    alignItems: "center"
+  },
+  fontDropdownOptionActive: {
+    borderColor: "#2f80ff",
+    backgroundColor: "#22385e"
+  },
+  fontDropdownText: {
+    color: "#eef4ff",
+    fontWeight: "600"
+  },
+  toggleChip: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#2a3b5d",
+    backgroundColor: "#18243b",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  toggleChipActive: {
+    borderColor: "#2f80ff",
+    backgroundColor: "#22385e"
+  },
+  toggleChipText: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#eef4ff"
+  },
+  toggleChipItalic: {
+    fontStyle: "italic"
+  },
+  sliderGroup: {
+    flex: 1,
+    gap: 6
+  },
+  sliderLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#8fa4cd",
+    textTransform: "uppercase",
+    letterSpacing: 0.6
+  },
+  sliderButtons: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8
+  },
+  sliderButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#2a3b5d",
+    backgroundColor: "#18243b",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  sliderButtonText: {
+    color: "#eef4ff",
+    fontWeight: "700"
+  },
+  alignGroup: {
+    flexDirection: "row",
+    gap: 6
+  },
+  alignButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#2a3b5d",
+    backgroundColor: "#18243b",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  alignButtonActive: {
+    borderColor: "#2f80ff",
+    backgroundColor: "#22385e"
+  },
+  alignButtonText: {
+    fontSize: 16,
+    color: "#eef4ff"
+  },
+  pageDeleteCornerButton: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1,
+    borderColor: "#6f2432",
+    backgroundColor: "#28131a",
+    alignItems: "center",
     justifyContent: "center",
-    gap: 12
+    zIndex: 30
   },
   iconOrb: {
     width: 64,
-    height: 64,
-    borderRadius: 32,
+    height: 72,
+    borderRadius: 36,
     borderWidth: 1,
-    borderColor: "#dbe4ee",
-    backgroundColor: "#f8fafc",
+    borderColor: "#243452",
+    backgroundColor: "#1a2740",
     alignItems: "center",
     justifyContent: "center"
   },
   iconOrbActive: {
-    borderColor: "#2563eb",
-    backgroundColor: "#e0f2fe"
+    borderColor: "#2f80ff",
+    backgroundColor: "#22385e"
   },
   iconOrbGraphic: {
     width: 28,
@@ -1545,21 +2273,21 @@ const styles = StyleSheet.create({
   layoutGlyphBlock: {
     position: "absolute",
     borderRadius: 3,
-    backgroundColor: "#0f172a"
+    backgroundColor: "#f8fbff"
   },
   textGlyphLine: {
     position: "absolute",
     left: 1,
     height: 4,
     borderRadius: 2,
-    backgroundColor: "#0f172a"
+    backgroundColor: "#f8fbff"
   },
   borderGlyphFrame: {
     position: "absolute",
     inset: 1,
     borderRadius: 8,
     borderWidth: 2,
-    borderColor: "#0f172a",
+    borderColor: "#f8fbff",
     alignItems: "center",
     justifyContent: "center"
   },
@@ -1567,7 +2295,7 @@ const styles = StyleSheet.create({
     width: 12,
     height: 8,
     borderRadius: 3,
-    backgroundColor: "rgba(15, 23, 42, 0.14)"
+    backgroundColor: "rgba(248, 251, 255, 0.2)"
   },
   backgroundGlyphBack: {
     position: "absolute",
@@ -1576,7 +2304,7 @@ const styles = StyleSheet.create({
     width: 18,
     height: 18,
     borderRadius: 5,
-    backgroundColor: "#bfdbfe"
+    backgroundColor: "#2f80ff"
   },
   backgroundGlyphFront: {
     position: "absolute",
@@ -1585,23 +2313,30 @@ const styles = StyleSheet.create({
     width: 18,
     height: 18,
     borderRadius: 5,
-    backgroundColor: "#fde68a",
+    backgroundColor: "#f0b54a",
     borderWidth: 1,
-    borderColor: "#0f172a"
+    borderColor: "#f8fbff"
   },
   iconOrbLabel: {
-    marginTop: 4,
-    fontSize: 9,
+    marginTop: 6,
+    fontSize: 10,
     fontWeight: "700",
-    color: "#334155"
+    color: "#d6e0f6",
+    textAlign: "center",
+    maxWidth: 62
   },
   iconOrbLabelActive: {
-    color: "#1d4ed8"
+    color: "#ffffff"
   },
   inspectorArea: {
-    minHeight: 98,
     justifyContent: "center",
-    marginBottom: 8
+    marginTop: 14,
+    marginBottom: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#20304d",
+    backgroundColor: "#10192c",
+    padding: 14
   },
   templateRow: {
     gap: 10,
@@ -1609,39 +2344,74 @@ const styles = StyleSheet.create({
   },
   templateChoice: {
     borderWidth: 1,
-    borderColor: "#dbe4ee",
+    borderColor: "#243452",
     borderRadius: 16,
-    backgroundColor: "#f8fafc",
+    backgroundColor: "#17243c",
     padding: 8
   },
   templateChoiceActive: {
-    borderColor: "#2563eb",
-    backgroundColor: "#eff6ff"
+    borderColor: "#2f80ff",
+    backgroundColor: "#22385e"
   },
   templateChoiceLabel: {
     paddingHorizontal: 10,
     paddingVertical: 20,
     fontWeight: "700",
-    color: "#334155"
+    color: "#d6e0f6"
   },
   templateMiniCard: {
     width: 72,
     height: 72,
     borderRadius: 12,
-    backgroundColor: "#ffffff",
+    backgroundColor: "#0f182a",
     position: "relative",
     overflow: "hidden"
   },
   templateMiniCardActive: {
-    backgroundColor: "#dbeafe"
+    backgroundColor: "#17243c"
   },
   templateMiniBlock: {
     position: "absolute",
     borderRadius: 4,
-    backgroundColor: "#cbd5e1"
+    backgroundColor: "rgba(191, 205, 228, 0.78)"
   },
   templateMiniHero: {
-    backgroundColor: "#94a3b8"
+    backgroundColor: "#f0b54a"
+  },
+  textInspector: {
+    gap: 12
+  },
+  textInspectorHelp: {
+    color: "#94a6cb",
+    textAlign: "center"
+  },
+  addTextButton: {
+    alignSelf: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: "#2563eb"
+  },
+  addTextButtonText: {
+    color: "#ffffff",
+    fontWeight: "700"
+  },
+  controlGroup: {
+    gap: 8
+  },
+  controlGroupLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#8fa4cd",
+    textTransform: "uppercase",
+    letterSpacing: 0.6
+  },
+  metricText: {
+    minWidth: 42,
+    textAlign: "center",
+    fontWeight: "700",
+    color: "#eef4ff",
+    alignSelf: "center"
   },
   paletteRow: {
     flexDirection: "row",
@@ -1665,22 +2435,29 @@ const styles = StyleSheet.create({
   },
   stepperButton: {
     borderWidth: 1,
-    borderColor: "#cbd5e1",
+    borderColor: "#2a3b5d",
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 7,
-    backgroundColor: "#f8fafc"
+    backgroundColor: "#18243b"
   },
   stepperButtonActive: {
-    borderColor: "#2563eb",
-    backgroundColor: "#eff6ff"
+    borderColor: "#2f80ff",
+    backgroundColor: "#22385e"
+  },
+  stepperButtonText: {
+    color: "#eef4ff",
+    fontWeight: "600"
+  },
+  stepperButtonTextActive: {
+    color: "#ffffff"
   },
   canvasWrap: {
     alignSelf: "center",
     position: "relative",
-    borderRadius: 18,
+    borderRadius: 22,
     overflow: "hidden",
-    marginBottom: 10
+    marginBottom: 14
   },
   primaryCanvasWrap: {
     marginTop: 4
@@ -1692,7 +2469,58 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%",
     overflow: "hidden",
-    backgroundColor: "#f8fafc"
+    backgroundColor: "#16233b"
+  },
+  textBoxWrap: {
+    position: "absolute",
+    zIndex: 20
+  },
+  textBoxFrame: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    justifyContent: "center"
+  },
+  textBoxFrameSelected: {
+    borderColor: "#2563eb",
+    borderWidth: 2,
+    shadowColor: "#0f172a",
+    shadowOpacity: 0.16,
+    shadowRadius: 10
+  },
+  textBoxText: {
+    width: "100%"
+  },
+  textBoxInput: {
+    width: "100%",
+    height: "100%",
+    padding: 0,
+    textAlignVertical: "center"
+  },
+  textBoxHandle: {
+    position: "absolute",
+    top: -8,
+    left: -8,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    borderWidth: 2,
+    borderColor: "#2563eb",
+    backgroundColor: "#ffffff"
+  },
+  textBoxResizeHandle: {
+    position: "absolute",
+    right: -10,
+    bottom: -10,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 2,
+    borderColor: "#2563eb",
+    backgroundColor: "#ffffff",
+    zIndex: 30
   },
   slotDropTarget: {
     borderColor: "#2563eb",
@@ -1729,7 +2557,7 @@ const styles = StyleSheet.create({
     gap: 10
   },
   empty: {
-    color: "#64748b"
+    color: "#8ea4cf"
   },
   photoCard: {
     width: 156,
@@ -1779,48 +2607,60 @@ const styles = StyleSheet.create({
     paddingRight: 8
   },
   stagingStrip: {
-    marginTop: 14,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    padding: 10,
-    borderRadius: 18,
-    backgroundColor: "#ecfdf3",
+    padding: 14,
+    borderRadius: 22,
+    backgroundColor: "#10192c",
     borderWidth: 1,
-    borderColor: "#86efac"
+    borderColor: "#20304d"
   },
   stagingStripActive: {
-    borderColor: "#16a34a",
+    borderColor: "#2f80ff",
     borderWidth: 2
   },
+  stagingBlock: {
+    marginTop: 4,
+    gap: 12
+  },
+  blockLabel: {
+    marginLeft: 4,
+    color: "#7f90b3",
+    fontSize: 13,
+    fontWeight: "700",
+    letterSpacing: 1.2,
+    textTransform: "uppercase"
+  },
   stagingPhotosRow: {
-    gap: 10,
+    gap: 12,
     paddingRight: 8,
     alignItems: "center"
   },
   stagingTile: {
-    width: 64,
-    height: 64,
-    borderRadius: 10,
+    width: 76,
+    height: 76,
+    borderRadius: 14,
     overflow: "hidden",
-    backgroundColor: "#ffffff",
+    backgroundColor: "#17233b",
     borderWidth: 1,
-    borderColor: "#86efac"
+    borderColor: "#243452"
   },
   addPhotoTile: {
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#f0fdf4"
+    backgroundColor: "#243046",
+    borderStyle: "dashed"
   },
   removePhotoTileActive: {
-    borderColor: "#2563eb",
+    borderColor: "#2f80ff",
     borderWidth: 3,
-    backgroundColor: "#dbeafe"
+    backgroundColor: "#22385e"
   },
   addPhotoTileText: {
     fontSize: 28,
     fontWeight: "700",
-    color: "#166534"
+    color: "#eef4ff"
   },
   thumbCard: {
     width: 64,
@@ -1832,11 +2672,11 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffffff"
   },
   thumbCardSelected: {
-    borderColor: "#0f766e",
-    backgroundColor: "#f0fdfa"
+    borderColor: "#2f80ff",
+    backgroundColor: "#22385e"
   },
   thumbCardDropTarget: {
-    borderColor: "#1d4ed8",
+    borderColor: "#2f80ff",
     borderWidth: 2
   },
   thumbCardDragging: {
@@ -1844,10 +2684,10 @@ const styles = StyleSheet.create({
   },
   gallerySwapTarget: {
     ...StyleSheet.absoluteFillObject,
-    borderRadius: 18,
+    borderRadius: 14,
     borderWidth: 3,
-    borderColor: "#2563eb",
-    backgroundColor: "rgba(37, 99, 235, 0.12)"
+    borderColor: "#2f80ff",
+    backgroundColor: "rgba(47, 128, 255, 0.18)"
   },
   thumbImage: {
     width: "100%",
@@ -1863,8 +2703,13 @@ const styles = StyleSheet.create({
     backgroundColor: "#14b8a6"
   },
   pageRail: {
-    marginTop: 14,
-    paddingVertical: 8
+    paddingVertical: 4
+  },
+  pageRailSection: {
+    marginTop: "auto",
+    paddingTop: 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#20304d"
   },
   pageRailList: {
     flexGrow: 0
@@ -1906,8 +2751,11 @@ const styles = StyleSheet.create({
     position: "relative",
     overflow: "hidden",
     borderWidth: 2,
-    borderColor: "#2563eb",
-    backgroundColor: "#ffffff"
+    borderColor: "#243452",
+    backgroundColor: "#17233b"
+  },
+  pageRailPreviewSelected: {
+    borderColor: "#2f80ff"
   },
   pageRailPlaceholderPreview: {
     opacity: 0.28,
@@ -1915,26 +2763,29 @@ const styles = StyleSheet.create({
   },
   pageRailAddPreview: {
     borderStyle: "dashed",
-    borderColor: "#94a3b8",
+    borderColor: "#4d6288",
     alignItems: "center",
     justifyContent: "center"
   },
   pageRailPreviewBlock: {
     position: "absolute",
-    backgroundColor: "rgba(148, 163, 184, 0.7)",
+    backgroundColor: "rgba(191, 205, 228, 0.4)",
     borderRadius: 4
   },
   pageRailAddText: {
     fontSize: 28,
     fontWeight: "700",
-    color: "#475569"
+    color: "#d7e2ff"
   },
   pageRailLabel: {
     marginTop: 6,
     textAlign: "center",
-    color: "#334155",
+    color: "#8ea4cf",
     fontSize: 12,
     fontWeight: "600"
+  },
+  pageRailLabelActive: {
+    color: "#2f80ff"
   },
   pageRailLabelPlaceholder: {
     opacity: 0
@@ -2047,10 +2898,71 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(15, 23, 42, 0.64)",
     justifyContent: "flex-end"
   },
+  deleteBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(2, 6, 14, 0.76)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24
+  },
+  deletePopover: {
+    width: "100%",
+    maxWidth: 320,
+    borderRadius: 20,
+    backgroundColor: "#0f182a",
+    borderWidth: 1,
+    borderColor: "#223456",
+    padding: 18,
+    gap: 12,
+    alignItems: "center"
+  },
+  deletePreview: {
+    width: 120,
+    height: 120,
+    borderRadius: 16,
+    backgroundColor: "#e2e8f0"
+  },
+  deleteTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#f8fbff"
+  },
+  deleteCopy: {
+    color: "#8ea4cf",
+    textAlign: "center"
+  },
+  deleteActions: {
+    flexDirection: "row",
+    gap: 10
+  },
+  deleteCancelButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#2a3b5d",
+    backgroundColor: "#18243b"
+  },
+  deleteCancelText: {
+    color: "#eef4ff",
+    fontWeight: "600"
+  },
+  deleteConfirmButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: "#b91c1c"
+  },
+  deleteConfirmText: {
+    color: "#ffffff",
+    fontWeight: "700"
+  },
   modalSheet: {
-    backgroundColor: "#ffffff",
+    backgroundColor: "#0f182a",
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
+    borderTopWidth: 1,
+    borderColor: "#223456",
     paddingHorizontal: 16,
     paddingTop: 14,
     paddingBottom: 24,
@@ -2061,15 +2973,34 @@ const styles = StyleSheet.create({
     width: "100%",
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center"
+    alignItems: "center",
+    gap: 12
+  },
+  modalIconButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1,
+    borderColor: "#2a3b5d",
+    backgroundColor: "#18243b",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  modalUndoGlyph: {
+    fontSize: 24,
+    lineHeight: 24,
+    color: "#0f172a",
+    fontWeight: "700"
   },
   modalTitle: {
+    flex: 1,
     fontSize: 18,
     fontWeight: "700",
-    color: "#0f172a"
+    color: "#f8fbff",
+    textAlign: "center"
   },
   modalDone: {
-    color: "#2563eb",
+    color: "#7db6ff",
     fontWeight: "700"
   },
   modalCanvas: {
@@ -2077,45 +3008,20 @@ const styles = StyleSheet.create({
     position: "relative",
     overflow: "hidden"
   },
-  modalPageFocus: {
+  modalDimLayer: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(15, 23, 42, 0.18)"
+  },
+  modalCropImage: {
     position: "absolute"
   },
-  modalSlotFrame: {
+  modalCropFrame: {
     position: "absolute",
     overflow: "hidden",
-    backgroundColor: "#ffffff"
-  },
-  modalSlotFrameMuted: {
-    opacity: 0.42
-  },
-  modalSlotFrameFocused: {
+    backgroundColor: "#ffffff",
     shadowColor: "#0f172a",
     shadowOpacity: 0.16,
     shadowRadius: 12
-  },
-  modalSlotImage: {
-    position: "absolute"
-  },
-  modalHelp: {
-    color: "#64748b",
-    textAlign: "center"
-  },
-  modalActions: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    justifyContent: "center"
-  },
-  modalAction: {
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: "#f8fafc"
-  },
-  modalActionText: {
-    fontWeight: "700",
-    color: "#0f172a"
   }
 });
+

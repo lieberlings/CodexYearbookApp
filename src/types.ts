@@ -25,6 +25,28 @@ export type Memory = {
   updatedAt: string;
 };
 
+export type TextBoxAlignment = "left" | "center" | "right";
+
+export type PageTextBox = {
+  id: string;
+  text: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  textColor?: string;
+  fontSize?: number;
+  fontWeight?: string;
+  fontStyle?: string;
+  fontFamily?: string;
+  textAlign?: TextBoxAlignment;
+  borderWidth?: number;
+  borderColor?: string;
+  fillColor?: string;
+  fillOpacity?: number;
+  autoSize?: boolean;
+};
+
 export type MemoryPageSection = {
   id: string;
   memoryId: string;
@@ -39,6 +61,7 @@ export type MemoryPageSection = {
   textSize?: number;
   textWeight?: string;
   textFontFamily?: string;
+  textBoxes?: PageTextBox[];
   photoIds: string[];
 };
 

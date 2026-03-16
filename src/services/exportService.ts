@@ -3,6 +3,7 @@ import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { applySlotOverridesToPage } from "../layout/overrides";
 import { buildLayoutDocument } from "../layout/engine";
+import { getPhotoAspect, getPhotoRenderMetrics } from "../layout/photoMetrics";
 import { SlotOverride } from "../state/editorStore";
 import { Memory, MemoryPageSection, PhotoItem, Project } from "../types";
 
@@ -16,6 +17,22 @@ function escapeHtml(value: string): string {
 
 function escapeAttr(value: string): string {
   return value.replace(/"/g, "&quot;");
+}
+
+function applyColorOpacity(color: string | undefined, opacity: number | undefined): string {
+  if (!color) {
+    return "transparent";
+  }
+  const normalizedOpacity = Math.max(0, Math.min(1, opacity ?? 1));
+  const hex = color.replace("#", "");
+  const safeHex = hex.length === 3 ? hex.split("").map((part) => part + part).join("") : hex;
+  const r = Number.parseInt(safeHex.slice(0, 2), 16);
+  const g = Number.parseInt(safeHex.slice(2, 4), 16);
+  const b = Number.parseInt(safeHex.slice(4, 6), 16);
+  if ([r, g, b].some((value) => Number.isNaN(value))) {
+    return color;
+  }
+  return `rgba(${r}, ${g}, ${b}, ${normalizedOpacity})`;
 }
 
 async function toEmbeddableImageSource(photo: PhotoItem): Promise<string | undefined> {
@@ -76,13 +93,19 @@ export async function exportProjectToPdf(
   for (const page of pages) {
     const pageTitle = page.pageCount > 1 ? `${page.memoryTitle} (${page.pageIndex + 1}/${page.pageCount})` : page.memoryTitle;
     let slotsHtml = "";
+    let textBoxesHtml = "";
 
     for (const slot of page.slots) {
       const photo = slot.photoId ? photosById[slot.photoId] : undefined;
       const src = photo ? await getSource(photo) : undefined;
-      const sizePercent = slot.photoScale * 100;
-      const leftPercent = 50 - slot.photoScale * 50 + slot.photoOffsetX * 100;
-      const topPercent = 50 - slot.photoScale * 50 + slot.photoOffsetY * 100;
+      const photoMetrics = getPhotoRenderMetrics({
+        containerAspect: slot.frame.width / Math.max(0.0001, slot.frame.height),
+        imageAspect: getPhotoAspect(photo),
+        fitMode: slot.fitMode,
+        scale: slot.photoScale ?? 1,
+        offsetX: slot.photoOffsetX ?? 0,
+        offsetY: slot.photoOffsetY ?? 0
+      });
       slotsHtml += `
         <div
           class="slot"
@@ -99,14 +122,37 @@ export async function exportProjectToPdf(
           ${
             src
               ? `<img class="fit-${slot.fitMode}" src="${escapeAttr(src)}" style="
-                width:${sizePercent.toFixed(3)}%;
-                height:${sizePercent.toFixed(3)}%;
-                left:${leftPercent.toFixed(3)}%;
-                top:${topPercent.toFixed(3)}%;
+                width:${(photoMetrics.width * 100).toFixed(3)}%;
+                height:${(photoMetrics.height * 100).toFixed(3)}%;
+                left:${photoMetrics.leftPercent.toFixed(3)}%;
+                top:${photoMetrics.topPercent.toFixed(3)}%;
               " />`
               : await renderPhotoBlock(src)
           }
         </div>
+      `;
+    }
+
+    for (const textBox of page.textBoxes) {
+      textBoxesHtml += `
+        <div
+          class="text-box"
+          style="
+            left:${(textBox.x * 100).toFixed(4)}%;
+            top:${(textBox.y * 100).toFixed(4)}%;
+            width:${(textBox.width * 100).toFixed(4)}%;
+            height:${(textBox.height * 100).toFixed(4)}%;
+            border-width:${(textBox.borderWidth ?? 0).toFixed(2)}px;
+            border-color:${escapeAttr(textBox.borderColor ?? "#0f172a")};
+            background:${escapeAttr(applyColorOpacity(textBox.fillColor ?? "#ffffff", textBox.fillOpacity ?? 0))};
+            color:${escapeAttr(textBox.textColor ?? page.textColor ?? "#0f172a")};
+            font-size:${(textBox.fontSize ?? page.textSize ?? 24).toFixed(0)}px;
+            font-weight:${escapeAttr(textBox.fontWeight ?? "700")};
+            font-style:${escapeAttr(textBox.fontStyle ?? "normal")};
+            font-family:${escapeAttr(textBox.fontFamily ?? page.textFontFamily ?? "Arial, sans-serif")};
+            text-align:${escapeAttr(textBox.textAlign ?? "center")};
+          "
+        >${escapeHtml(textBox.text)}</div>
       `;
     }
 
@@ -121,6 +167,7 @@ export async function exportProjectToPdf(
         ${page.themeLabel ? `<div class="page-theme" style="color:${escapeAttr(page.textColor ?? "#64748b")};">${escapeHtml(page.themeLabel)}</div>` : ""}
         <div class="canvas" style="background:${escapeAttr(page.backgroundColor ?? "#ffffff")}; border-radius:18px;">
           ${slotsHtml || '<div class="empty">No photos on this page.</div>'}
+          ${textBoxesHtml}
         </div>
       </section>
     `;
@@ -217,6 +264,18 @@ export async function exportProjectToPdf(
           .empty {
             color: #64748b;
             margin-top: 8px;
+          }
+          .text-box {
+            position: absolute;
+            box-sizing: border-box;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 8px 10px;
+            border-style: solid;
+            white-space: pre-wrap;
+            overflow: hidden;
+            z-index: 5;
           }
         </style>
       </head>
