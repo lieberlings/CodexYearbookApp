@@ -63,7 +63,7 @@ Goal:
 ## Milestone 3 tasks
 
 ### Task 1 — Add photo analysis metadata model and persistence
-**Status:** not started
+**Status:** completed
 
 #### Goal
 Extend the photo model so image-analysis outputs can be stored compactly and migration-safely.
@@ -102,7 +102,7 @@ Add a metadata block or equivalent fields for:
 ---
 
 ### Task 2 — Add photo analysis orchestrator and service boundaries
-**Status:** not started
+**Status:** completed
 
 #### Goal
 Create a clean analysis orchestration layer that can run image-analysis services and persist their outputs.
@@ -445,6 +445,7 @@ Milestone 3 is complete when:
 ## Recently completed
 - Milestone 1: project-scoped suggestion foundation
 - Milestone 2: project photo pool, collections, watching, candidate additions, stabilization, and focused foundation tests
+- Milestone 3: photo analysis metadata model, persistence, and orchestration scaffolding
 
 ---
 

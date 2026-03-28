@@ -61,7 +61,14 @@ describe("storage Milestone 2 foundations", () => {
             projectId: "project-1",
             uri: "file:///project.jpg",
             capturedAt: "2024-01-03T10:00:00.000Z",
-            addedAt: "2024-01-10T10:00:00.000Z"
+            addedAt: "2024-01-10T10:00:00.000Z",
+            analysis: {
+              analysisVersion: 1,
+              sceneTags: [" beach ", ""],
+              localOnly: {
+                privateFaceDataRef: " local-face-ref "
+              }
+            }
           }
         ],
         suggestions: [
@@ -99,7 +106,14 @@ describe("storage Milestone 2 foundations", () => {
     expect(data.photos.find((photo) => photo.id === "photo-project")).toMatchObject({
       id: "photo-project",
       projectId: "project-1",
-      memoryId: undefined
+      memoryId: undefined,
+      analysis: {
+        analysisVersion: 1,
+        sceneTags: ["beach"],
+        localOnly: {
+          privateFaceDataRef: "local-face-ref"
+        }
+      }
     });
     expect("exportDataUri" in (data.photos[0] as Record<string, unknown>)).toBe(false);
     expect(data.suggestions[0]).toMatchObject({
@@ -123,7 +137,14 @@ describe("storage Milestone 2 foundations", () => {
           uri: "file:///photo.jpg",
           exportDataUri: "data:image/jpeg;base64,abc",
           capturedAt: "2024-01-01T00:00:00.000Z",
-          addedAt: "2024-01-01T00:00:00.000Z"
+          addedAt: "2024-01-01T00:00:00.000Z",
+          analysis: {
+            analysisVersion: 2,
+            quality: {
+              qualityScore: 0.77
+            },
+            safeExternalTags: ["travel"]
+          }
         }
       ],
       suggestions: []
@@ -138,7 +159,14 @@ describe("storage Milestone 2 foundations", () => {
     expect(persisted.photos[0]).toMatchObject({
       id: "photo-1",
       projectId: "project-1",
-      uri: "file:///photo.jpg"
+      uri: "file:///photo.jpg",
+      analysis: {
+        analysisVersion: 2,
+        quality: {
+          qualityScore: 0.77
+        },
+        safeExternalTags: ["travel"]
+      }
     });
     expect("exportDataUri" in (persisted.photos[0] as Record<string, unknown>)).toBe(false);
   });

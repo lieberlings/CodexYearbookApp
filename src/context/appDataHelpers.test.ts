@@ -5,6 +5,7 @@ import {
   getProjectScanReferenceDate,
   getScopedProjectPhotos,
   markSuggestionAccepted,
+  normalizePhotoRecord,
   updateSuggestionStatusRecords,
   upsertSuggestionRecords
 } from "./appDataHelpers";
@@ -29,6 +30,82 @@ function makePhoto(overrides: Partial<PhotoItem> & Pick<PhotoItem, "id" | "proje
 }
 
 describe("appDataHelpers Milestone 2 foundations", () => {
+  it("normalizes compact photo analysis metadata while keeping sensitive references isolated", () => {
+    const normalized = normalizePhotoRecord(
+      {
+        id: "photo-1",
+        projectId: "project-1",
+        uri: "file:///photo.jpg",
+        capturedAt: "2024-01-01T00:00:00.000Z",
+        addedAt: "2024-01-01T00:00:00.000Z",
+        analysis: {
+          analysisVersion: 3,
+          analyzedAt: "2024-02-01T10:00:00.000Z",
+          quality: {
+            qualityScore: 0.84,
+            heroCandidateScore: 0.91,
+            isBlurry: false,
+            isLowLight: true
+          },
+          sceneTags: [" beach ", "", "sunset"],
+          themeTags: [" vacation ", "summer"],
+          subjectCues: {
+            portraitLike: false,
+            groupPhotoLike: true
+          },
+          faces: {
+            faceCount: 3,
+            hasFace: true,
+            hasMultipleFaces: true
+          },
+          similarity: {
+            duplicateClusterId: " dup-1 ",
+            similarityClusterId: " sim-1 ",
+            representativeScore: 0.72
+          },
+          safeExternalTags: [" seaside ", "", "travel"],
+          localOnly: {
+            privateFaceDataRef: " face-ref-1 ",
+            localEmbeddingRef: " emb-1 "
+          }
+        }
+      },
+      new Map()
+    );
+
+    expect(normalized?.analysis).toEqual({
+      analysisVersion: 3,
+      analyzedAt: "2024-02-01T10:00:00.000Z",
+      quality: {
+        qualityScore: 0.84,
+        heroCandidateScore: 0.91,
+        isBlurry: false,
+        isLowLight: true
+      },
+      sceneTags: ["beach", "sunset"],
+      themeTags: ["vacation", "summer"],
+      subjectCues: {
+        portraitLike: false,
+        groupPhotoLike: true
+      },
+      faces: {
+        faceCount: 3,
+        hasFace: true,
+        hasMultipleFaces: true
+      },
+      similarity: {
+        duplicateClusterId: "dup-1",
+        similarityClusterId: "sim-1",
+        representativeScore: 0.72
+      },
+      safeExternalTags: ["seaside", "travel"],
+      localOnly: {
+        privateFaceDataRef: "face-ref-1",
+        localEmbeddingRef: "emb-1"
+      }
+    });
+  });
+
   it("scopes project photos using the project timeline and date range", () => {
     const project = makeProject({
       id: "project-1",

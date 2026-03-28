@@ -82,6 +82,48 @@ export type MemoryPageSection = {
   photoIds: string[];
 };
 
+export type PhotoQualityMetadata = {
+  qualityScore?: number;
+  heroCandidateScore?: number;
+  isBlurry?: boolean;
+  isLowLight?: boolean;
+};
+
+export type PhotoSubjectCues = {
+  portraitLike?: boolean;
+  groupPhotoLike?: boolean;
+};
+
+export type PhotoFaceMetadata = {
+  faceCount?: number;
+  hasFace?: boolean;
+  hasMultipleFaces?: boolean;
+};
+
+export type PhotoSimilarityMetadata = {
+  duplicateClusterId?: string;
+  similarityClusterId?: string;
+  representativeScore?: number;
+};
+
+export type PhotoSensitiveAnalysisRefs = {
+  privateFaceDataRef?: string;
+  localEmbeddingRef?: string;
+};
+
+export type PhotoAnalysisMetadata = {
+  analysisVersion?: number;
+  analyzedAt?: string;
+  quality?: PhotoQualityMetadata;
+  sceneTags?: string[];
+  themeTags?: string[];
+  subjectCues?: PhotoSubjectCues;
+  faces?: PhotoFaceMetadata;
+  similarity?: PhotoSimilarityMetadata;
+  safeExternalTags?: string[];
+  localOnly?: PhotoSensitiveAnalysisRefs;
+};
+
 export type PhotoItem = {
   id: string;
   projectId: string;
@@ -96,6 +138,7 @@ export type PhotoItem = {
     latitude: number;
     longitude: number;
   };
+  analysis?: PhotoAnalysisMetadata;
 };
 
 export type PromptType = "time-interval" | "photo-spike" | "location-pattern";

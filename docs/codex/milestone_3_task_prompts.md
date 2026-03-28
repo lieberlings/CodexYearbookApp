@@ -130,6 +130,7 @@ Requirements:
   - merge metadata results back into persisted photos
   - avoid duplicate reprocessing where practical
 - keep the architecture local-first and modular
+- prefer pure/helper-style metadata merge logic where possible, consistent with the recent `appDataHelpers` pattern
 
 Constraints:
 - do not implement full native ML integration yet unless the current stack already has it ready
@@ -137,13 +138,15 @@ Constraints:
 - do not add person recognition yet
 - do not add broad UI in this task
 - do not build a heavy background job system yet
+- do not over-engineer scheduling; a manual or direct orchestration path is acceptable for now
+- keep service outputs compact and aligned with the new `PhotoItem.analysis` structure
 
 After editing, provide:
 1. the new service boundaries
 2. how the orchestrator reads/writes photo metadata
 3. how reprocessing avoidance works
 4. what remains stubbed for later native integration
-
+5. whether any shared helper logic was added to keep metadata merging clean
 ### What to review
 - Is there a clean service structure now?
 - Did the orchestrator stay focused on metadata only?
@@ -167,10 +170,12 @@ Focus specifically on:
 - `docs/codex/active_work_plan_milestone_3.md` → **Task 3 — Implement coarse quality analysis**
 
 Then read these code files:
-- `photoAnalysisOrchestrator`
-- `photoQualityService`
+- `src/services/photoAnalysisOrchestrator.ts`
+- `src/services/photoAnalysisTypes.ts`
+- `src/services/photoQualityService.ts`
+- `src/context/appDataHelpers.ts`
 - photo-related types/storage files
-- suggestion-ranking helpers if any
+- any suggestion-ranking helpers if relevant for context only
 
 Implement the first lightweight quality-analysis pass.
 
@@ -183,18 +188,27 @@ Requirements:
 - keep outputs stable and heuristic-friendly
 - keep analysis local-first
 - make the output persist through the new metadata path
+- keep the implementation bounded and compatible with the current orchestrator/service contract
 
 Constraints:
 - do not attempt sophisticated aesthetic modeling
 - do not introduce native ML dependency if a lighter first pass is more appropriate
 - do not change UI in this task unless tiny debug surfacing is strictly necessary
 - do not add person recognition yet
+- do not change suggestion behavior yet beyond what is necessary to support quality metadata production
+- prefer deterministic, explainable heuristics over opaque scoring
+
+Helpful directions:
+- it is acceptable to start with metadata already available from the photo record, such as dimensions, aspect ratio, timestamps, or other accessible non-ML signals
+- if true blur detection is not realistically available yet in the current stack, use a conservative “weak candidate” or “hero candidate” heuristic rather than pretending to detect blur
+- keep the first version useful for later ranking, not visually perfect
 
 After editing, provide:
 1. what quality signals were implemented
 2. how they are computed at a high level
 3. how they are persisted
 4. how reliable vs heuristic these signals are
+5. any follow-up limitations before Task 4
 
 ### What to review
 - Are the signals useful but lightweight?

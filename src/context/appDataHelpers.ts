@@ -1,4 +1,4 @@
-import { Memory, PhotoItem, Project, ProjectTimelineMode, Suggestion } from "../types";
+import { Memory, PhotoAnalysisMetadata, PhotoItem, Project, ProjectTimelineMode, Suggestion } from "../types";
 
 export type ProjectPhotoScopeOverrides = {
   timelineMode?: ProjectTimelineMode;
@@ -30,6 +30,121 @@ export function normalizeMemoryRecord(memory: Memory): Memory {
   };
 }
 
+function normalizeOptionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function normalizeOptionalNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function normalizeOptionalBoolean(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function normalizeTagList(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const normalized = value
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter(Boolean);
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+export function normalizePhotoAnalysisRecord(analysis: PhotoAnalysisMetadata | undefined): PhotoAnalysisMetadata | undefined {
+  if (!analysis || typeof analysis !== "object") {
+    return undefined;
+  }
+
+  const quality = {
+    qualityScore: normalizeOptionalNumber(analysis.quality?.qualityScore),
+    heroCandidateScore: normalizeOptionalNumber(analysis.quality?.heroCandidateScore),
+    isBlurry: normalizeOptionalBoolean(analysis.quality?.isBlurry),
+    isLowLight: normalizeOptionalBoolean(analysis.quality?.isLowLight)
+  };
+  const subjectCues = {
+    portraitLike: normalizeOptionalBoolean(analysis.subjectCues?.portraitLike),
+    groupPhotoLike: normalizeOptionalBoolean(analysis.subjectCues?.groupPhotoLike)
+  };
+  const faces = {
+    faceCount: normalizeOptionalNumber(analysis.faces?.faceCount),
+    hasFace: normalizeOptionalBoolean(analysis.faces?.hasFace),
+    hasMultipleFaces: normalizeOptionalBoolean(analysis.faces?.hasMultipleFaces)
+  };
+  const similarity = {
+    duplicateClusterId: normalizeOptionalString(analysis.similarity?.duplicateClusterId),
+    similarityClusterId: normalizeOptionalString(analysis.similarity?.similarityClusterId),
+    representativeScore: normalizeOptionalNumber(analysis.similarity?.representativeScore)
+  };
+  const localOnly = {
+    privateFaceDataRef: normalizeOptionalString(analysis.localOnly?.privateFaceDataRef),
+    localEmbeddingRef: normalizeOptionalString(analysis.localOnly?.localEmbeddingRef)
+  };
+
+  const normalized: PhotoAnalysisMetadata = {
+    analysisVersion: normalizeOptionalNumber(analysis.analysisVersion),
+    analyzedAt: normalizeOptionalString(analysis.analyzedAt),
+    quality: Object.values(quality).some((value) => value !== undefined) ? quality : undefined,
+    sceneTags: normalizeTagList(analysis.sceneTags),
+    themeTags: normalizeTagList(analysis.themeTags),
+    subjectCues: Object.values(subjectCues).some((value) => value !== undefined) ? subjectCues : undefined,
+    faces: Object.values(faces).some((value) => value !== undefined) ? faces : undefined,
+    similarity: Object.values(similarity).some((value) => value !== undefined) ? similarity : undefined,
+    safeExternalTags: normalizeTagList(analysis.safeExternalTags),
+    localOnly: Object.values(localOnly).some((value) => value !== undefined) ? localOnly : undefined
+  };
+
+  return Object.values(normalized).some((value) => value !== undefined) ? normalized : undefined;
+}
+
+export function isPhotoAnalysisCurrent(photo: PhotoItem, analysisVersion: number): boolean {
+  return (photo.analysis?.analysisVersion ?? 0) >= analysisVersion;
+}
+
+export function mergePhotoAnalysisMetadata(
+  existing: PhotoAnalysisMetadata | undefined,
+  patch: Partial<PhotoAnalysisMetadata> | undefined,
+  options: { analysisVersion: number; analyzedAt: string }
+): PhotoAnalysisMetadata {
+  const merged = normalizePhotoAnalysisRecord({
+    ...existing,
+    ...patch,
+    analysisVersion: options.analysisVersion,
+    analyzedAt: options.analyzedAt,
+    quality: {
+      ...existing?.quality,
+      ...patch?.quality
+    },
+    sceneTags: patch?.sceneTags ?? existing?.sceneTags,
+    themeTags: patch?.themeTags ?? existing?.themeTags,
+    subjectCues: {
+      ...existing?.subjectCues,
+      ...patch?.subjectCues
+    },
+    faces: {
+      ...existing?.faces,
+      ...patch?.faces
+    },
+    similarity: {
+      ...existing?.similarity,
+      ...patch?.similarity
+    },
+    safeExternalTags: patch?.safeExternalTags ?? existing?.safeExternalTags,
+    localOnly: {
+      ...existing?.localOnly,
+      ...patch?.localOnly
+    }
+  });
+
+  return (
+    merged ?? {
+      analysisVersion: options.analysisVersion,
+      analyzedAt: options.analyzedAt
+    }
+  );
+}
+
 export function normalizePhotoRecord(photo: PhotoItem, memoryProjectIds: Map<string, string>): PhotoItem | undefined {
   const projectId =
     typeof photo.projectId === "string" && photo.projectId.trim().length > 0
@@ -50,7 +165,8 @@ export function normalizePhotoRecord(photo: PhotoItem, memoryProjectIds: Map<str
   return {
     ...photo,
     projectId,
-    memoryId
+    memoryId,
+    analysis: normalizePhotoAnalysisRecord(photo.analysis)
   };
 }
 

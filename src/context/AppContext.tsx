@@ -33,6 +33,8 @@ import {
   pickImagesFromLibrary,
   pickSingleImageFromLibrary
 } from "../services/photoService";
+import { runPhotoAnalysisOrchestrator } from "../services/photoAnalysisOrchestrator";
+import { PhotoAnalysisRunResult } from "../services/photoAnalysisTypes";
 import { generateSuggestionsForProject } from "../services/promptEngine";
 
 type AppContextValue = {
@@ -44,6 +46,10 @@ type AppContextValue = {
   suggestions: Suggestion[];
   getSuggestionsByProjectId: (projectId: string) => Suggestion[];
   upsertSuggestions: (nextSuggestions: Suggestion[]) => void;
+  analyzeProjectPhotos: (
+    projectId: string,
+    options?: { photoIds?: string[]; force?: boolean; scopeOverrides?: ProjectPhotoScopeOverrides }
+  ) => Promise<Pick<PhotoAnalysisRunResult, "analyzedPhotoIds" | "skippedPhotoIds">>;
   scanProjectSuggestions: (projectId: string, scopeOverrides?: ProjectPhotoScopeOverrides) => Promise<Suggestion[]>;
   acceptSuggestion: (suggestionId: string) => Promise<string | undefined>;
   keepWatchingSuggestion: (suggestionId: string) => void;
@@ -1173,6 +1179,70 @@ export function AppProvider({ children }: PropsWithChildren) {
     setSuggestions((prev) => upsertSuggestionRecords(prev, nextSuggestions));
   }, []);
 
+  const runProjectPhotoAnalysis = useCallback(
+    async (
+      projectId: string,
+      options?: { photoIds?: string[]; force?: boolean; scopeOverrides?: ProjectPhotoScopeOverrides }
+    ): Promise<(PhotoAnalysisRunResult & { scopedPhotos: PhotoItem[] }) | undefined> => {
+      const project = projects.find((item) => item.id === projectId);
+      if (!project) {
+        return undefined;
+      }
+
+      const scopedPhotos = getScopedProjectPhotos(project, photos, options?.scopeOverrides);
+      if (scopedPhotos.length === 0) {
+        return {
+          photos,
+          analyzedPhotoIds: [],
+          skippedPhotoIds: [],
+          scopedPhotos: []
+        };
+      }
+
+      const scopedPhotoIds = new Set(scopedPhotos.map((photo) => photo.id));
+      const targetPhotoIds =
+        options?.photoIds?.filter((photoId) => scopedPhotoIds.has(photoId)) ?? Array.from(scopedPhotoIds);
+
+      const result = await runPhotoAnalysisOrchestrator({
+        project,
+        photos,
+        photoIds: targetPhotoIds,
+        force: options?.force
+      });
+
+      return {
+        ...result,
+        scopedPhotos: result.photos.filter((photo) => scopedPhotoIds.has(photo.id))
+      };
+    },
+    [photos, projects]
+  );
+
+  const analyzeProjectPhotos = useCallback(
+    async (
+      projectId: string,
+      options?: { photoIds?: string[]; force?: boolean; scopeOverrides?: ProjectPhotoScopeOverrides }
+    ): Promise<Pick<PhotoAnalysisRunResult, "analyzedPhotoIds" | "skippedPhotoIds">> => {
+      const result = await runProjectPhotoAnalysis(projectId, options);
+      if (!result) {
+        return {
+          analyzedPhotoIds: [],
+          skippedPhotoIds: []
+        };
+      }
+
+      if (result.analyzedPhotoIds.length > 0) {
+        setPhotos(result.photos);
+      }
+
+      return {
+        analyzedPhotoIds: result.analyzedPhotoIds,
+        skippedPhotoIds: result.skippedPhotoIds
+      };
+    },
+    [runProjectPhotoAnalysis]
+  );
+
   const scanProjectSuggestions = useCallback(
     async (projectId: string, scopeOverrides?: ProjectPhotoScopeOverrides): Promise<Suggestion[]> => {
       try {
@@ -1182,7 +1252,15 @@ export function AppProvider({ children }: PropsWithChildren) {
         }
 
         const projectMemories = memories.filter((memory) => memory.projectId === projectId);
-        const scopedPhotos = getScopedProjectPhotos(project, photos, scopeOverrides);
+        const analysisResult = await runProjectPhotoAnalysis(projectId, { scopeOverrides });
+        if (!analysisResult) {
+          return [];
+        }
+        if (analysisResult.analyzedPhotoIds.length > 0) {
+          setPhotos(analysisResult.photos);
+        }
+
+        const scopedPhotos = analysisResult.scopedPhotos;
         if (scopedPhotos.length === 0) {
           return [];
         }
@@ -1200,7 +1278,7 @@ export function AppProvider({ children }: PropsWithChildren) {
         throw error instanceof Error ? error : new Error("Project suggestion scan failed.");
       }
     },
-    [memories, photos, projects, upsertSuggestions]
+    [memories, projects, runProjectPhotoAnalysis, upsertSuggestions]
   );
 
   const updateSuggestionStatus = useCallback((suggestionId: string, status: Suggestion["status"]) => {
@@ -1337,6 +1415,7 @@ export function AppProvider({ children }: PropsWithChildren) {
       suggestions,
       getSuggestionsByProjectId,
       upsertSuggestions,
+      analyzeProjectPhotos,
       scanProjectSuggestions,
       acceptSuggestion,
       keepWatchingSuggestion,
@@ -1418,6 +1497,7 @@ export function AppProvider({ children }: PropsWithChildren) {
       photos,
       pickProjectThumbnail,
       projects,
+      analyzeProjectPhotos,
       scanProjectSuggestions,
       snoozeSuggestion,
       suggestions,
