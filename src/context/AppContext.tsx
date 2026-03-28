@@ -1,13 +1,39 @@
 import { PropsWithChildren, createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { makeId } from "../lib/id";
 import { loadAppData, saveAppData } from "../storage";
-import { Memory, MemoryPageSection, PageTextBox, PhotoItem, Project, ProjectType } from "../types";
+import {
+  applyPhotoAssignmentToMemory,
+  buildMemorySeedFromSuggestion,
+  getProjectScanReferenceDate,
+  getScopedProjectPhotos,
+  markSuggestionAccepted,
+  normalizeMemoryRecord,
+  normalizePhotoRecord,
+  normalizeProjectRecord,
+  normalizeSuggestionRecord,
+  ProjectPhotoScopeOverrides,
+  updateSuggestionStatusRecords,
+  upsertSuggestionRecords
+} from "./appDataHelpers";
+import {
+  Memory,
+  MemoryPageSection,
+  PageTextBox,
+  PhotoItem,
+  Project,
+  ProjectAssistLevel,
+  ProjectStyleIntensity,
+  ProjectTimelineMode,
+  ProjectType,
+  Suggestion
+} from "../types";
 import {
   copyImageToAppStorage,
-  getCurrentLocation,
+  PickedPhotoAsset,
   pickImagesFromLibrary,
   pickSingleImageFromLibrary
 } from "../services/photoService";
+import { generateSuggestionsForProject } from "../services/promptEngine";
 
 type AppContextValue = {
   loading: boolean;
@@ -15,13 +41,53 @@ type AppContextValue = {
   memories: Memory[];
   pageSections: MemoryPageSection[];
   photos: PhotoItem[];
+  suggestions: Suggestion[];
+  getSuggestionsByProjectId: (projectId: string) => Suggestion[];
+  upsertSuggestions: (nextSuggestions: Suggestion[]) => void;
+  scanProjectSuggestions: (projectId: string, scopeOverrides?: ProjectPhotoScopeOverrides) => Promise<Suggestion[]>;
+  acceptSuggestion: (suggestionId: string) => Promise<string | undefined>;
+  keepWatchingSuggestion: (suggestionId: string) => void;
+  dismissSuggestion: (suggestionId: string) => void;
+  snoozeSuggestion: (suggestionId: string) => void;
   pickProjectThumbnail: () => Promise<string | undefined>;
-  createProject: (name: string, projectType: ProjectType, thumbnailUri?: string) => Promise<string>;
-  updateProject: (projectId: string, updates: { name?: string; projectType?: ProjectType; thumbnailUri?: string }) => void;
+  createProject: (
+    name: string,
+    projectType: ProjectType,
+    thumbnailUri?: string,
+    options?: {
+      timelineMode?: ProjectTimelineMode;
+      includeFutureProjectPhotos?: boolean;
+      startDate?: string;
+      endDate?: string;
+      assistLevel?: ProjectAssistLevel;
+      styleIntensity?: ProjectStyleIntensity;
+    }
+  ) => Promise<string>;
+  updateProject: (
+    projectId: string,
+    updates: {
+      name?: string;
+      projectType?: ProjectType;
+      thumbnailUri?: string;
+      timelineMode?: ProjectTimelineMode;
+      includeFutureProjectPhotos?: boolean;
+      startDate?: string | null;
+      endDate?: string | null;
+      assistLevel?: ProjectAssistLevel;
+      styleIntensity?: ProjectStyleIntensity;
+    }
+  ) => void;
   deleteProject: (projectId: string) => void;
   getProjectById: (id: string) => Project | undefined;
-  createMemory: (projectId: string, title: string, themeLabel?: string) => Promise<string>;
-  updateMemory: (memoryId: string, updates: { title?: string; themeLabel?: string }) => void;
+  createMemory: (
+    projectId: string,
+    title: string,
+    options?: { themeLabel?: string; themeTags?: string[]; kind?: Memory["kind"]; status?: Memory["status"] }
+  ) => Promise<string>;
+  updateMemory: (
+    memoryId: string,
+    updates: { title?: string; themeLabel?: string; themeTags?: string[]; kind?: Memory["kind"]; status?: Memory["status"] }
+  ) => void;
   deleteMemory: (memoryId: string) => void;
   moveMemory: (projectId: string, memoryId: string, direction: "up" | "down") => void;
   reorderMemory: (projectId: string, memoryId: string, toIndex: number) => void;
@@ -29,8 +95,11 @@ type AppContextValue = {
   addPhotosToMemory: (memoryId: string) => Promise<number>;
   addPhotoAssetsToMemory: (
     memoryId: string,
-    assets: { uri: string; fileName?: string | null; width?: number; height?: number }[]
+    assets: PickedPhotoAsset[]
   ) => Promise<string[]>;
+  addPhotosToProject: (projectId: string) => Promise<number>;
+  addPhotoAssetsToProject: (projectId: string, assets: PickedPhotoAsset[]) => Promise<string[]>;
+  assignPhotosToMemory: (memoryId: string, photoIds: string[]) => void;
   deletePhotos: (photoIds: string[]) => void;
   createPageSection: (memoryId: string) => void;
   deletePageSection: (pageSectionId: string, options?: { photoMode?: "merge" | "keep" | "discard" }) => void;
@@ -61,6 +130,8 @@ type AppContextValue = {
   ) => void;
   getMemoriesByProjectId: (projectId: string) => Memory[];
   getMemoryById: (id: string) => Memory | undefined;
+  getPhotosByProjectId: (projectId: string) => PhotoItem[];
+  getUnassignedPhotosByProjectId: (projectId: string) => PhotoItem[];
   getPhotosByMemoryId: (memoryId: string) => PhotoItem[];
   getPageSectionsByMemoryId: (memoryId: string) => MemoryPageSection[];
   getMemoryThumbnailUri: (memoryId: string) => string | undefined;
@@ -89,6 +160,9 @@ function reconcilePageSections(
   const sectionsByMemory = new Map<string, MemoryPageSection[]>();
 
   for (const photo of photos) {
+    if (!photo.memoryId) {
+      continue;
+    }
     const list = photosByMemory.get(photo.memoryId) ?? [];
     list.push(photo);
     photosByMemory.set(photo.memoryId, list);
@@ -149,6 +223,7 @@ export function AppProvider({ children }: PropsWithChildren) {
   const [memories, setMemories] = useState<Memory[]>([]);
   const [pageSections, setPageSections] = useState<MemoryPageSection[]>([]);
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
 
   useEffect(() => {
     let mounted = true;
@@ -158,40 +233,55 @@ export function AppProvider({ children }: PropsWithChildren) {
         return;
       }
 
-      let nextProjects = data.projects ?? [];
-      let nextMemories = (data.memories ?? []).map((memory, index) => ({
-        ...memory,
-        order: typeof memory.order === "number" ? memory.order : index
-      }));
+      let nextProjects = (data.projects ?? []).map(normalizeProjectRecord);
+      let nextMemories = (data.memories ?? []).map((memory, index) =>
+        normalizeMemoryRecord({
+          ...memory,
+          order: typeof memory.order === "number" ? memory.order : index
+        })
+      );
+      const nextSuggestions = (data.suggestions ?? []).map(normalizeSuggestionRecord);
 
       const hasLegacyMemories = nextMemories.some((memory) => !memory.projectId);
       if (hasLegacyMemories) {
         const now = new Date().toISOString();
         const importedProjectId = makeId("project");
         nextProjects = [
-          {
+          normalizeProjectRecord({
             id: importedProjectId,
             name: "Imported Memories",
             projectType: "general",
+            timelineMode: "ongoing",
+            includeFutureProjectPhotos: true,
+            startDate: undefined,
+            endDate: undefined,
+            assistLevel: "balanced",
+            styleIntensity: "warm",
             createdAt: now,
             updatedAt: now
-          },
+          }),
           ...nextProjects
         ];
-        nextMemories = nextMemories.map((memory, index) => ({
-          ...memory,
-          projectId: memory.projectId ?? importedProjectId,
-          order: typeof memory.order === "number" ? memory.order : index
-        }));
+        nextMemories = nextMemories.map((memory, index) =>
+          normalizeMemoryRecord({
+            ...memory,
+            projectId: memory.projectId ?? importedProjectId,
+            order: typeof memory.order === "number" ? memory.order : index
+          })
+        );
       }
 
-      const nextPhotos = data.photos ?? [];
+      const memoryProjectIds = new Map(nextMemories.map((memory) => [memory.id, memory.projectId] as const));
+      const nextPhotos = (data.photos ?? [])
+        .map((photo) => normalizePhotoRecord(photo, memoryProjectIds))
+        .filter((photo): photo is PhotoItem => Boolean(photo));
       const nextSections = reconcilePageSections(nextMemories, nextPhotos, data.pageSections ?? []);
 
       setProjects(nextProjects);
       setMemories(nextMemories);
       setPhotos(nextPhotos);
       setPageSections(nextSections);
+      setSuggestions(nextSuggestions);
       setLoading(false);
     }
     void init();
@@ -205,8 +295,8 @@ export function AppProvider({ children }: PropsWithChildren) {
       return;
     }
     const normalizedSections = reconcilePageSections(memories, photos, pageSections);
-    void saveAppData({ projects, memories, pageSections: normalizedSections, photos }).catch(() => undefined);
-  }, [loading, memories, pageSections, photos, projects]);
+    void saveAppData({ projects, memories, pageSections: normalizedSections, photos, suggestions }).catch(() => undefined);
+  }, [loading, memories, pageSections, photos, projects, suggestions]);
 
   const pickProjectThumbnail = useCallback(async (): Promise<string | undefined> => {
     const asset = await pickSingleImageFromLibrary();
@@ -217,13 +307,62 @@ export function AppProvider({ children }: PropsWithChildren) {
     return copyImageToAppStorage(asset.uri, thumbId, asset.fileName);
   }, []);
 
+  const importPickedPhotos = useCallback(
+    async (projectId: string, selected: PickedPhotoAsset[], memoryId?: string): Promise<PhotoItem[]> => {
+      if (selected.length === 0) {
+        return [];
+      }
+
+      const now = new Date().toISOString();
+      const createdPhotos: PhotoItem[] = [];
+
+      for (const asset of selected) {
+        const photoId = makeId("photo");
+        const localUri = await copyImageToAppStorage(asset.uri, photoId, asset.fileName);
+        createdPhotos.push({
+          id: photoId,
+          projectId,
+          memoryId,
+          uri: localUri,
+          width: asset.width,
+          height: asset.height,
+          capturedAt: asset.capturedAt ?? now,
+          addedAt: now,
+          location: asset.location
+        });
+      }
+
+      return createdPhotos;
+    },
+    []
+  );
+
   const createProject = useCallback(
-    async (name: string, projectType: ProjectType, thumbnailUri?: string): Promise<string> => {
+    async (
+      name: string,
+      projectType: ProjectType,
+      thumbnailUri?: string,
+      options?: {
+        timelineMode?: ProjectTimelineMode;
+        includeFutureProjectPhotos?: boolean;
+        startDate?: string;
+        endDate?: string;
+        assistLevel?: ProjectAssistLevel;
+        styleIntensity?: ProjectStyleIntensity;
+      }
+    ): Promise<string> => {
       const now = new Date().toISOString();
       const project: Project = {
         id: makeId("project"),
         name: name.trim(),
         projectType,
+        timelineMode: options?.timelineMode ?? "ongoing",
+        includeFutureProjectPhotos:
+          options?.includeFutureProjectPhotos ?? (options?.timelineMode ?? "ongoing") !== "past",
+        startDate: options?.startDate ?? undefined,
+        endDate: options?.endDate ?? undefined,
+        assistLevel: options?.assistLevel ?? "balanced",
+        styleIntensity: options?.styleIntensity ?? "warm",
         thumbnailUri,
         createdAt: now,
         updatedAt: now
@@ -235,7 +374,20 @@ export function AppProvider({ children }: PropsWithChildren) {
   );
 
   const updateProject = useCallback(
-    (projectId: string, updates: { name?: string; projectType?: ProjectType; thumbnailUri?: string }) => {
+    (
+      projectId: string,
+      updates: {
+        name?: string;
+        projectType?: ProjectType;
+        thumbnailUri?: string;
+        timelineMode?: ProjectTimelineMode;
+        includeFutureProjectPhotos?: boolean;
+        startDate?: string | null;
+        endDate?: string | null;
+        assistLevel?: ProjectAssistLevel;
+        styleIntensity?: ProjectStyleIntensity;
+      }
+    ) => {
       const now = new Date().toISOString();
       setProjects((prev) =>
         prev.map((project) =>
@@ -245,6 +397,13 @@ export function AppProvider({ children }: PropsWithChildren) {
                 name: updates.name !== undefined ? updates.name.trim() : project.name,
                 projectType: updates.projectType ?? project.projectType,
                 thumbnailUri: updates.thumbnailUri !== undefined ? updates.thumbnailUri : project.thumbnailUri,
+                timelineMode: updates.timelineMode ?? project.timelineMode,
+                includeFutureProjectPhotos:
+                  updates.includeFutureProjectPhotos ?? project.includeFutureProjectPhotos,
+                startDate: updates.startDate !== undefined ? updates.startDate ?? undefined : project.startDate,
+                endDate: updates.endDate !== undefined ? updates.endDate ?? undefined : project.endDate,
+                assistLevel: updates.assistLevel ?? project.assistLevel,
+                styleIntensity: updates.styleIntensity ?? project.styleIntensity,
                 updatedAt: now
               }
             : project
@@ -256,17 +415,22 @@ export function AppProvider({ children }: PropsWithChildren) {
 
   const deleteProject = useCallback((projectId: string) => {
     setProjects((prevProjects) => prevProjects.filter((project) => project.id !== projectId));
+    setSuggestions((prevSuggestions) => prevSuggestions.filter((suggestion) => suggestion.projectId !== projectId));
     setMemories((prevMemories) => {
       const removedMemoryIds = new Set(
         prevMemories.filter((memory) => memory.projectId === projectId).map((memory) => memory.id)
       );
-      setPhotos((prevPhotos) => prevPhotos.filter((photo) => !removedMemoryIds.has(photo.memoryId)));
+      setPhotos((prevPhotos) => prevPhotos.filter((photo) => photo.projectId !== projectId));
       setPageSections((prevSections) => prevSections.filter((section) => !removedMemoryIds.has(section.memoryId)));
       return prevMemories.filter((memory) => memory.projectId !== projectId);
     });
   }, []);
 
-  const createMemory = useCallback(async (projectId: string, title: string, themeLabel?: string) => {
+  const createMemory = useCallback(async (
+    projectId: string,
+    title: string,
+    options?: { themeLabel?: string; themeTags?: string[]; kind?: Memory["kind"]; status?: Memory["status"] }
+  ) => {
     const now = new Date().toISOString();
     let createdMemoryId = "";
     setMemories((prev) => {
@@ -278,7 +442,10 @@ export function AppProvider({ children }: PropsWithChildren) {
         id: makeId("memory"),
         projectId,
         title: title.trim(),
-        themeLabel: themeLabel?.trim() || undefined,
+        kind: options?.kind ?? "event",
+        status: options?.status ?? "active",
+        themeLabel: options?.themeLabel?.trim() || undefined,
+        themeTags: options?.themeTags?.map((tag) => tag.trim()).filter(Boolean),
         order: nextOrder,
         createdAt: now,
         updatedAt: now
@@ -314,7 +481,10 @@ export function AppProvider({ children }: PropsWithChildren) {
     return createdMemoryId;
   }, []);
 
-  const updateMemory = useCallback((memoryId: string, updates: { title?: string; themeLabel?: string }) => {
+  const updateMemory = useCallback((
+    memoryId: string,
+    updates: { title?: string; themeLabel?: string; themeTags?: string[]; kind?: Memory["kind"]; status?: Memory["status"] }
+  ) => {
     const now = new Date().toISOString();
     let touchedProjectId = "";
     setMemories((prev) =>
@@ -326,7 +496,13 @@ export function AppProvider({ children }: PropsWithChildren) {
         return {
           ...memory,
           title: updates.title !== undefined ? updates.title.trim() : memory.title,
+          kind: updates.kind ?? memory.kind,
+          status: updates.status ?? memory.status,
           themeLabel: updates.themeLabel !== undefined ? updates.themeLabel.trim() || undefined : memory.themeLabel,
+          themeTags:
+            updates.themeTags !== undefined
+              ? updates.themeTags.map((tag) => tag.trim()).filter(Boolean)
+              : memory.themeTags,
           updatedAt: now
         };
       })
@@ -797,33 +973,17 @@ export function AppProvider({ children }: PropsWithChildren) {
   );
 
   const addPhotoAssetsToMemory = useCallback(
-    async (
-      memoryId: string,
-      selected: { uri: string; fileName?: string | null; width?: number; height?: number }[]
-    ): Promise<string[]> => {
+    async (memoryId: string, selected: PickedPhotoAsset[]): Promise<string[]> => {
       if (selected.length === 0) {
         return [];
       }
-      const location = await getCurrentLocation();
-      const createdPhotos: PhotoItem[] = [];
-      const createdPhotoIds: string[] = [];
-      const now = new Date().toISOString();
-
-      for (const asset of selected) {
-        const photoId = makeId("photo");
-        const localUri = await copyImageToAppStorage(asset.uri, photoId, asset.fileName);
-        createdPhotoIds.push(photoId);
-        createdPhotos.push({
-          id: photoId,
-          memoryId,
-          uri: localUri,
-          width: asset.width,
-          height: asset.height,
-          capturedAt: now,
-          addedAt: now,
-          location
-        });
+      const memory = memories.find((item) => item.id === memoryId);
+      if (!memory) {
+        return [];
       }
+      const now = new Date().toISOString();
+      const createdPhotos = await importPickedPhotos(memory.projectId, selected, memoryId);
+      const createdPhotoIds = createdPhotos.map((photo) => photo.id);
 
       setPhotos((prev) => [...createdPhotos, ...prev]);
 
@@ -877,7 +1037,26 @@ export function AppProvider({ children }: PropsWithChildren) {
 
       return createdPhotoIds;
     },
-    []
+    [importPickedPhotos, memories]
+  );
+
+  const addPhotoAssetsToProject = useCallback(
+    async (projectId: string, selected: PickedPhotoAsset[]): Promise<string[]> => {
+      if (selected.length === 0) {
+        return [];
+      }
+      const createdPhotos = await importPickedPhotos(projectId, selected);
+      const createdPhotoIds = createdPhotos.map((photo) => photo.id);
+      const now = new Date().toISOString();
+
+      setPhotos((prev) => [...createdPhotos, ...prev]);
+      setProjects((prev) =>
+        prev.map((project) => (project.id === projectId ? { ...project, updatedAt: now } : project))
+      );
+
+      return createdPhotoIds;
+    },
+    [importPickedPhotos]
   );
 
   const addPhotosToMemory = useCallback(
@@ -892,6 +1071,47 @@ export function AppProvider({ children }: PropsWithChildren) {
     [addPhotoAssetsToMemory]
   );
 
+  const addPhotosToProject = useCallback(
+    async (projectId: string): Promise<number> => {
+      const selected = await pickImagesFromLibrary();
+      if (selected.length === 0) {
+        return 0;
+      }
+      const createdPhotoIds = await addPhotoAssetsToProject(projectId, selected);
+      return createdPhotoIds.length;
+    },
+    [addPhotoAssetsToProject]
+  );
+
+  const assignPhotosToMemory = useCallback((memoryId: string, photoIds: string[]) => {
+    if (photoIds.length === 0) {
+      return;
+    }
+
+    const now = new Date().toISOString();
+    setMemories((prevMemories) => {
+      let nextMemories = prevMemories;
+      setPhotos((prevPhotos) => {
+        let nextPhotos = prevPhotos;
+        setProjects((prevProjects) => {
+          const nextState = applyPhotoAssignmentToMemory({
+            memories: prevMemories,
+            photos: prevPhotos,
+            projects: prevProjects,
+            memoryId,
+            photoIds,
+            now
+          });
+          nextMemories = nextState.memories;
+          nextPhotos = nextState.photos;
+          return nextState.projects;
+        });
+        return nextPhotos;
+      });
+      return nextMemories;
+    });
+  }, []);
+
   const deletePhotos = useCallback((photoIds: string[]) => {
     if (photoIds.length === 0) {
       return;
@@ -903,6 +1123,9 @@ export function AppProvider({ children }: PropsWithChildren) {
     setPhotos((prev) => {
       const next = prev.filter((photo) => !removed.has(photo.id));
       for (const photo of next) {
+        if (!photo.memoryId) {
+          continue;
+        }
         const list = remainingByMemory.get(photo.memoryId) ?? [];
         list.push(photo);
         remainingByMemory.set(photo.memoryId, list);
@@ -936,6 +1159,102 @@ export function AppProvider({ children }: PropsWithChildren) {
     );
   }, []);
 
+  const getSuggestionsByProjectId = useCallback(
+    (projectId: string) => {
+      return suggestions.filter((suggestion) => suggestion.projectId === projectId);
+    },
+    [suggestions]
+  );
+
+  const upsertSuggestions = useCallback((nextSuggestions: Suggestion[]) => {
+    if (nextSuggestions.length === 0) {
+      return;
+    }
+    setSuggestions((prev) => upsertSuggestionRecords(prev, nextSuggestions));
+  }, []);
+
+  const scanProjectSuggestions = useCallback(
+    async (projectId: string, scopeOverrides?: ProjectPhotoScopeOverrides): Promise<Suggestion[]> => {
+      try {
+        const project = projects.find((item) => item.id === projectId);
+        if (!project) {
+          return [];
+        }
+
+        const projectMemories = memories.filter((memory) => memory.projectId === projectId);
+        const scopedPhotos = getScopedProjectPhotos(project, photos, scopeOverrides);
+        if (scopedPhotos.length === 0) {
+          return [];
+        }
+
+        const scanReferenceDate = getProjectScanReferenceDate(project, scopedPhotos, scopeOverrides);
+        const generated = generateSuggestionsForProject(projectId, projectMemories, scopedPhotos, scanReferenceDate);
+
+        if (generated.length > 0) {
+          upsertSuggestions(generated);
+        }
+
+        return generated;
+      } catch (error) {
+        console.warn("Project suggestion scan failed", error);
+        throw error instanceof Error ? error : new Error("Project suggestion scan failed.");
+      }
+    },
+    [memories, photos, projects, upsertSuggestions]
+  );
+
+  const updateSuggestionStatus = useCallback((suggestionId: string, status: Suggestion["status"]) => {
+    setSuggestions((prev) => updateSuggestionStatusRecords(prev, suggestionId, status));
+  }, []);
+
+  // Suggestions remain persisted with explicit status. Accepting an event suggestion
+  // reuses the existing memory creation flow and stores the created memory link back
+  // on the suggestion instead of deleting it from state.
+  const acceptSuggestion = useCallback(
+    async (suggestionId: string): Promise<string | undefined> => {
+      const suggestion = suggestions.find((item) => item.id === suggestionId);
+      if (!suggestion) {
+        return undefined;
+      }
+      if (!projects.some((project) => project.id === suggestion.projectId)) {
+        return undefined;
+      }
+      if (suggestion.status === "accepted") {
+        return suggestion.acceptedMemoryId;
+      }
+
+      const memorySeed = buildMemorySeedFromSuggestion(suggestion);
+      const memoryId = await createMemory(suggestion.projectId, memorySeed.title, {
+        kind: memorySeed.kind,
+        status: memorySeed.status
+      });
+      if (!memoryId) {
+        return undefined;
+      }
+      setSuggestions((prev) => markSuggestionAccepted(prev, suggestionId, memoryId));
+      return memoryId;
+    },
+    [createMemory, projects, suggestions]
+  );
+
+  const keepWatchingSuggestion = useCallback((suggestionId: string) => {
+    updateSuggestionStatus(suggestionId, "watching");
+  }, [updateSuggestionStatus]);
+
+  const dismissSuggestion = useCallback(
+    (suggestionId: string) => {
+      updateSuggestionStatus(suggestionId, "dismissed");
+    },
+    [updateSuggestionStatus]
+  );
+
+  const snoozeSuggestion = useCallback(
+    (suggestionId: string) => {
+      updateSuggestionStatus(suggestionId, "snoozed");
+    },
+    [updateSuggestionStatus]
+  );
+
   const getProjectById = useCallback(
     (id: string) => {
       return projects.find((project) => project.id === id);
@@ -955,6 +1274,22 @@ export function AppProvider({ children }: PropsWithChildren) {
       return memories.find((memory) => memory.id === id);
     },
     [memories]
+  );
+
+  const getPhotosByProjectId = useCallback(
+    (projectId: string) => {
+      return photos.filter((photo) => photo.projectId === projectId).sort((a, b) => a.addedAt.localeCompare(b.addedAt));
+    },
+    [photos]
+  );
+
+  const getUnassignedPhotosByProjectId = useCallback(
+    (projectId: string) => {
+      return photos
+        .filter((photo) => photo.projectId === projectId && !photo.memoryId)
+        .sort((a, b) => a.addedAt.localeCompare(b.addedAt));
+    },
+    [photos]
   );
 
   const getPhotosByMemoryId = useCallback(
@@ -999,6 +1334,14 @@ export function AppProvider({ children }: PropsWithChildren) {
       memories,
       pageSections,
       photos,
+      suggestions,
+      getSuggestionsByProjectId,
+      upsertSuggestions,
+      scanProjectSuggestions,
+      acceptSuggestion,
+      keepWatchingSuggestion,
+      dismissSuggestion,
+      snoozeSuggestion,
       pickProjectThumbnail,
       createProject,
       updateProject,
@@ -1012,6 +1355,9 @@ export function AppProvider({ children }: PropsWithChildren) {
       setMemoryPrimaryPhoto,
       addPhotosToMemory,
       addPhotoAssetsToMemory,
+      addPhotosToProject,
+      addPhotoAssetsToProject,
+      assignPhotosToMemory,
       deletePhotos,
       createPageSection,
       deletePageSection,
@@ -1027,13 +1373,20 @@ export function AppProvider({ children }: PropsWithChildren) {
       updatePageSectionStyle,
       getMemoriesByProjectId,
       getMemoryById,
+      getPhotosByProjectId,
+      getUnassignedPhotosByProjectId,
       getPhotosByMemoryId,
       getPageSectionsByMemoryId,
       getMemoryThumbnailUri
     }),
     [
       addPhotoAssetsToMemory,
+      addPhotoAssetsToProject,
+      addPhotosToProject,
+      assignPhotosToMemory,
+      acceptSuggestion,
       addPhotosToMemory,
+      dismissSuggestion,
       createMemory,
       createPageSection,
       createProject,
@@ -1045,8 +1398,11 @@ export function AppProvider({ children }: PropsWithChildren) {
       getMemoryById,
       getMemoryThumbnailUri,
       getPageSectionsByMemoryId,
+      getPhotosByProjectId,
       getPhotosByMemoryId,
       getProjectById,
+      getUnassignedPhotosByProjectId,
+      getSuggestionsByProjectId,
       loading,
       memories,
       moveMemory,
@@ -1062,9 +1418,14 @@ export function AppProvider({ children }: PropsWithChildren) {
       photos,
       pickProjectThumbnail,
       projects,
+      scanProjectSuggestions,
+      snoozeSuggestion,
+      suggestions,
+      keepWatchingSuggestion,
       setMemoryPrimaryPhoto,
       setPageHero,
       setPageSectionTemplate,
+      upsertSuggestions,
       updatePageSectionStyle,
       updateMemory,
       updateProject

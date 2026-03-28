@@ -18,6 +18,12 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppData } from "../src/context/AppContext";
+import {
+  ProjectAssistLevel,
+  ProjectStyleIntensity,
+  ProjectTimelineMode,
+  ProjectType
+} from "../src/types";
 
 type ProjectComposerMode = "create" | "edit";
 
@@ -27,6 +33,61 @@ type ProjectCardStats = {
   photoCount: number;
   previewUri?: string;
 };
+
+const PRIMARY_PROJECT_TYPES: { label: string; value: ProjectType }[] = [
+  { label: "Yearbook", value: "yearbook" },
+  { label: "Vacation", value: "vacation" },
+  { label: "General", value: "general" }
+];
+
+const TIMELINE_MODE_OPTIONS: { label: string; value: ProjectTimelineMode }[] = [
+  { label: "Ongoing", value: "ongoing" },
+  { label: "Past", value: "past" },
+  { label: "Hybrid", value: "hybrid" }
+];
+
+const ASSIST_LEVEL_OPTIONS: { label: string; value: ProjectAssistLevel }[] = [
+  { label: "Quiet", value: "quiet" },
+  { label: "Balanced", value: "balanced" },
+  { label: "Proactive", value: "proactive" }
+];
+
+const STYLE_INTENSITY_OPTIONS: { label: string; value: ProjectStyleIntensity }[] = [
+  { label: "Minimal", value: "minimal" },
+  { label: "Warm", value: "warm" },
+  { label: "Playful", value: "playful" },
+  { label: "Expressive", value: "expressive" }
+];
+
+function normalizeDateInput(value: string): string | undefined {
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function isValidSimpleDate(value: string): boolean {
+  if (!value.trim()) {
+    return true;
+  }
+  return /^\d{4}-\d{2}-\d{2}$/.test(value.trim());
+}
+
+function getProjectTypeLabel(projectType: ProjectType): string {
+  const builtIn = PRIMARY_PROJECT_TYPES.find((option) => option.value === projectType);
+  if (builtIn) {
+    return builtIn.label;
+  }
+
+  switch (projectType) {
+    case "baby-book":
+      return "Baby Book";
+    case "wedding-album":
+      return "Wedding Album";
+    case "year-in-review":
+      return "Year In Review";
+    default:
+      return "General";
+  }
+}
 
 function pluralize(count: number, singular: string, plural = `${singular}s`): string {
   return `${count} ${count === 1 ? singular : plural}`;
@@ -44,10 +105,11 @@ export default function HomeScreen() {
     projects,
     createProject,
     updateProject,
+    scanProjectSuggestions,
     deleteProject,
     pickProjectThumbnail,
     getMemoriesByProjectId,
-    getPhotosByMemoryId,
+    getPhotosByProjectId,
     getPageSectionsByMemoryId,
     getMemoryThumbnailUri
   } = useAppData();
@@ -57,6 +119,13 @@ export default function HomeScreen() {
   const [composerProjectId, setComposerProjectId] = useState<string | null>(null);
   const [composerTitle, setComposerTitle] = useState("");
   const [composerThumbnailUri, setComposerThumbnailUri] = useState<string | undefined>(undefined);
+  const [composerProjectType, setComposerProjectType] = useState<ProjectType>("yearbook");
+  const [composerTimelineMode, setComposerTimelineMode] = useState<ProjectTimelineMode>("ongoing");
+  const [composerIncludeFutureProjectPhotos, setComposerIncludeFutureProjectPhotos] = useState(true);
+  const [composerStartDate, setComposerStartDate] = useState("");
+  const [composerEndDate, setComposerEndDate] = useState("");
+  const [composerAssistLevel, setComposerAssistLevel] = useState<ProjectAssistLevel>("balanced");
+  const [composerStyleIntensity, setComposerStyleIntensity] = useState<ProjectStyleIntensity>("warm");
   const [composerSaving, setComposerSaving] = useState(false);
   const [composerPicking, setComposerPicking] = useState(false);
 
@@ -64,12 +133,12 @@ export default function HomeScreen() {
     const stats = new Map<string, ProjectCardStats>();
     for (const project of projects) {
       const projectMemories = getMemoriesByProjectId(project.id);
-      let photoCount = 0;
+      const projectPhotos = getPhotosByProjectId(project.id);
+      let photoCount = projectPhotos.length;
       let pageCount = 0;
-      let previewUri = project.thumbnailUri;
+      let previewUri: string | undefined = project.thumbnailUri ?? projectPhotos[0]?.uri;
 
       for (const memory of projectMemories) {
-        photoCount += getPhotosByMemoryId(memory.id).length;
         pageCount += getPageSectionsByMemoryId(memory.id).length;
         if (!previewUri) {
           previewUri = getMemoryThumbnailUri(memory.id);
@@ -84,7 +153,20 @@ export default function HomeScreen() {
       });
     }
     return stats;
-  }, [getMemoriesByProjectId, getMemoryThumbnailUri, getPageSectionsByMemoryId, getPhotosByMemoryId, projects]);
+  }, [getMemoriesByProjectId, getMemoryThumbnailUri, getPageSectionsByMemoryId, getPhotosByProjectId, projects]);
+
+  const visibleProjectTypeOptions = useMemo(() => {
+    if (PRIMARY_PROJECT_TYPES.some((option) => option.value === composerProjectType)) {
+      return PRIMARY_PROJECT_TYPES;
+    }
+    return [
+      ...PRIMARY_PROJECT_TYPES,
+      {
+        label: getProjectTypeLabel(composerProjectType),
+        value: composerProjectType
+      }
+    ];
+  }, [composerProjectType]);
 
   const closeComposer = useCallback(() => {
     setComposerVisible(false);
@@ -92,6 +174,13 @@ export default function HomeScreen() {
     setComposerProjectId(null);
     setComposerTitle("");
     setComposerThumbnailUri(undefined);
+    setComposerProjectType("yearbook");
+    setComposerTimelineMode("ongoing");
+    setComposerIncludeFutureProjectPhotos(true);
+    setComposerStartDate("");
+    setComposerEndDate("");
+    setComposerAssistLevel("balanced");
+    setComposerStyleIntensity("warm");
     setComposerSaving(false);
     setComposerPicking(false);
   }, []);
@@ -101,6 +190,13 @@ export default function HomeScreen() {
     setComposerProjectId(null);
     setComposerTitle("");
     setComposerThumbnailUri(undefined);
+    setComposerProjectType("yearbook");
+    setComposerTimelineMode("ongoing");
+    setComposerIncludeFutureProjectPhotos(true);
+    setComposerStartDate("");
+    setComposerEndDate("");
+    setComposerAssistLevel("balanced");
+    setComposerStyleIntensity("warm");
     setComposerVisible(true);
   }, []);
 
@@ -114,6 +210,13 @@ export default function HomeScreen() {
       setComposerProjectId(project.id);
       setComposerTitle(project.name);
       setComposerThumbnailUri(project.thumbnailUri);
+      setComposerProjectType(project.projectType);
+      setComposerTimelineMode(project.timelineMode);
+      setComposerIncludeFutureProjectPhotos(project.includeFutureProjectPhotos);
+      setComposerStartDate(project.startDate ?? "");
+      setComposerEndDate(project.endDate ?? "");
+      setComposerAssistLevel(project.assistLevel);
+      setComposerStyleIntensity(project.styleIntensity);
       setComposerVisible(true);
     },
     [projects]
@@ -139,21 +242,80 @@ export default function HomeScreen() {
       return;
     }
 
+    if (!isValidSimpleDate(composerStartDate) || !isValidSimpleDate(composerEndDate)) {
+      Alert.alert("Invalid date", "Use YYYY-MM-DD for project dates, or leave the fields blank.");
+      return;
+    }
+
+    const normalizedStartDate = composerTimelineMode === "ongoing" ? undefined : normalizeDateInput(composerStartDate);
+    const normalizedEndDate = composerTimelineMode === "ongoing" ? undefined : normalizeDateInput(composerEndDate);
+    const shouldRunRetroScan = composerTimelineMode === "past" || composerTimelineMode === "hybrid";
+
     try {
       setComposerSaving(true);
       if (composerMode === "create") {
-        const projectId = await createProject(trimmedTitle, "general", composerThumbnailUri);
+        const projectId = await createProject(trimmedTitle, composerProjectType, composerThumbnailUri, {
+          timelineMode: composerTimelineMode,
+          includeFutureProjectPhotos: composerIncludeFutureProjectPhotos,
+          startDate: normalizedStartDate,
+          endDate: normalizedEndDate,
+          assistLevel: composerAssistLevel,
+          styleIntensity: composerStyleIntensity
+        });
+        if (shouldRunRetroScan) {
+          void scanProjectSuggestions(projectId, {
+            timelineMode: composerTimelineMode,
+            includeFutureProjectPhotos: composerIncludeFutureProjectPhotos,
+            startDate: normalizedStartDate,
+            endDate: normalizedEndDate
+          }).catch(() => undefined);
+        }
         closeComposer();
         router.push({ pathname: "/project/[id]", params: { id: projectId } });
       } else if (composerProjectId) {
-        updateProject(composerProjectId, { name: trimmedTitle, thumbnailUri: composerThumbnailUri });
+        updateProject(composerProjectId, {
+          name: trimmedTitle,
+          projectType: composerProjectType,
+          thumbnailUri: composerThumbnailUri,
+          timelineMode: composerTimelineMode,
+          includeFutureProjectPhotos: composerIncludeFutureProjectPhotos,
+          startDate: normalizedStartDate ?? null,
+          endDate: normalizedEndDate ?? null,
+          assistLevel: composerAssistLevel,
+          styleIntensity: composerStyleIntensity
+        });
+        if (shouldRunRetroScan) {
+          void scanProjectSuggestions(composerProjectId, {
+            timelineMode: composerTimelineMode,
+            includeFutureProjectPhotos: composerIncludeFutureProjectPhotos,
+            startDate: normalizedStartDate,
+            endDate: normalizedEndDate
+          }).catch(() => undefined);
+        }
         closeComposer();
       }
     } catch (error) {
       Alert.alert("Unable to save project", (error as Error).message);
       setComposerSaving(false);
     }
-  }, [closeComposer, composerMode, composerProjectId, composerSaving, composerThumbnailUri, composerTitle, createProject, updateProject]);
+  }, [
+    closeComposer,
+    composerAssistLevel,
+    composerEndDate,
+    composerMode,
+    composerIncludeFutureProjectPhotos,
+    composerProjectId,
+    composerProjectType,
+    composerSaving,
+    composerStartDate,
+    composerStyleIntensity,
+    composerThumbnailUri,
+    composerTimelineMode,
+    composerTitle,
+    createProject,
+    scanProjectSuggestions,
+    updateProject
+  ]);
 
   const onDeleteProjectPress = useCallback(() => {
     if (!composerProjectId) {
@@ -291,14 +453,21 @@ export default function HomeScreen() {
               <View style={styles.modalHeader}>
                 <View>
                   <Text style={styles.modalTitle}>{composerMode === "create" ? "New Project" : "Edit Project"}</Text>
-                  <Text style={styles.modalSubtitle}>Set the title and choose the project cover thumbnail.</Text>
+                  <Text style={styles.modalSubtitle}>
+                    Set the title, project type, timeline, smart assist, and cover thumbnail.
+                  </Text>
                 </View>
                 <Pressable style={styles.modalCloseButton} onPress={closeComposer}>
                   <Ionicons name="close" size={22} color="#eef4ff" />
                 </Pressable>
               </View>
 
-              <View style={styles.modalContent}>
+              <ScrollView
+                style={styles.modalScroll}
+                contentContainerStyle={styles.modalContent}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+              >
                 <Text style={styles.fieldLabel}>Project Title</Text>
                 <TextInput
                   value={composerTitle}
@@ -307,6 +476,161 @@ export default function HomeScreen() {
                   placeholderTextColor="#6f7f9f"
                   style={styles.modalInput}
                 />
+
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.fieldLabel}>Project Type</Text>
+                  <View style={styles.choiceGrid}>
+                    {visibleProjectTypeOptions.map((option) => {
+                      const selected = composerProjectType === option.value;
+                      return (
+                        <Pressable
+                          key={option.value}
+                          style={[styles.choiceChip, selected ? styles.choiceChipSelected : null]}
+                          onPress={() => setComposerProjectType(option.value)}
+                        >
+                          <Text style={[styles.choiceChipText, selected ? styles.choiceChipTextSelected : null]}>
+                            {option.label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                  {!PRIMARY_PROJECT_TYPES.some((option) => option.value === composerProjectType) ? (
+                    <Text style={styles.fieldHelperText}>
+                      This project is using a legacy type label. You can keep it, or switch to a Milestone 1 type.
+                    </Text>
+                  ) : null}
+                </View>
+
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.fieldLabel}>Timeline</Text>
+                  <View style={styles.choiceGrid}>
+                    {TIMELINE_MODE_OPTIONS.map((option) => {
+                      const selected = composerTimelineMode === option.value;
+                      return (
+                        <Pressable
+                          key={option.value}
+                          style={[styles.choiceChip, selected ? styles.choiceChipSelected : null]}
+                          onPress={() => {
+                            setComposerTimelineMode(option.value);
+                            if (option.value === "ongoing") {
+                              setComposerStartDate("");
+                              setComposerEndDate("");
+                              setComposerIncludeFutureProjectPhotos(true);
+                            } else if (option.value === "past") {
+                              setComposerIncludeFutureProjectPhotos(false);
+                            }
+                          }}
+                        >
+                          <Text style={[styles.choiceChipText, selected ? styles.choiceChipTextSelected : null]}>
+                            {option.label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                  <Text style={styles.fieldHelperText}>
+                    Ongoing keeps collecting. Past and hybrid can store a retroactive date range.
+                  </Text>
+                </View>
+
+                {composerTimelineMode !== "ongoing" ? (
+                  <View style={styles.fieldGroup}>
+                    <Text style={styles.fieldLabel}>Date Range</Text>
+                    <View style={styles.dateRow}>
+                      <TextInput
+                        value={composerStartDate}
+                        onChangeText={setComposerStartDate}
+                        placeholder="Start YYYY-MM-DD"
+                        placeholderTextColor="#6f7f9f"
+                        style={[styles.modalInput, styles.dateInput]}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        keyboardType={Platform.OS === "ios" ? "numbers-and-punctuation" : "default"}
+                      />
+                      <TextInput
+                        value={composerEndDate}
+                        onChangeText={setComposerEndDate}
+                        placeholder="End YYYY-MM-DD"
+                        placeholderTextColor="#6f7f9f"
+                        style={[styles.modalInput, styles.dateInput]}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        keyboardType={Platform.OS === "ios" ? "numbers-and-punctuation" : "default"}
+                      />
+                    </View>
+                    <Text style={styles.fieldHelperText}>Leave either field blank if you want to fill it in later.</Text>
+                  </View>
+                ) : null}
+
+                {composerTimelineMode !== "past" ? (
+                  <View style={styles.fieldGroup}>
+                    <Text style={styles.fieldLabel}>Future Project Photos</Text>
+                    <View style={styles.choiceGrid}>
+                      {[
+                        { label: "Include", value: true },
+                        { label: "Pause", value: false }
+                      ].map((option) => {
+                        const selected = composerIncludeFutureProjectPhotos === option.value;
+                        return (
+                          <Pressable
+                            key={option.label}
+                            style={[styles.choiceChip, selected ? styles.choiceChipSelected : null]}
+                            onPress={() => setComposerIncludeFutureProjectPhotos(option.value)}
+                          >
+                            <Text style={[styles.choiceChipText, selected ? styles.choiceChipTextSelected : null]}>
+                              {option.label}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                    <Text style={styles.fieldHelperText}>
+                      Include means future project photos stay eligible for later suggestion scans. Pause keeps the
+                      project scoped to its current timeline window.
+                    </Text>
+                  </View>
+                ) : null}
+
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.fieldLabel}>Smart Assist</Text>
+                  <View style={styles.choiceGrid}>
+                    {ASSIST_LEVEL_OPTIONS.map((option) => {
+                      const selected = composerAssistLevel === option.value;
+                      return (
+                        <Pressable
+                          key={option.value}
+                          style={[styles.choiceChip, selected ? styles.choiceChipSelected : null]}
+                          onPress={() => setComposerAssistLevel(option.value)}
+                        >
+                          <Text style={[styles.choiceChipText, selected ? styles.choiceChipTextSelected : null]}>
+                            {option.label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.fieldLabel}>Style Intensity</Text>
+                  <View style={styles.choiceGrid}>
+                    {STYLE_INTENSITY_OPTIONS.map((option) => {
+                      const selected = composerStyleIntensity === option.value;
+                      return (
+                        <Pressable
+                          key={option.value}
+                          style={[styles.choiceChip, selected ? styles.choiceChipSelected : null]}
+                          onPress={() => setComposerStyleIntensity(option.value)}
+                        >
+                          <Text style={[styles.choiceChipText, selected ? styles.choiceChipTextSelected : null]}>
+                            {option.label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
 
                 <Text style={styles.fieldLabel}>Thumbnail</Text>
                 <View style={styles.thumbnailPreviewCard}>
@@ -344,7 +668,7 @@ export default function HomeScreen() {
                     </Text>
                   </Pressable>
                 </View>
-              </View>
+              </ScrollView>
             </View>
           </KeyboardAvoidingView>
         </View>
@@ -564,9 +888,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center"
   },
+  modalScroll: {
+    maxHeight: 620
+  },
   modalContent: {
     paddingBottom: 12,
     gap: 16
+  },
+  fieldGroup: {
+    gap: 10
   },
   fieldLabel: {
     color: "#dce7ff",
@@ -574,6 +904,11 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 0.4,
     textTransform: "uppercase"
+  },
+  fieldHelperText: {
+    color: "#7f93bb",
+    fontSize: 12,
+    lineHeight: 17
   },
   modalInput: {
     borderRadius: 16,
@@ -584,6 +919,41 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 16
+  },
+  dateRow: {
+    flexDirection: "row",
+    gap: 10
+  },
+  dateInput: {
+    flex: 1
+  },
+  choiceGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10
+  },
+  choiceChip: {
+    minHeight: 42,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: "#223456",
+    backgroundColor: "#111d31",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  choiceChipSelected: {
+    backgroundColor: "#1f3f76",
+    borderColor: "#2f80ff"
+  },
+  choiceChipText: {
+    color: "#c9d7f5",
+    fontSize: 14,
+    fontWeight: "700"
+  },
+  choiceChipTextSelected: {
+    color: "#f8fbff"
   },
   thumbnailPreviewCard: {
     height: 190,

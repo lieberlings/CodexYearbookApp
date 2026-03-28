@@ -1,0 +1,291 @@
+import { Memory, PhotoItem, Project, ProjectTimelineMode, Suggestion } from "../types";
+
+export type ProjectPhotoScopeOverrides = {
+  timelineMode?: ProjectTimelineMode;
+  includeFutureProjectPhotos?: boolean;
+  startDate?: string;
+  endDate?: string;
+};
+
+export function normalizeProjectRecord(project: Project): Project {
+  const timelineMode = project.timelineMode ?? "ongoing";
+  return {
+    ...project,
+    projectType: project.projectType ?? "general",
+    timelineMode,
+    includeFutureProjectPhotos: project.includeFutureProjectPhotos ?? timelineMode !== "past",
+    startDate: project.startDate ?? undefined,
+    endDate: project.endDate ?? undefined,
+    assistLevel: project.assistLevel ?? "balanced",
+    styleIntensity: project.styleIntensity ?? "warm"
+  };
+}
+
+export function normalizeMemoryRecord(memory: Memory): Memory {
+  return {
+    ...memory,
+    kind: memory.kind ?? "event",
+    status: memory.status ?? "active",
+    themeTags: Array.isArray(memory.themeTags) ? memory.themeTags.map((tag) => tag.trim()).filter(Boolean) : undefined
+  };
+}
+
+export function normalizePhotoRecord(photo: PhotoItem, memoryProjectIds: Map<string, string>): PhotoItem | undefined {
+  const projectId =
+    typeof photo.projectId === "string" && photo.projectId.trim().length > 0
+      ? photo.projectId
+      : typeof photo.memoryId === "string"
+        ? memoryProjectIds.get(photo.memoryId)
+        : undefined;
+
+  if (!projectId) {
+    return undefined;
+  }
+
+  const memoryId =
+    typeof photo.memoryId === "string" && photo.memoryId.trim().length > 0
+      ? photo.memoryId
+      : undefined;
+
+  return {
+    ...photo,
+    projectId,
+    memoryId
+  };
+}
+
+export function normalizeSuggestionRecord(suggestion: Suggestion): Suggestion {
+  return {
+    ...suggestion,
+    type: suggestion.type ?? "event",
+    status: suggestion.status ?? "new",
+    title: suggestion.title ?? "Untitled suggestion",
+    message: suggestion.message ?? "",
+    candidatePhotoIds: Array.isArray(suggestion.candidatePhotoIds) ? suggestion.candidatePhotoIds : [],
+    acceptedMemoryId:
+      typeof suggestion.acceptedMemoryId === "string" && suggestion.acceptedMemoryId.trim().length > 0
+        ? suggestion.acceptedMemoryId
+        : undefined,
+    createdAt: suggestion.createdAt ?? new Date().toISOString()
+  };
+}
+
+export function getPhotoScopeTimestamp(photo: PhotoItem): number {
+  const capturedAt = Date.parse(photo.capturedAt);
+  if (Number.isFinite(capturedAt)) {
+    return capturedAt;
+  }
+  const addedAt = Date.parse(photo.addedAt);
+  if (Number.isFinite(addedAt)) {
+    return addedAt;
+  }
+  return 0;
+}
+
+export function getDateBoundary(dateValue?: string, endOfDay = false): number | undefined {
+  if (!dateValue) {
+    return undefined;
+  }
+  const timestamp = Date.parse(`${dateValue}${endOfDay ? "T23:59:59.999Z" : "T00:00:00.000Z"}`);
+  return Number.isFinite(timestamp) ? timestamp : undefined;
+}
+
+export function getScopedProjectPhotos(
+  project: Project,
+  photos: PhotoItem[],
+  scopeOverrides?: ProjectPhotoScopeOverrides
+): PhotoItem[] {
+  const scopedTimelineMode = scopeOverrides?.timelineMode ?? project.timelineMode;
+  const includeFutureProjectPhotos =
+    scopeOverrides?.includeFutureProjectPhotos ?? project.includeFutureProjectPhotos;
+  const scopedStartDate = scopeOverrides?.startDate ?? project.startDate;
+  const scopedEndDate = scopeOverrides?.endDate ?? project.endDate;
+  const projectPhotos = photos.filter((photo) => photo.projectId === project.id);
+
+  if (scopedTimelineMode === "ongoing" && includeFutureProjectPhotos && !scopedStartDate && !scopedEndDate) {
+    return projectPhotos;
+  }
+
+  const startBoundary = getDateBoundary(scopedStartDate);
+  const explicitEndBoundary = getDateBoundary(scopedEndDate, true);
+  const createdAtBoundary = Date.parse(project.createdAt);
+  const endBoundary =
+    scopedTimelineMode === "past"
+      ? explicitEndBoundary
+      : includeFutureProjectPhotos
+        ? undefined
+        : explicitEndBoundary ?? (Number.isFinite(createdAtBoundary) ? createdAtBoundary : undefined);
+
+  if (startBoundary === undefined && endBoundary === undefined) {
+    return projectPhotos;
+  }
+
+  return projectPhotos.filter((photo) => {
+    const timestamp = getPhotoScopeTimestamp(photo);
+    if (startBoundary !== undefined && timestamp < startBoundary) {
+      return false;
+    }
+    if (endBoundary !== undefined && timestamp > endBoundary) {
+      return false;
+    }
+    return true;
+  });
+}
+
+export function getProjectScanReferenceDate(
+  project: Project,
+  scopedPhotos: PhotoItem[],
+  scopeOverrides?: ProjectPhotoScopeOverrides
+): Date {
+  const scopedTimelineMode = scopeOverrides?.timelineMode ?? project.timelineMode;
+  const includeFutureProjectPhotos =
+    scopeOverrides?.includeFutureProjectPhotos ?? project.includeFutureProjectPhotos;
+  const scopedEndDate = scopeOverrides?.endDate ?? project.endDate;
+  const explicitEndBoundary = getDateBoundary(scopedEndDate, true);
+  const createdAtBoundary = Date.parse(project.createdAt);
+  const endBoundary =
+    scopedTimelineMode === "past"
+      ? explicitEndBoundary
+      : includeFutureProjectPhotos
+        ? undefined
+        : explicitEndBoundary ?? (Number.isFinite(createdAtBoundary) ? createdAtBoundary : undefined);
+  if (endBoundary !== undefined) {
+    return new Date(endBoundary);
+  }
+
+  const latestPhotoTimestamp = scopedPhotos.reduce((latest, photo) => Math.max(latest, getPhotoScopeTimestamp(photo)), 0);
+  if (latestPhotoTimestamp > 0) {
+    return new Date(latestPhotoTimestamp);
+  }
+
+  return new Date();
+}
+
+export function upsertSuggestionRecords(previous: Suggestion[], nextSuggestions: Suggestion[]): Suggestion[] {
+  if (nextSuggestions.length === 0) {
+    return previous;
+  }
+  const byId = new Map(previous.map((suggestion) => [suggestion.id, suggestion] as const));
+  nextSuggestions.forEach((suggestion) => {
+    const normalized = normalizeSuggestionRecord(suggestion);
+    const existing = byId.get(normalized.id);
+    byId.set(
+      normalized.id,
+      existing
+        ? {
+            ...existing,
+            ...normalized,
+            status: normalized.status === "new" ? existing.status : normalized.status,
+            acceptedMemoryId: existing.acceptedMemoryId ?? normalized.acceptedMemoryId
+          }
+        : normalized
+    );
+  });
+  return Array.from(byId.values());
+}
+
+export function updateSuggestionStatusRecords(
+  suggestions: Suggestion[],
+  suggestionId: string,
+  status: Suggestion["status"]
+): Suggestion[] {
+  return suggestions.map((suggestion) => {
+    if (suggestion.id !== suggestionId || suggestion.status === "accepted" || suggestion.status === status) {
+      return suggestion;
+    }
+    return {
+      ...suggestion,
+      status
+    };
+  });
+}
+
+export function markSuggestionAccepted(
+  suggestions: Suggestion[],
+  suggestionId: string,
+  memoryId: string
+): Suggestion[] {
+  return suggestions.map((suggestion) =>
+    suggestion.id === suggestionId
+      ? {
+          ...suggestion,
+          status: "accepted",
+          acceptedMemoryId: memoryId
+        }
+      : suggestion
+  );
+}
+
+export function buildMemorySeedFromSuggestion(suggestion: Suggestion): {
+  title: string;
+  kind: Memory["kind"];
+  status: Memory["status"];
+} {
+  return {
+    title: suggestion.title.trim() || "Suggested Memory",
+    kind: suggestion.type === "collection" ? "collection" : "event",
+    status: suggestion.type === "collection" ? "watching" : "suggested"
+  };
+}
+
+export function applyPhotoAssignmentToMemory(params: {
+  memories: Memory[];
+  photos: PhotoItem[];
+  projects: Project[];
+  memoryId: string;
+  photoIds: string[];
+  now?: string;
+}): {
+  memories: Memory[];
+  photos: PhotoItem[];
+  projects: Project[];
+  touchedProjectId?: string;
+} {
+  const { memories, photos, projects, memoryId, photoIds, now = new Date().toISOString() } = params;
+  if (photoIds.length === 0) {
+    return { memories, photos, projects };
+  }
+
+  const selected = new Set(photoIds);
+  let touchedProjectId = "";
+
+  const nextMemories = memories.map((memory) => {
+    if (memory.id !== memoryId) {
+      return memory;
+    }
+    touchedProjectId = memory.projectId;
+    return {
+      ...memory,
+      primaryPhotoId: memory.primaryPhotoId ?? photoIds[0],
+      updatedAt: now
+    };
+  });
+
+  if (!touchedProjectId) {
+    return {
+      memories: nextMemories,
+      photos,
+      projects
+    };
+  }
+
+  const nextPhotos = photos.map((photo) =>
+    selected.has(photo.id) && photo.projectId === touchedProjectId && !photo.memoryId
+      ? {
+          ...photo,
+          memoryId
+        }
+      : photo
+  );
+
+  const nextProjects = projects.map((project) =>
+    project.id === touchedProjectId ? { ...project, updatedAt: now } : project
+  );
+
+  return {
+    memories: nextMemories,
+    photos: nextPhotos,
+    projects: nextProjects,
+    touchedProjectId
+  };
+}

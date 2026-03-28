@@ -1,24 +1,41 @@
 export type ProjectType =
+  | "yearbook"
   | "baby-book"
   | "wedding-album"
   | "year-in-review"
   | "vacation"
   | "general";
 
+export type ProjectTimelineMode = "ongoing" | "past" | "hybrid";
+export type ProjectAssistLevel = "quiet" | "balanced" | "proactive";
+export type ProjectStyleIntensity = "minimal" | "warm" | "playful" | "expressive";
+
 export type Project = {
   id: string;
   name: string;
   projectType: ProjectType;
+  timelineMode: ProjectTimelineMode;
+  includeFutureProjectPhotos: boolean;
+  startDate?: string;
+  endDate?: string;
+  assistLevel: ProjectAssistLevel;
+  styleIntensity: ProjectStyleIntensity;
   thumbnailUri?: string;
   createdAt: string;
   updatedAt: string;
 };
 
+export type MemoryKind = "event" | "collection" | "hybrid";
+export type MemoryStatus = "suggested" | "watching" | "active" | "finalized" | "archived";
+
 export type Memory = {
   id: string;
   projectId: string;
   title: string;
+  kind: MemoryKind;
+  status: MemoryStatus;
   themeLabel?: string;
+  themeTags?: string[];
   primaryPhotoId?: string;
   order: number;
   createdAt: string;
@@ -67,7 +84,8 @@ export type MemoryPageSection = {
 
 export type PhotoItem = {
   id: string;
-  memoryId: string;
+  projectId: string;
+  memoryId?: string;
   uri: string;
   exportDataUri?: string;
   width?: number;
@@ -90,9 +108,25 @@ export type PromptItem = {
   memoryId?: string;
 };
 
+export type SuggestionType = "event" | "collection";
+export type SuggestionStatus = "new" | "watching" | "snoozed" | "dismissed" | "accepted";
+
+export type Suggestion = {
+  id: string;
+  projectId: string;
+  type: SuggestionType;
+  status: SuggestionStatus;
+  title: string;
+  message: string;
+  candidatePhotoIds: string[];
+  acceptedMemoryId?: string;
+  createdAt: string;
+};
+
 export type AppData = {
   projects: Project[];
   memories: Memory[];
   pageSections: MemoryPageSection[];
   photos: PhotoItem[];
+  suggestions: Suggestion[];
 };
