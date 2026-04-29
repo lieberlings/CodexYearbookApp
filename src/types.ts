@@ -9,6 +9,7 @@ export type ProjectType =
 export type ProjectTimelineMode = "ongoing" | "past" | "hybrid";
 export type ProjectAssistLevel = "quiet" | "balanced" | "proactive";
 export type ProjectStyleIntensity = "minimal" | "warm" | "playful" | "expressive";
+export type ProjectFinalizationStatus = "idle" | "in-progress" | "reviewed";
 
 export type Project = {
   id: string;
@@ -20,6 +21,9 @@ export type Project = {
   endDate?: string;
   assistLevel: ProjectAssistLevel;
   styleIntensity: ProjectStyleIntensity;
+  finalizationStatus: ProjectFinalizationStatus;
+  finalizationStartedAt?: string;
+  finalizationUpdatedAt?: string;
   thumbnailUri?: string;
   createdAt: string;
   updatedAt: string;
@@ -111,6 +115,19 @@ export type PhotoSensitiveAnalysisRefs = {
   localEmbeddingRef?: string;
 };
 
+export type PhotoMetadataSource = "picker" | "media-library";
+export type PhotoMetadataResolutionKind = "canonical-direct" | "canonical-recovered" | "picker-fallback";
+
+export type PhotoImportMetadata = {
+  assetId?: string;
+  resolutionKind?: PhotoMetadataResolutionKind;
+  capturedAtSource?: PhotoMetadataSource;
+  locationSource?: PhotoMetadataSource;
+  pickerAssetIdPresent?: boolean;
+  pickerExifPresent?: boolean;
+  pickerKeySample?: string[];
+};
+
 export type PhotoAnalysisMetadata = {
   analysisVersion?: number;
   analyzedAt?: string;
@@ -138,6 +155,7 @@ export type PhotoItem = {
     latitude: number;
     longitude: number;
   };
+  importMetadata?: PhotoImportMetadata;
   analysis?: PhotoAnalysisMetadata;
 };
 
@@ -164,6 +182,23 @@ export type Suggestion = {
   candidatePhotoIds: string[];
   acceptedMemoryId?: string;
   createdAt: string;
+};
+
+export type FinalizationSuggestionType =
+  | "missing-moment"
+  | "strongest-unused-photos"
+  | "highlight-collection";
+
+export type FinalizationSuggestion = {
+  id: string;
+  projectId: string;
+  type: FinalizationSuggestionType;
+  title: string;
+  message: string;
+  candidatePhotoIds: string[];
+  createdAt: string;
+  highlightTag?: string;
+  relatedMemoryId?: string;
 };
 
 export type AppData = {

@@ -156,6 +156,7 @@ After editing, provide:
 ---
 
 ## Task 3 — Implement coarse quality analysis
+**Status:** completed
 
 ### Prompt
 Before making any changes, read these documents for context:
@@ -219,6 +220,7 @@ After editing, provide:
 ---
 
 ## Task 4 — Implement coarse scene/content tagging
+**Status:** completed
 
 ### Prompt
 Before making any changes, read these documents for context:
@@ -275,6 +277,7 @@ After editing, provide:
 ---
 
 ## Task 5 — Integrate analysis metadata into suggestion quality
+**Status:** completed
 
 ### Prompt
 Before making any changes, read these documents for context:
@@ -330,6 +333,7 @@ After editing, provide:
 ---
 
 ## Task 6 — Add a finalization entry point and data model
+**Status:** completed
 
 ### Prompt
 Before making any changes, read these documents for context:
@@ -380,6 +384,7 @@ After editing, provide:
 ---
 
 ## Task 7 — Add missing moments and strongest unused photos to finalization
+**Status:** completed
 
 ### Prompt
 Before making any changes, read these documents for context:
@@ -430,6 +435,7 @@ After editing, provide:
 ---
 
 ## Task 8 — Add recurring highlight collections to finalization
+**Status:** completed
 
 ### Prompt
 Before making any changes, read these documents for context:
@@ -482,6 +488,7 @@ After editing, provide:
 ---
 
 ## Task 9 — Add privacy-safe face detection groundwork
+**Status:** completed
 
 ### Prompt
 Before making any changes, read these documents for context:
@@ -532,6 +539,7 @@ After editing, provide:
 ---
 
 ## Task 10 — Add focused tests for Milestone 3 foundations
+**Status:** completed
 
 ### Prompt
 Before making any changes, read these documents for context:

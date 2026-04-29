@@ -5,6 +5,7 @@ import { PHOTO_ANALYSIS_VERSION } from "./photoAnalysisTypes";
 
 function makeProject(overrides: Partial<Project> & Pick<Project, "id" | "name" | "projectType" | "timelineMode" | "includeFutureProjectPhotos" | "assistLevel" | "styleIntensity" | "createdAt" | "updatedAt">): Project {
   return {
+    finalizationStatus: "idle",
     ...overrides
   };
 }

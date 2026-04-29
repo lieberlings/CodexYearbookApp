@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
 import { router, Stack, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -18,12 +18,31 @@ import {
 } from "react-native";
 import DraggableFlatList, { ScaleDecorator } from "react-native-draggable-flatlist";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { MediaLibrarySelectionModal } from "../../src/components/MediaLibrarySelectionModal";
 import { useAppData } from "../../src/context/AppContext";
+import { formatPhotoLocation, normalizePhotoLocation } from "../../src/lib/photoLocation";
 import { exportProjectToPdf, sharePdf } from "../../src/services/exportService";
-import { suggestCandidatePhotosForMemory, suggestCollectionCandidatePhotos } from "../../src/services/promptEngine";
-import { PickedPhotoAsset, pickImagesFromLibrary } from "../../src/services/photoService";
+import {
+  generateFinalizationSuggestionsForProject,
+  suggestCandidatePhotosForMemory,
+  suggestCollectionCandidatePhotos
+} from "../../src/services/promptEngine";
+import {
+  MediaLibraryAssetProbe,
+  PickedPhotoAsset,
+  pickPhotoFromMediaLibraryByAssetId,
+  pickPhotosFromMediaLibraryByAssetIds,
+  probeMediaLibraryAssetMetadata
+} from "../../src/services/photoService";
 import { useEditorStore } from "../../src/state/editorStore";
-import { Memory, PhotoItem, Suggestion } from "../../src/types";
+import {
+  FinalizationSuggestion,
+  Memory,
+  PhotoItem,
+  PhotoMetadataResolutionKind,
+  PhotoMetadataSource,
+  Suggestion
+} from "../../src/types";
 
 type MemoryComposerMode = "create" | "edit";
 type StatusCardTone = "info" | "success" | "error" | "empty";
@@ -41,6 +60,8 @@ type StagedAsset = {
 type ThumbnailChoice =
   | { kind: "existing"; photoId: string }
   | { kind: "staged"; stagedKey: string };
+
+type InspectorFieldValue = string | number | boolean | null | undefined;
 
 function orderKey(items: { id: string }[]): string {
   return items.map((item) => item.id).join("|");
@@ -74,6 +95,84 @@ function getMemoryKindLabel(kind: Memory["kind"]): string {
     default:
       return "Event";
   }
+}
+
+function formatInspectorValue(value: InspectorFieldValue): string {
+  if (value === undefined || value === null || value === "") {
+    return "—";
+  }
+  if (typeof value === "boolean") {
+    return value ? "Yes" : "No";
+  }
+  return String(value);
+}
+
+function formatLocationLabel(photo: PhotoItem): string {
+  return formatPhotoLocation(photo.location);
+}
+
+function formatImportMetadataSource(source: PhotoMetadataSource | undefined): string {
+  switch (source) {
+    case "media-library":
+      return "Media Library asset info";
+    case "picker":
+      return "Picker EXIF";
+    default:
+      return "—";
+  }
+}
+
+function formatResolutionKind(kind: PhotoMetadataResolutionKind | undefined): string {
+  switch (kind) {
+    case "canonical-direct":
+      return "Canonical asset id";
+    case "canonical-recovered":
+      return "Recovered canonical asset";
+    case "picker-fallback":
+      return "Picker fallback";
+    default:
+      return "Unknown";
+  }
+}
+
+function getCapturedAtSourceLabel(photo: PhotoItem): string {
+  if (photo.importMetadata?.capturedAtSource) {
+    return formatImportMetadataSource(photo.importMetadata.capturedAtSource);
+  }
+  if (photo.capturedAt) {
+    return "Legacy stored value";
+  }
+  return "Unknown";
+}
+
+function getLocationSourceLabel(photo: PhotoItem): string {
+  if (photo.importMetadata?.locationSource) {
+    return formatImportMetadataSource(photo.importMetadata.locationSource);
+  }
+  if (photo.location) {
+    return "Legacy stored location";
+  }
+  return "No GPS metadata";
+}
+
+function InspectorField({ label, value }: { label: string; value: InspectorFieldValue }) {
+  return (
+    <View style={styles.analysisFieldRow}>
+      <Text style={styles.analysisFieldLabel}>{label}</Text>
+      <Text selectable style={styles.analysisFieldValue}>
+        {formatInspectorValue(value)}
+      </Text>
+    </View>
+  );
+}
+
+function InspectorSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <View style={styles.analysisSection}>
+      <Text style={styles.analysisSectionTitle}>{title}</Text>
+      <View style={styles.analysisSectionBody}>{children}</View>
+    </View>
+  );
 }
 
 function formatSuggestionStatus(status: Suggestion["status"]): string {
@@ -125,6 +224,17 @@ function getSuggestionTypeLabel(type: Suggestion["type"]): string {
   return type === "collection" ? "Collection" : "Event";
 }
 
+function getFinalizationTypeLabel(type: FinalizationSuggestion["type"]): string {
+  switch (type) {
+    case "missing-moment":
+      return "Missing Moment";
+    case "strongest-unused-photos":
+      return "Unused Photos";
+    default:
+      return "Highlight Collection";
+  }
+}
+
 function buildStagedAssets(assets: PickedPhotoAsset[]): StagedAsset[] {
   return assets.map((asset, index) => ({
     key: `staged-${Date.now()}-${index}-${asset.fileName ?? "photo"}`,
@@ -133,7 +243,8 @@ function buildStagedAssets(assets: PickedPhotoAsset[]): StagedAsset[] {
     width: asset.width,
     height: asset.height,
     capturedAt: asset.capturedAt,
-    location: asset.location
+    location: normalizePhotoLocation(asset.location),
+    importMetadata: asset.importMetadata
   }));
 }
 
@@ -239,12 +350,15 @@ export default function ProjectDetailsScreen() {
     getUnassignedPhotosByProjectId,
     getPhotosByMemoryId,
     getPageSectionsByMemoryId,
+    analyzeProjectPhotos,
     getSuggestionsByProjectId,
     scanProjectSuggestions,
     acceptSuggestion,
     keepWatchingSuggestion,
     dismissSuggestion,
     snoozeSuggestion,
+    startProjectFinalization,
+    completeProjectFinalization,
     createMemory,
     updateMemory,
     deleteMemory,
@@ -254,7 +368,7 @@ export default function ProjectDetailsScreen() {
     pickProjectThumbnail,
     setMemoryPrimaryPhoto,
     addPhotoAssetsToMemory,
-    addPhotosToProject,
+    addPhotoAssetsToProject,
     assignPhotosToMemory
   } = useAppData();
   const slotOverridesByPage = useEditorStore((state) => state.slotOverridesByPage);
@@ -282,6 +396,17 @@ export default function ProjectDetailsScreen() {
   const [showDismissedSuggestions, setShowDismissedSuggestions] = useState(false);
   const [projectPhotoIntakeBusy, setProjectPhotoIntakeBusy] = useState(false);
   const [projectPhotoFeedback, setProjectPhotoFeedback] = useState<StatusCard | undefined>(undefined);
+  const [analysisInspectorVisible, setAnalysisInspectorVisible] = useState(false);
+  const [analysisInspectorPhotoId, setAnalysisInspectorPhotoId] = useState<string | null>(null);
+  const [analysisInspectorBusy, setAnalysisInspectorBusy] = useState(false);
+  const [analysisInspectorFeedback, setAnalysisInspectorFeedback] = useState<StatusCard | undefined>(undefined);
+  const [analysisInspectorProbe, setAnalysisInspectorProbe] = useState<MediaLibraryAssetProbe | null>(null);
+  const [analysisInspectorProbeBusy, setAnalysisInspectorProbeBusy] = useState(false);
+  const [projectPhotoPickerVisible, setProjectPhotoPickerVisible] = useState(false);
+  const [projectPhotoPickerBusy, setProjectPhotoPickerBusy] = useState(false);
+  const [composerMediaLibraryVisible, setComposerMediaLibraryVisible] = useState(false);
+  const [mediaLibraryPickerVisible, setMediaLibraryPickerVisible] = useState(false);
+  const [mediaLibraryProbeBusy, setMediaLibraryProbeBusy] = useState(false);
   const [lastSuggestionScanFeedback, setLastSuggestionScanFeedback] = useState<
     | {
         generatedCount: number;
@@ -291,6 +416,8 @@ export default function ProjectDetailsScreen() {
   >(undefined);
   const [candidateReviewMemoryId, setCandidateReviewMemoryId] = useState<string | null>(null);
   const [candidateSelectedPhotoIds, setCandidateSelectedPhotoIds] = useState<string[]>([]);
+  const [finalizationExpanded, setFinalizationExpanded] = useState(false);
+  const [finalizationReviewSuggestion, setFinalizationReviewSuggestion] = useState<FinalizationSuggestion | null>(null);
 
   const project = getProjectById(projectId);
   const memories = useMemo(() => getMemoriesByProjectId(projectId), [getMemoriesByProjectId, projectId]);
@@ -302,6 +429,22 @@ export default function ProjectDetailsScreen() {
   const projectPhotoPreview = useMemo(
     () => [...unassignedProjectPhotos].slice(-6).reverse(),
     [unassignedProjectPhotos]
+  );
+  const inspectorSelectablePhotos = useMemo(
+    () =>
+      [...projectPhotos].sort((a, b) => {
+        const aDate = a.capturedAt || a.addedAt;
+        const bDate = b.capturedAt || b.addedAt;
+        return bDate.localeCompare(aDate);
+      }),
+    [projectPhotos]
+  );
+  const selectedInspectorPhoto = useMemo(
+    () =>
+      analysisInspectorPhotoId
+        ? inspectorSelectablePhotos.find((photo) => photo.id === analysisInspectorPhotoId) ?? null
+        : null,
+    [analysisInspectorPhotoId, inspectorSelectablePhotos]
   );
   const candidatePhotosByMemoryId = useMemo(
     () =>
@@ -317,6 +460,42 @@ export default function ProjectDetailsScreen() {
   useEffect(() => {
     setMemoryListData((prev) => (prev.length === 0 ? memories : prev));
   }, [memories]);
+
+  useEffect(() => {
+    if (!analysisInspectorVisible) {
+      return;
+    }
+
+    if (!analysisInspectorPhotoId || !inspectorSelectablePhotos.some((photo) => photo.id === analysisInspectorPhotoId)) {
+      setAnalysisInspectorPhotoId(inspectorSelectablePhotos[0]?.id ?? null);
+    }
+  }, [analysisInspectorPhotoId, analysisInspectorVisible, inspectorSelectablePhotos]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function runProbe() {
+      if (!analysisInspectorVisible || !selectedInspectorPhoto) {
+        if (!cancelled) {
+          setAnalysisInspectorProbe(null);
+          setAnalysisInspectorProbeBusy(false);
+        }
+        return;
+      }
+
+      setAnalysisInspectorProbeBusy(true);
+      const probe = await probeMediaLibraryAssetMetadata(selectedInspectorPhoto.importMetadata?.assetId);
+      if (!cancelled) {
+        setAnalysisInspectorProbe(probe);
+        setAnalysisInspectorProbeBusy(false);
+      }
+    }
+
+    void runProbe();
+    return () => {
+      cancelled = true;
+    };
+  }, [analysisInspectorVisible, selectedInspectorPhoto]);
 
   useEffect(() => {
     const contextOrder = orderKey(memories);
@@ -349,6 +528,46 @@ export default function ProjectDetailsScreen() {
       text: formatProjectStats(memories.length, projectPhotos.length, pageCount)
     };
   }, [getPageSectionsByMemoryId, memories, projectPhotos.length]);
+
+  useEffect(() => {
+    if (project?.finalizationStatus && project.finalizationStatus !== "idle") {
+      setFinalizationExpanded(true);
+    }
+  }, [project?.finalizationStatus]);
+
+  const finalizationSuggestions = useMemo(
+    () => generateFinalizationSuggestionsForProject(projectId, memories, projectPhotos),
+    [memories, projectId, projectPhotos]
+  );
+  const missingMomentFinalizationSuggestions = useMemo(
+    () => finalizationSuggestions.filter((suggestion) => suggestion.type === "missing-moment"),
+    [finalizationSuggestions]
+  );
+  const strongestUnusedFinalizationSuggestions = useMemo(
+    () => finalizationSuggestions.filter((suggestion) => suggestion.type === "strongest-unused-photos"),
+    [finalizationSuggestions]
+  );
+  const highlightFinalizationSuggestions = useMemo(
+    () => finalizationSuggestions.filter((suggestion) => suggestion.type === "highlight-collection"),
+    [finalizationSuggestions]
+  );
+  const finalizationSummary = useMemo(() => {
+    if (finalizationSuggestions.length === 0) {
+      return project?.finalizationStatus === "in-progress"
+        ? "No finalization ideas yet"
+        : "Optional end-stage review";
+    }
+    return `${pluralize(finalizationSuggestions.length, "review opportunity")} | ${project?.finalizationStatus === "reviewed" ? "Reviewed" : project?.finalizationStatus === "in-progress" ? "In progress" : "Ready"}`;
+  }, [finalizationSuggestions.length, project?.finalizationStatus]);
+  const finalizationReviewPhotos = useMemo(
+    () =>
+      finalizationReviewSuggestion
+        ? finalizationReviewSuggestion.candidatePhotoIds
+            .map((photoId) => projectPhotos.find((photo) => photo.id === photoId))
+            .filter((photo): photo is PhotoItem => Boolean(photo))
+        : [],
+    [finalizationReviewSuggestion, projectPhotos]
+  );
 
   const projectSuggestions = useMemo(
     () =>
@@ -495,6 +714,41 @@ export default function ProjectDetailsScreen() {
     return undefined;
   }, [projectPhotoFeedback, projectPhotos.length, unassignedProjectPhotos.length]);
 
+  const finalizationStateCard = useMemo<StatusCard>(() => {
+    if (!project || project.finalizationStatus === "idle") {
+      return {
+        icon: "flag-outline" as const,
+        title: "Finalization is optional",
+        message:
+          "Use finalization near the end of a project to review missing moments, strongest unused photos, and recurring highlight opportunities.",
+        tone: "empty" as const
+      };
+    }
+
+    if (finalizationSuggestions.length === 0) {
+      return {
+        icon: "checkmark-done-outline" as const,
+        title: "No finalization issues found",
+        message:
+          "This project does not currently show strong missing-moment or highlight opportunities. You can still review it manually whenever you want.",
+        tone: "info" as const
+      };
+    }
+
+    return {
+      icon: project.finalizationStatus === "reviewed" ? "checkmark-circle-outline" as const : "sparkles-outline" as const,
+      title:
+        project.finalizationStatus === "reviewed"
+          ? "Finalization reviewed"
+          : "Finalization suggestions ready",
+      message:
+        project.finalizationStatus === "reviewed"
+          ? "These opportunities stay visible so you can revisit them before finishing the project."
+          : `We found ${pluralize(finalizationSuggestions.length, "review opportunity")} to check before wrapping up this project.`,
+      tone: project.finalizationStatus === "reviewed" ? ("success" as const) : ("info" as const)
+    };
+  }, [finalizationSuggestions.length, project]);
+
   const composerMemory = useMemo(
     () => (composerMemoryId ? memories.find((memory) => memory.id === composerMemoryId) : undefined),
     [composerMemoryId, memories]
@@ -549,6 +803,10 @@ export default function ProjectDetailsScreen() {
     setCandidateSelectedPhotoIds([]);
   }, []);
 
+  const closeFinalizationReview = useCallback(() => {
+    setFinalizationReviewSuggestion(null);
+  }, []);
+
   const openCreateComposer = useCallback(() => {
     setComposerMode("create");
     setComposerMemoryId(null);
@@ -588,10 +846,18 @@ export default function ProjectDetailsScreen() {
   );
 
   const onPickComposerPhotos = useCallback(async () => {
+    if (composerPicking) {
+      return;
+    }
+    setComposerMediaLibraryVisible(true);
+  }, [composerPicking]);
+
+  const onImportComposerPhotos = useCallback(async (assetIds: string[]) => {
     try {
       setComposerPicking(true);
-      const selected = await pickImagesFromLibrary();
+      const selected = await pickPhotosFromMediaLibraryByAssetIds(assetIds);
       if (selected.length === 0) {
+        setComposerMediaLibraryVisible(false);
         return;
       }
       const nextAssets = buildStagedAssets(selected);
@@ -603,6 +869,7 @@ export default function ProjectDetailsScreen() {
         const first = nextAssets[0];
         return first ? { kind: "staged", stagedKey: first.key } : undefined;
       });
+      setComposerMediaLibraryVisible(false);
     } catch (error) {
       Alert.alert("Unable to add photos", (error as Error).message);
     } finally {
@@ -780,79 +1047,98 @@ export default function ProjectDetailsScreen() {
     }
   }, [exporting, getPageSectionsByMemoryId, getPhotosByMemoryId, memories, project, slotOverridesByPage]);
 
-  const onAddProjectPhotos = useCallback(async () => {
-    if (!project || projectPhotoIntakeBusy) {
+  const onAddProjectPhotos = useCallback(() => {
+    if (!project || projectPhotoIntakeBusy || projectPhotoPickerBusy) {
       return;
     }
-    try {
-      setProjectPhotoIntakeBusy(true);
-      setProjectPhotoFeedback(undefined);
-      const addedCount = await addPhotosToProject(project.id);
-      if (addedCount > 0) {
-        let feedbackCard: StatusCard = {
-          icon: "checkmark-circle-outline",
-          title: `${pluralize(addedCount, "photo")} added`,
-          message: "They stay in this project's photo pool and remain unassigned until you use them in a memory.",
-          tone: "success"
-        };
-        if (project.timelineMode !== "past" && project.includeFutureProjectPhotos) {
-          try {
-            setSuggestionScanError(undefined);
-            setLastSuggestionScanFeedback(undefined);
-            setSuggestionScanState("scanning");
-            const generated = await scanProjectSuggestions(project.id);
-            if (generated.length > 0) {
-              setSuggestionsExpanded(true);
-            }
-            setLastSuggestionScanFeedback({ generatedCount: generated.length, source: "intake" });
-            setSuggestionScanState(generated.length > 0 ? "done" : "empty");
-            feedbackCard = {
-              icon: generated.length > 0 ? "sparkles-outline" : "checkmark-circle-outline",
-              title: `${pluralize(addedCount, "photo")} added`,
-              message:
-                generated.length > 0
-                  ? `They are in the project pool now, and the automatic follow-up scan generated or refreshed ${pluralize(
-                      generated.length,
-                      "suggestion"
-                    )}.`
-                  : "They are in the project pool now. Future intake is on, so this project was rescanned automatically even though no strong suggestions surfaced yet.",
-              tone: "success"
-            };
-          } catch (error) {
-            setSuggestionScanState("error");
-            setSuggestionScanError((error as Error).message || "Suggestion generation failed.");
-            setLastSuggestionScanFeedback(undefined);
-            feedbackCard = {
-              icon: "warning-outline",
-              title: `${pluralize(addedCount, "photo")} added`,
-              message:
-                "The photos are safely in the project pool, but the automatic follow-up scan failed. You can retry from Scan Suggestions at any time.",
-              tone: "error"
-            };
-          }
-        } else {
-          feedbackCard = {
+    setProjectPhotoPickerVisible(true);
+  }, [project, projectPhotoIntakeBusy, projectPhotoPickerBusy]);
+
+  const importProjectPoolPhotos = useCallback(
+    async (assetIds: string[]) => {
+      if (!project || projectPhotoIntakeBusy) {
+        return;
+      }
+      try {
+        setProjectPhotoIntakeBusy(true);
+        setProjectPhotoPickerBusy(true);
+        setProjectPhotoFeedback(undefined);
+        const selected = await pickPhotosFromMediaLibraryByAssetIds(assetIds);
+        if (selected.length === 0) {
+          setProjectPhotoPickerVisible(false);
+          return;
+        }
+        const createdPhotoIds = await addPhotoAssetsToProject(project.id, selected);
+        const addedCount = createdPhotoIds.length;
+        if (addedCount > 0) {
+          let feedbackCard: StatusCard = {
             icon: "checkmark-circle-outline",
             title: `${pluralize(addedCount, "photo")} added`,
-            message:
-              "They are now available in the project pool. Run Scan Suggestions whenever you want to refresh event or collection ideas.",
+            message: "They stay in this project's photo pool and remain unassigned until you use them in a memory.",
             tone: "success"
           };
+          if (project.timelineMode !== "past" && project.includeFutureProjectPhotos) {
+            try {
+              setSuggestionScanError(undefined);
+              setLastSuggestionScanFeedback(undefined);
+              setSuggestionScanState("scanning");
+              const generated = await scanProjectSuggestions(project.id);
+              if (generated.length > 0) {
+                setSuggestionsExpanded(true);
+              }
+              setLastSuggestionScanFeedback({ generatedCount: generated.length, source: "intake" });
+              setSuggestionScanState(generated.length > 0 ? "done" : "empty");
+              feedbackCard = {
+                icon: generated.length > 0 ? "sparkles-outline" : "checkmark-circle-outline",
+                title: `${pluralize(addedCount, "photo")} added`,
+                message:
+                  generated.length > 0
+                    ? `They are in the project pool now, and the automatic follow-up scan generated or refreshed ${pluralize(
+                        generated.length,
+                        "suggestion"
+                      )}.`
+                    : "They are in the project pool now. Future intake is on, so this project was rescanned automatically even though no strong suggestions surfaced yet.",
+                tone: "success"
+              };
+            } catch (error) {
+              setSuggestionScanState("error");
+              setSuggestionScanError((error as Error).message || "Suggestion generation failed.");
+              setLastSuggestionScanFeedback(undefined);
+              feedbackCard = {
+                icon: "warning-outline",
+                title: `${pluralize(addedCount, "photo")} added`,
+                message:
+                  "The photos are safely in the project pool, but the automatic follow-up scan failed. You can retry from Scan Suggestions at any time.",
+                tone: "error"
+              };
+            }
+          } else {
+            feedbackCard = {
+              icon: "checkmark-circle-outline",
+              title: `${pluralize(addedCount, "photo")} added`,
+              message:
+                "They are now available in the project pool. Run Scan Suggestions whenever you want to refresh event or collection ideas.",
+              tone: "success"
+            };
+          }
+          setProjectPhotoFeedback(feedbackCard);
+          setProjectPhotoPickerVisible(false);
         }
-        setProjectPhotoFeedback(feedbackCard);
+      } catch (error) {
+        setProjectPhotoFeedback({
+          icon: "warning-outline",
+          title: "Unable to add project photos",
+          message: (error as Error).message || "The project is still usable. Try again when you're ready.",
+          tone: "error"
+        });
+        Alert.alert("Unable to add project photos", (error as Error).message);
+      } finally {
+        setProjectPhotoPickerBusy(false);
+        setProjectPhotoIntakeBusy(false);
       }
-    } catch (error) {
-      setProjectPhotoFeedback({
-        icon: "warning-outline",
-        title: "Unable to add project photos",
-        message: (error as Error).message || "The project is still usable. Try again when you're ready.",
-        tone: "error"
-      });
-      Alert.alert("Unable to add project photos", (error as Error).message);
-    } finally {
-      setProjectPhotoIntakeBusy(false);
-    }
-  }, [addPhotosToProject, project, projectPhotoIntakeBusy, scanProjectSuggestions]);
+    },
+    [addPhotoAssetsToProject, project, projectPhotoIntakeBusy, scanProjectSuggestions]
+  );
 
   const onScanSuggestions = useCallback(async () => {
     if (scanningSuggestions) {
@@ -877,6 +1163,162 @@ export default function ProjectDetailsScreen() {
       setScanningSuggestions(false);
     }
   }, [projectId, scanProjectSuggestions, scanningSuggestions]);
+
+  const openAnalysisInspector = useCallback(
+    (photoId?: string) => {
+      if (inspectorSelectablePhotos.length === 0) {
+        Alert.alert("No project photos", "Add project photos first so there is an image available to inspect.");
+        return;
+      }
+
+      setAnalysisInspectorPhotoId(photoId ?? inspectorSelectablePhotos[0]?.id ?? null);
+      setAnalysisInspectorFeedback(undefined);
+      setAnalysisInspectorVisible(true);
+    },
+    [inspectorSelectablePhotos]
+  );
+
+  const closeAnalysisInspector = useCallback(() => {
+    if (analysisInspectorBusy) {
+      return;
+    }
+    setAnalysisInspectorVisible(false);
+    setAnalysisInspectorFeedback(undefined);
+    setAnalysisInspectorProbe(null);
+  }, [analysisInspectorBusy]);
+
+  const closeMediaLibraryPicker = useCallback(() => {
+    if (mediaLibraryProbeBusy) {
+      return;
+    }
+    setMediaLibraryPickerVisible(false);
+  }, [mediaLibraryProbeBusy]);
+
+  const openMediaLibraryPicker = useCallback(() => {
+    setMediaLibraryPickerVisible(true);
+  }, []);
+
+  const importMediaLibraryProbePhoto = useCallback(
+    async (assetIds: string[]) => {
+      if (!project) {
+        return;
+      }
+      const assetId = assetIds[0];
+      if (!assetId) {
+        return;
+      }
+
+      try {
+        setMediaLibraryProbeBusy(true);
+        setProjectPhotoFeedback(undefined);
+        const pickedAsset = await pickPhotoFromMediaLibraryByAssetId(assetId);
+        if (!pickedAsset) {
+          Alert.alert(
+            "Media Library import unavailable",
+            "We could not resolve a picked photo asset from this Media Library item."
+          );
+          return;
+        }
+
+        const createdPhotoIds = await addPhotoAssetsToProject(project.id, [pickedAsset]);
+        const createdPhotoId = createdPhotoIds[0];
+
+        if (!createdPhotoId) {
+          Alert.alert("Import failed", "The Media Library asset did not produce a new project photo.");
+          return;
+        }
+
+        setProjectPhotoFeedback({
+          icon: "checkmark-circle-outline",
+          title: "Media Library probe photo imported",
+          message:
+            "This photo came through the Media Library asset path, so the inspector can now compare asset-id-preserving imports against picker-based imports.",
+          tone: "success"
+        });
+        setMediaLibraryPickerVisible(false);
+        openAnalysisInspector(createdPhotoId);
+      } catch (error) {
+        Alert.alert(
+          "Import failed",
+          error instanceof Error ? error.message : "The Media Library probe photo could not be imported."
+        );
+      } finally {
+        setMediaLibraryProbeBusy(false);
+      }
+    },
+    [addPhotoAssetsToProject, openAnalysisInspector, project]
+  );
+
+  const runInspectorAnalysis = useCallback(
+    async (force: boolean) => {
+      if (!project || !selectedInspectorPhoto) {
+        return;
+      }
+
+      try {
+        setAnalysisInspectorBusy(true);
+        setAnalysisInspectorFeedback(undefined);
+        const result = await analyzeProjectPhotos(project.id, {
+          photoIds: [selectedInspectorPhoto.id],
+          force
+        });
+
+        if (result.analyzedPhotoIds.includes(selectedInspectorPhoto.id)) {
+          setAnalysisInspectorFeedback({
+            icon: force ? "refresh-outline" : "analytics-outline",
+            title: force ? "Photo reanalyzed" : "Photo analyzed",
+            message:
+              "The live project photo record was updated using the current local analysis pipeline. Scroll below to inspect the refreshed metadata.",
+            tone: "success"
+          });
+          return;
+        }
+
+        if (result.skippedPhotoIds.includes(selectedInspectorPhoto.id)) {
+          setAnalysisInspectorFeedback({
+            icon: "checkmark-done-outline",
+            title: "Analysis already current",
+            message:
+              "This photo already has the latest analysis version. Use Force Reanalyze if you want to run the pipeline again anyway.",
+            tone: "info"
+          });
+          return;
+        }
+
+        setAnalysisInspectorFeedback({
+          icon: "help-circle-outline",
+          title: "No analysis result",
+          message: "The orchestrator did not return a result for this photo. Try selecting it again or forcing a rerun.",
+          tone: "info"
+        });
+      } catch (error) {
+        setAnalysisInspectorFeedback({
+          icon: "alert-circle-outline",
+          title: "Analysis failed",
+          message: error instanceof Error ? error.message : "The single-image analysis run did not complete.",
+          tone: "error"
+        });
+      } finally {
+        setAnalysisInspectorBusy(false);
+      }
+    },
+    [analyzeProjectPhotos, project, selectedInspectorPhoto]
+  );
+
+  const onStartFinalization = useCallback(() => {
+    if (!project) {
+      return;
+    }
+    startProjectFinalization(project.id);
+    setFinalizationExpanded(true);
+  }, [project, startProjectFinalization]);
+
+  const onCompleteFinalization = useCallback(() => {
+    if (!project) {
+      return;
+    }
+    completeProjectFinalization(project.id);
+  }, [completeProjectFinalization, project]);
 
   const onAcceptSuggestion = useCallback(
     async (suggestionId: string) => {
@@ -1034,6 +1476,39 @@ export default function ProjectDetailsScreen() {
     [activeSuggestionId, onAcceptSuggestion, onDismissSuggestion, onKeepWatchingSuggestion, onSnoozeSuggestion]
   );
 
+  const renderFinalizationSuggestionCard = useCallback((suggestion: FinalizationSuggestion) => {
+    const candidateCount = suggestion.candidatePhotoIds.length;
+
+    return (
+      <View key={suggestion.id} style={styles.suggestionCard}>
+        <View style={styles.suggestionCardHeader}>
+          <Text style={styles.suggestionTitle}>{suggestion.title}</Text>
+          <View style={[styles.suggestionStatusBadge, styles.finalizationStatusBadge]}>
+            <Text style={[styles.suggestionStatusText, styles.finalizationStatusText]}>
+              {getFinalizationTypeLabel(suggestion.type)}
+            </Text>
+          </View>
+        </View>
+        <Text style={styles.suggestionMessage}>{suggestion.message}</Text>
+        <Text style={styles.suggestionMeta}>
+          {candidateCount > 0 ? `${pluralize(candidateCount, "candidate photo")}` : "No candidate photos attached"}
+          {suggestion.highlightTag ? ` | ${suggestion.highlightTag}` : ""}
+        </Text>
+        <Text style={styles.suggestionLifecycleNote}>
+          Finalization stays optional. Review the photos here, then decide whether they belong in a new or expanded memory.
+        </Text>
+        <View style={styles.suggestionActionRow}>
+          <Pressable
+            style={[styles.suggestionActionButton, styles.suggestionPrimaryAction]}
+            onPress={() => setFinalizationReviewSuggestion(suggestion)}
+          >
+            <Text style={styles.suggestionPrimaryActionText}>Review Photos</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }, []);
+
   const toolbarBottom = insets.bottom + 24;
   const bottomToolbarHeight = insets.bottom + 102;
   const composerCanSave = composerTitle.trim().length > 0 && !composerSaving;
@@ -1086,22 +1561,32 @@ export default function ProjectDetailsScreen() {
           ItemSeparatorComponent={() => <View style={{ height: 18 }} />}
           ListHeaderComponent={
             <View style={styles.listHeader}>
-              <View style={styles.sectionHeaderRow}>
+              <View style={[styles.sectionHeaderRow, styles.sectionHeaderRowStack]}>
                 <Text style={styles.sectionHeading}>Project Photos</Text>
-                <Pressable
-                  style={[styles.scanButton, projectPhotoIntakeBusy ? styles.scanButtonDisabled : null]}
-                  onPress={onAddProjectPhotos}
-                  disabled={projectPhotoIntakeBusy}
-                >
-                  {projectPhotoIntakeBusy ? (
-                    <ActivityIndicator color="#eef4ff" size="small" />
-                  ) : (
-                    <>
-                      <Ionicons name="images-outline" size={15} color="#eef4ff" />
-                      <Text style={styles.scanButtonText}>Add Photos to Project</Text>
-                    </>
-                  )}
-                </Pressable>
+                <View style={[styles.sectionHeaderActions, styles.sectionHeaderActionsFullWidth]}>
+                  <Pressable style={styles.dismissedToggle} onPress={() => openAnalysisInspector()}>
+                    <Ionicons name="bug-outline" size={15} color="#9ab2dd" />
+                    <Text style={styles.dismissedToggleText}>Analysis Inspector</Text>
+                  </Pressable>
+                  <Pressable style={styles.dismissedToggle} onPress={openMediaLibraryPicker}>
+                    <Ionicons name="albums-outline" size={15} color="#9ab2dd" />
+                    <Text style={styles.dismissedToggleText}>Probe Media Asset</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.scanButton, projectPhotoIntakeBusy ? styles.scanButtonDisabled : null]}
+                    onPress={onAddProjectPhotos}
+                    disabled={projectPhotoIntakeBusy}
+                  >
+                    {projectPhotoIntakeBusy ? (
+                      <ActivityIndicator color="#eef4ff" size="small" />
+                    ) : (
+                      <>
+                        <Ionicons name="images-outline" size={15} color="#eef4ff" />
+                        <Text style={styles.scanButtonText}>Add Photos to Project</Text>
+                      </>
+                    )}
+                  </Pressable>
+                </View>
               </View>
               <Text style={styles.sectionSubheading}>
                 Photos added here stay in the project pool without being assigned to a memory until you use them.
@@ -1158,9 +1643,9 @@ export default function ProjectDetailsScreen() {
                   contentContainerStyle={styles.projectPhotoStrip}
                 >
                   {projectPhotoPreview.map((photo) => (
-                    <View key={photo.id} style={styles.projectPhotoThumbWrap}>
+                    <Pressable key={photo.id} style={styles.projectPhotoThumbWrap} onPress={() => openAnalysisInspector(photo.id)}>
                       <Image source={{ uri: photo.uri }} style={styles.projectPhotoThumb} />
-                    </View>
+                    </Pressable>
                   ))}
                 </ScrollView>
               ) : null}
@@ -1309,6 +1794,115 @@ export default function ProjectDetailsScreen() {
                     <Text style={styles.suggestionGroupHint}>Hidden by default to reduce clutter during testing.</Text>
                   </View>
                   <View style={styles.suggestionList}>{dismissedSuggestions.map(renderSuggestionCard)}</View>
+                </View>
+              ) : null}
+
+              <View style={styles.sectionHeaderRow}>
+                <Text style={styles.sectionHeading}>Finalization</Text>
+                {project?.finalizationStatus === "idle" ? (
+                  <Pressable style={styles.scanButton} onPress={onStartFinalization}>
+                    <Ionicons name="flag-outline" size={15} color="#eef4ff" />
+                    <Text style={styles.scanButtonText}>Start Finalization</Text>
+                  </Pressable>
+                ) : (
+                  <Pressable style={styles.scanButton} onPress={onCompleteFinalization}>
+                    <Ionicons name="checkmark-done-outline" size={15} color="#eef4ff" />
+                    <Text style={styles.scanButtonText}>
+                      {project?.finalizationStatus === "reviewed" ? "Reviewed" : "Mark Reviewed"}
+                    </Text>
+                  </Pressable>
+                )}
+              </View>
+              <Text style={styles.sectionSubheading}>
+                A lightweight end-stage review for missing moments, strongest unused photos, and recurring highlights across the project.
+              </Text>
+              <Text style={styles.suggestionSummary}>{finalizationSummary}</Text>
+
+              <View style={styles.sectionControlRow}>
+                <Pressable style={styles.dismissedToggle} onPress={() => setFinalizationExpanded((prev) => !prev)}>
+                  <Ionicons
+                    name={finalizationExpanded ? "chevron-up-outline" : "chevron-down-outline"}
+                    size={15}
+                    color="#9ab2dd"
+                  />
+                  <Text style={styles.dismissedToggleText}>
+                    {finalizationExpanded
+                      ? `Collapse finalization (${finalizationSuggestions.length})`
+                      : `Expand finalization (${finalizationSuggestions.length})`}
+                  </Text>
+                </Pressable>
+              </View>
+
+              {finalizationStateCard ? (
+                <View
+                  style={[
+                    styles.suggestionsStateCard,
+                    finalizationStateCard.tone === "error" ? styles.suggestionsStateCardError : null,
+                    finalizationStateCard.tone === "info" ? styles.suggestionsStateCardInfo : null,
+                    finalizationStateCard.tone === "success" ? styles.suggestionsStateCardSuccess : null
+                  ]}
+                >
+                  <Ionicons
+                    name={finalizationStateCard.icon}
+                    size={24}
+                    color={
+                      finalizationStateCard.tone === "error"
+                        ? "#ff9aae"
+                        : finalizationStateCard.tone === "success"
+                          ? "#82efb4"
+                          : "#7fa7ff"
+                    }
+                  />
+                  <Text style={styles.emptyTitle}>{finalizationStateCard.title}</Text>
+                  <Text style={styles.emptyText}>{finalizationStateCard.message}</Text>
+                </View>
+              ) : null}
+
+              {!finalizationExpanded && finalizationSuggestions.length > 0 ? (
+                <Text style={styles.suggestionCollapsedHint}>
+                  Finalization ideas are hidden until you expand them, so the main project workflow stays uncluttered.
+                </Text>
+              ) : null}
+
+              {finalizationExpanded && missingMomentFinalizationSuggestions.length > 0 ? (
+                <View style={styles.suggestionGroup}>
+                  <View style={styles.suggestionGroupHeader}>
+                    <Text style={styles.suggestionGroupTitle}>Missing Moments</Text>
+                    <Text style={styles.suggestionGroupHint}>
+                      Unassigned time clusters that may deserve a final event memory or recap page.
+                    </Text>
+                  </View>
+                  <View style={styles.suggestionList}>
+                    {missingMomentFinalizationSuggestions.map(renderFinalizationSuggestionCard)}
+                  </View>
+                </View>
+              ) : null}
+
+              {finalizationExpanded && strongestUnusedFinalizationSuggestions.length > 0 ? (
+                <View style={styles.suggestionGroup}>
+                  <View style={styles.suggestionGroupHeader}>
+                    <Text style={styles.suggestionGroupTitle}>Strongest Unused Photos</Text>
+                    <Text style={styles.suggestionGroupHint}>
+                      High-value photos still outside memories near the end of the project.
+                    </Text>
+                  </View>
+                  <View style={styles.suggestionList}>
+                    {strongestUnusedFinalizationSuggestions.map(renderFinalizationSuggestionCard)}
+                  </View>
+                </View>
+              ) : null}
+
+              {finalizationExpanded && highlightFinalizationSuggestions.length > 0 ? (
+                <View style={styles.suggestionGroup}>
+                  <View style={styles.suggestionGroupHeader}>
+                    <Text style={styles.suggestionGroupTitle}>Recurring Highlights</Text>
+                    <Text style={styles.suggestionGroupHint}>
+                      Repeating themes across the project that may work better as closing highlight collections.
+                    </Text>
+                  </View>
+                  <View style={styles.suggestionList}>
+                    {highlightFinalizationSuggestions.map(renderFinalizationSuggestionCard)}
+                  </View>
                 </View>
               ) : null}
 
@@ -1516,6 +2110,412 @@ export default function ProjectDetailsScreen() {
           </KeyboardAvoidingView>
         </View>
       </Modal>
+
+      <Modal
+        transparent
+        animationType="slide"
+        visible={Boolean(finalizationReviewSuggestion)}
+        onRequestClose={closeFinalizationReview}
+      >
+        <View style={styles.modalBackdrop}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            style={styles.modalAvoider}
+          >
+            <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 18 }]}>
+              <View style={styles.modalHeader}>
+                <View>
+                  <Text style={styles.modalTitle}>{finalizationReviewSuggestion?.title ?? "Finalization Review"}</Text>
+                  <Text style={styles.modalSubtitle}>
+                    {finalizationReviewSuggestion?.message ??
+                      "Review these project photos before deciding whether they belong in a final memory or collection."}
+                  </Text>
+                </View>
+                <Pressable style={styles.modalCloseButton} onPress={closeFinalizationReview}>
+                  <Ionicons name="close" size={22} color="#eef4ff" />
+                </Pressable>
+              </View>
+
+              <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
+                {finalizationReviewPhotos.length > 0 ? (
+                  <View style={styles.candidateGrid}>
+                    {finalizationReviewPhotos.map((photo) => (
+                      <View key={photo.id} style={styles.finalizationGridItem}>
+                        <Image source={{ uri: photo.uri }} style={styles.candidateGridImage} />
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <View style={styles.emptyCard}>
+                    <Ionicons name="albums-outline" size={30} color="#5d7097" />
+                    <Text style={styles.emptyTitle}>No review photos right now</Text>
+                    <Text style={styles.emptyText}>
+                      This finalization idea does not currently have a stable candidate set attached.
+                    </Text>
+                  </View>
+                )}
+
+                <View style={styles.modalActions}>
+                  <Pressable style={styles.deleteMemoryButton} onPress={closeFinalizationReview}>
+                    <Text style={styles.deleteMemoryButtonText}>Close</Text>
+                  </Pressable>
+                </View>
+              </ScrollView>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        animationType="slide"
+        visible={analysisInspectorVisible}
+        onRequestClose={closeAnalysisInspector}
+      >
+        <View style={styles.modalBackdrop}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            style={styles.modalAvoider}
+          >
+            <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 18 }]}>
+              <View style={styles.modalHeader}>
+                <View>
+                  <Text style={styles.modalTitle}>Image Analysis Inspector</Text>
+                  <Text style={styles.modalSubtitle}>
+                    Developer-facing view of one photo’s persisted analysis metadata. It uses the current orchestrator
+                    and updates the live project photo record.
+                  </Text>
+                </View>
+                <Pressable style={styles.modalCloseButton} onPress={closeAnalysisInspector} disabled={analysisInspectorBusy}>
+                  <Ionicons name="close" size={22} color="#eef4ff" />
+                </Pressable>
+              </View>
+
+              <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
+                {inspectorSelectablePhotos.length > 0 ? (
+                  <View style={styles.analysisPickerSection}>
+                    <Text style={styles.fieldLabel}>Target Photo</Text>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.analysisPickerRow}
+                    >
+                      {inspectorSelectablePhotos.map((photo) => {
+                        const selected = selectedInspectorPhoto?.id === photo.id;
+                        return (
+                          <Pressable
+                            key={photo.id}
+                            style={[styles.analysisPickerCard, selected ? styles.analysisPickerCardSelected : null]}
+                            onPress={() => {
+                              setAnalysisInspectorPhotoId(photo.id);
+                              setAnalysisInspectorFeedback(undefined);
+                            }}
+                          >
+                            <Image source={{ uri: photo.uri }} style={styles.analysisPickerImage} />
+                            <View style={styles.analysisPickerMeta}>
+                              <Text style={styles.analysisPickerMetaText}>
+                                {photo.memoryId ? "Assigned" : "Project pool"}
+                              </Text>
+                            </View>
+                          </Pressable>
+                        );
+                      })}
+                    </ScrollView>
+                  </View>
+                ) : (
+                  <View style={styles.emptyCard}>
+                    <Ionicons name="images-outline" size={30} color="#5d7097" />
+                    <Text style={styles.emptyTitle}>No project photos to inspect</Text>
+                    <Text style={styles.emptyText}>
+                      Add project photos or memory photos in this project first, then reopen the inspector.
+                    </Text>
+                  </View>
+                )}
+
+                {analysisInspectorFeedback ? (
+                  <View
+                    style={[
+                      styles.suggestionsStateCard,
+                      analysisInspectorFeedback.tone === "error" ? styles.suggestionsStateCardError : null,
+                      analysisInspectorFeedback.tone === "info" ? styles.suggestionsStateCardInfo : null,
+                      analysisInspectorFeedback.tone === "success" ? styles.suggestionsStateCardSuccess : null
+                    ]}
+                  >
+                    {analysisInspectorBusy ? (
+                      <ActivityIndicator color="#dbe8ff" />
+                    ) : (
+                      <Ionicons
+                        name={analysisInspectorFeedback.icon}
+                        size={24}
+                        color={
+                          analysisInspectorFeedback.tone === "error"
+                            ? "#ff9aae"
+                            : analysisInspectorFeedback.tone === "success"
+                              ? "#82efb4"
+                              : "#7fa7ff"
+                        }
+                      />
+                    )}
+                    <Text style={styles.emptyTitle}>{analysisInspectorFeedback.title}</Text>
+                    <Text style={styles.emptyText}>{analysisInspectorFeedback.message}</Text>
+                  </View>
+                ) : null}
+
+                {selectedInspectorPhoto ? (
+                  <>
+                    <View style={styles.analysisPreviewCard}>
+                      <Image source={{ uri: selectedInspectorPhoto.uri }} style={styles.analysisPreviewImage} />
+                    </View>
+
+                    <View style={styles.analysisActionRow}>
+                      <Pressable
+                        style={[styles.scanButton, analysisInspectorBusy ? styles.scanButtonDisabled : null]}
+                        onPress={() => runInspectorAnalysis(false)}
+                        disabled={analysisInspectorBusy}
+                      >
+                        {analysisInspectorBusy ? (
+                          <ActivityIndicator color="#eef4ff" size="small" />
+                        ) : (
+                          <>
+                            <Ionicons name="analytics-outline" size={15} color="#eef4ff" />
+                            <Text style={styles.scanButtonText}>Analyze Selected</Text>
+                          </>
+                        )}
+                      </Pressable>
+                      <Pressable
+                        style={[styles.dismissedToggle, analysisInspectorBusy ? styles.scanButtonDisabled : null]}
+                        onPress={() => runInspectorAnalysis(true)}
+                        disabled={analysisInspectorBusy}
+                      >
+                        <Ionicons name="refresh-outline" size={15} color="#9ab2dd" />
+                        <Text style={styles.dismissedToggleText}>Force Reanalyze</Text>
+                      </Pressable>
+                    </View>
+
+                    <InspectorSection title="Base Metadata">
+                      <InspectorField label="Photo ID" value={selectedInspectorPhoto.id} />
+                      <InspectorField label="Project ID" value={selectedInspectorPhoto.projectId} />
+                      <InspectorField label="Memory ID" value={selectedInspectorPhoto.memoryId} />
+                      <InspectorField label="Source Asset ID" value={selectedInspectorPhoto.importMetadata?.assetId} />
+                      <InspectorField label="URI" value={selectedInspectorPhoto.uri} />
+                      <InspectorField label="Width" value={selectedInspectorPhoto.width} />
+                      <InspectorField label="Height" value={selectedInspectorPhoto.height} />
+                      <InspectorField label="Captured At" value={selectedInspectorPhoto.capturedAt} />
+                      <InspectorField label="Added At" value={selectedInspectorPhoto.addedAt} />
+                      <InspectorField label="Location" value={formatLocationLabel(selectedInspectorPhoto)} />
+                    </InspectorSection>
+
+                    <InspectorSection title="Import Metadata Sources">
+                      <InspectorField
+                        label="Resolution Path"
+                        value={formatResolutionKind(selectedInspectorPhoto.importMetadata?.resolutionKind)}
+                      />
+                      <InspectorField
+                        label="Picker Asset ID Present"
+                        value={selectedInspectorPhoto.importMetadata?.pickerAssetIdPresent}
+                      />
+                      <InspectorField
+                        label="Picker EXIF Present"
+                        value={selectedInspectorPhoto.importMetadata?.pickerExifPresent}
+                      />
+                      <InspectorField
+                        label="Picker Key Sample"
+                        value={selectedInspectorPhoto.importMetadata?.pickerKeySample?.join(", ")}
+                      />
+                      <InspectorField
+                        label="Captured At Source"
+                        value={getCapturedAtSourceLabel(selectedInspectorPhoto)}
+                      />
+                      <InspectorField
+                        label="Location Source"
+                        value={getLocationSourceLabel(selectedInspectorPhoto)}
+                      />
+                    </InspectorSection>
+
+                    <InspectorSection title="Media Library Probe">
+                      <InspectorField
+                        label="Picker Asset ID"
+                        value={selectedInspectorPhoto.importMetadata?.assetId ?? "No assetId on picker result"}
+                      />
+                      <InspectorField
+                        label="Media Library Lookup"
+                        value={
+                          analysisInspectorProbeBusy
+                            ? "Checking..."
+                            : analysisInspectorProbe?.lookupAttempted
+                              ? "Called getAssetInfoAsync"
+                              : analysisInspectorProbe?.assetIdPresent
+                                ? analysisInspectorProbe?.permissionGranted
+                                  ? "Asset ID present, lookup not completed"
+                                  : "Permission unavailable"
+                                : "Skipped (no assetId)"
+                        }
+                      />
+                      <InspectorField
+                        label="AssetInfo Location Present"
+                        value={analysisInspectorProbeBusy ? "Checking..." : analysisInspectorProbe?.hasLocation}
+                      />
+                      <InspectorField
+                        label="AssetInfo EXIF Present"
+                        value={analysisInspectorProbeBusy ? "Checking..." : analysisInspectorProbe?.hasExif}
+                      />
+                      <InspectorField
+                        label="Final Stored Location"
+                        value={formatLocationLabel(selectedInspectorPhoto)}
+                      />
+                      <InspectorField
+                        label="Location Source Used"
+                        value={getLocationSourceLabel(selectedInspectorPhoto)}
+                      />
+                      <InspectorField
+                        label="Raw Location Preview"
+                        value={analysisInspectorProbeBusy ? "Checking..." : analysisInspectorProbe?.rawLocationPreview}
+                      />
+                      <InspectorField
+                        label="EXIF Key Sample"
+                        value={analysisInspectorProbe?.exifKeySample?.join(", ")}
+                      />
+                      <InspectorField label="Probe Error" value={analysisInspectorProbe?.error} />
+                    </InspectorSection>
+
+                    <InspectorSection title="Analysis">
+                      <InspectorField label="Analysis Version" value={selectedInspectorPhoto.analysis?.analysisVersion} />
+                      <InspectorField label="Analyzed At" value={selectedInspectorPhoto.analysis?.analyzedAt} />
+                    </InspectorSection>
+
+                    <InspectorSection title="Quality">
+                      <InspectorField label="Quality Score" value={selectedInspectorPhoto.analysis?.quality?.qualityScore} />
+                      <InspectorField
+                        label="Hero Candidate Score"
+                        value={selectedInspectorPhoto.analysis?.quality?.heroCandidateScore}
+                      />
+                      <InspectorField label="Is Blurry" value={selectedInspectorPhoto.analysis?.quality?.isBlurry} />
+                      <InspectorField label="Is Low Light" value={selectedInspectorPhoto.analysis?.quality?.isLowLight} />
+                    </InspectorSection>
+
+                    <InspectorSection title="Scene and Theme">
+                      <InspectorField
+                        label="Scene Tags"
+                        value={selectedInspectorPhoto.analysis?.sceneTags?.join(", ")}
+                      />
+                      <InspectorField
+                        label="Theme Tags"
+                        value={selectedInspectorPhoto.analysis?.themeTags?.join(", ")}
+                      />
+                    </InspectorSection>
+
+                    <InspectorSection title="Subject Cues">
+                      <InspectorField
+                        label="Portrait-like"
+                        value={selectedInspectorPhoto.analysis?.subjectCues?.portraitLike}
+                      />
+                      <InspectorField
+                        label="Group-photo-like"
+                        value={selectedInspectorPhoto.analysis?.subjectCues?.groupPhotoLike}
+                      />
+                    </InspectorSection>
+
+                    <InspectorSection title="Face Metadata">
+                      <InspectorField label="Face Count" value={selectedInspectorPhoto.analysis?.faces?.faceCount} />
+                      <InspectorField label="Has Face" value={selectedInspectorPhoto.analysis?.faces?.hasFace} />
+                      <InspectorField
+                        label="Has Multiple Faces"
+                        value={selectedInspectorPhoto.analysis?.faces?.hasMultipleFaces}
+                      />
+                    </InspectorSection>
+
+                    <InspectorSection title="Similarity">
+                      <InspectorField
+                        label="Duplicate Cluster ID"
+                        value={selectedInspectorPhoto.analysis?.similarity?.duplicateClusterId}
+                      />
+                      <InspectorField
+                        label="Similarity Cluster ID"
+                        value={selectedInspectorPhoto.analysis?.similarity?.similarityClusterId}
+                      />
+                      <InspectorField
+                        label="Representative Score"
+                        value={selectedInspectorPhoto.analysis?.similarity?.representativeScore}
+                      />
+                    </InspectorSection>
+
+                    <InspectorSection title="External and Local-Only">
+                      <InspectorField
+                        label="Safe External Tags"
+                        value={selectedInspectorPhoto.analysis?.safeExternalTags?.join(", ")}
+                      />
+                      <InspectorField
+                        label="Private Face Data Ref"
+                        value={selectedInspectorPhoto.analysis?.localOnly?.privateFaceDataRef}
+                      />
+                      <InspectorField
+                        label="Local Embedding Ref"
+                        value={selectedInspectorPhoto.analysis?.localOnly?.localEmbeddingRef}
+                      />
+                    </InspectorSection>
+
+                    <InspectorSection title="Raw Analysis Snapshot">
+                      <Text selectable style={styles.analysisCodeBlock}>
+                        {JSON.stringify(selectedInspectorPhoto.analysis ?? {}, null, 2)}
+                      </Text>
+                    </InspectorSection>
+                  </>
+                ) : null}
+
+                <View style={styles.modalActions}>
+                  <Pressable style={styles.deleteMemoryButton} onPress={closeAnalysisInspector} disabled={analysisInspectorBusy}>
+                    <Text style={styles.deleteMemoryButtonText}>Close Inspector</Text>
+                  </Pressable>
+                </View>
+              </ScrollView>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      <MediaLibrarySelectionModal
+        visible={projectPhotoPickerVisible}
+        title="Add Project Photos"
+        subtitle="Choose photos directly from Media Library so the app can preserve canonical asset ids and richer GPS/EXIF metadata."
+        confirmLabel="Add to Project"
+        selectionMode="multiple"
+        confirming={projectPhotoPickerBusy}
+        bottomInset={insets.bottom}
+        onClose={() => {
+          if (!projectPhotoPickerBusy) {
+            setProjectPhotoPickerVisible(false);
+          }
+        }}
+        onConfirm={importProjectPoolPhotos}
+      />
+
+      <MediaLibrarySelectionModal
+        visible={composerMediaLibraryVisible}
+        title="Add Memory Photos"
+        subtitle="Choose Media Library assets to stage inside this memory composer while preserving the canonical asset metadata path."
+        confirmLabel="Add to Memory"
+        selectionMode="multiple"
+        confirming={composerPicking}
+        bottomInset={insets.bottom}
+        onClose={() => {
+          if (!composerPicking) {
+            setComposerMediaLibraryVisible(false);
+          }
+        }}
+        onConfirm={onImportComposerPhotos}
+      />
+
+      <MediaLibrarySelectionModal
+        visible={mediaLibraryPickerVisible}
+        title="Media Library Probe Import"
+        subtitle="Pick one recent Media Library photo asset to import through a path that preserves the canonical asset id before opening the analysis inspector."
+        selectionMode="single"
+        confirming={mediaLibraryProbeBusy}
+        showDiagnostics
+        bottomInset={insets.bottom}
+        onClose={closeMediaLibraryPicker}
+        onConfirm={importMediaLibraryProbePhoto}
+      />
 
       <Modal transparent animationType="slide" visible={composerVisible} onRequestClose={closeComposer}>
         <View style={styles.modalBackdrop}>
@@ -1798,10 +2798,25 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: 12
   },
+  sectionHeaderRowStack: {
+    flexWrap: "wrap",
+    alignItems: "flex-start"
+  },
+  sectionHeaderActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "flex-end",
+    gap: 8
+  },
+  sectionHeaderActionsFullWidth: {
+    width: "100%",
+    justifyContent: "flex-start"
+  },
   sectionHeading: {
     color: "#f8fbff",
     fontSize: 22,
-    fontWeight: "800"
+    fontWeight: "800",
+    flexShrink: 1
   },
   sectionSubheading: {
     color: "#90a4cc",
@@ -1868,6 +2883,103 @@ const styles = StyleSheet.create({
   projectPhotoThumb: {
     width: "100%",
     height: "100%"
+  },
+  analysisPickerSection: {
+    gap: 10
+  },
+  analysisPickerRow: {
+    gap: 10,
+    paddingRight: 12
+  },
+  analysisPickerCard: {
+    width: 92,
+    height: 110,
+    borderRadius: 18,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#24385f",
+    backgroundColor: "#14223a"
+  },
+  analysisPickerCardSelected: {
+    borderWidth: 2,
+    borderColor: "#2f80ff"
+  },
+  analysisPickerImage: {
+    width: "100%",
+    height: 78
+  },
+  analysisPickerMeta: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 8
+  },
+  analysisPickerMetaText: {
+    color: "#c8d7f7",
+    fontSize: 11,
+    fontWeight: "700",
+    textAlign: "center"
+  },
+  analysisPreviewCard: {
+    height: 220,
+    borderRadius: 22,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#223456",
+    backgroundColor: "#14223a"
+  },
+  analysisPreviewImage: {
+    width: "100%",
+    height: "100%"
+  },
+  analysisActionRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10
+  },
+  analysisSection: {
+    gap: 10
+  },
+  analysisSectionTitle: {
+    color: "#dfe8fb",
+    fontSize: 14,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+    textTransform: "uppercase"
+  },
+  analysisSectionBody: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#20304d",
+    backgroundColor: "#101a2d",
+    overflow: "hidden"
+  },
+  analysisFieldRow: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#223456",
+    gap: 6
+  },
+  analysisFieldLabel: {
+    color: "#88a0cb",
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.4,
+    textTransform: "uppercase"
+  },
+  analysisFieldValue: {
+    color: "#eef4ff",
+    fontSize: 14,
+    lineHeight: 20
+  },
+  analysisCodeBlock: {
+    color: "#dbe8ff",
+    fontSize: 12,
+    lineHeight: 18,
+    fontFamily: Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" }),
+    paddingHorizontal: 14,
+    paddingVertical: 14
   },
   dismissedToggle: {
     alignSelf: "flex-start",
@@ -2012,6 +3124,13 @@ const styles = StyleSheet.create({
   },
   suggestionStatusDismissedText: {
     color: "#ff9aae"
+  },
+  finalizationStatusBadge: {
+    backgroundColor: "#15243d",
+    borderColor: "#3f6ab2"
+  },
+  finalizationStatusText: {
+    color: "#a7c8ff"
   },
   suggestionActionRow: {
     flexDirection: "row",
@@ -2521,6 +3640,15 @@ const styles = StyleSheet.create({
     borderColor: "#2f80ff",
     borderWidth: 2
   },
+  finalizationGridItem: {
+    width: "47%",
+    aspectRatio: 1,
+    borderRadius: 18,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#223456",
+    backgroundColor: "#14223a"
+  },
   candidateGridImage: {
     width: "100%",
     height: "100%"
@@ -2541,6 +3669,25 @@ const styles = StyleSheet.create({
   candidateGridCheckSelected: {
     backgroundColor: "#2f80ff",
     borderColor: "#2f80ff"
+  },
+  mediaLibraryProbeBadge: {
+    position: "absolute",
+    left: 8,
+    right: 8,
+    bottom: 8,
+    minHeight: 32,
+    borderRadius: 999,
+    backgroundColor: "rgba(47, 128, 255, 0.92)",
+    borderWidth: 1,
+    borderColor: "#2f80ff",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 10
+  },
+  mediaLibraryProbeBadgeText: {
+    color: "#ffffff",
+    fontSize: 12,
+    fontWeight: "800"
   },
   thumbTagExisting: {
     position: "absolute",

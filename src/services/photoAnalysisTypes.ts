@@ -1,6 +1,6 @@
 import { PhotoAnalysisMetadata, PhotoItem, Project } from "../types";
 
-export const PHOTO_ANALYSIS_VERSION = 1;
+export const PHOTO_ANALYSIS_VERSION = 3;
 
 export type PhotoAnalysisPatch = Partial<PhotoAnalysisMetadata>;
 

@@ -1,4 +1,13 @@
-import { Memory, PhotoAnalysisMetadata, PhotoItem, Project, ProjectTimelineMode, Suggestion } from "../types";
+import { normalizePhotoLocation } from "../lib/photoLocation";
+import {
+  Memory,
+  PhotoAnalysisMetadata,
+  PhotoImportMetadata,
+  PhotoItem,
+  Project,
+  ProjectTimelineMode,
+  Suggestion
+} from "../types";
 
 export type ProjectPhotoScopeOverrides = {
   timelineMode?: ProjectTimelineMode;
@@ -17,7 +26,10 @@ export function normalizeProjectRecord(project: Project): Project {
     startDate: project.startDate ?? undefined,
     endDate: project.endDate ?? undefined,
     assistLevel: project.assistLevel ?? "balanced",
-    styleIntensity: project.styleIntensity ?? "warm"
+    styleIntensity: project.styleIntensity ?? "warm",
+    finalizationStatus: project.finalizationStatus ?? "idle",
+    finalizationStartedAt: project.finalizationStartedAt ?? undefined,
+    finalizationUpdatedAt: project.finalizationUpdatedAt ?? undefined
   };
 }
 
@@ -50,6 +62,51 @@ function normalizeTagList(value: unknown): string[] | undefined {
     .map((item) => (typeof item === "string" ? item.trim() : ""))
     .filter(Boolean);
   return normalized.length > 0 ? normalized : undefined;
+}
+
+function normalizePhotoImportMetadata(
+  metadata: PhotoImportMetadata | undefined
+): PhotoImportMetadata | undefined {
+  if (!metadata || typeof metadata !== "object") {
+    return undefined;
+  }
+
+  const assetId = normalizeOptionalString(metadata.assetId);
+  const capturedAtSource =
+    metadata.capturedAtSource === "picker" || metadata.capturedAtSource === "media-library"
+      ? metadata.capturedAtSource
+      : undefined;
+  const resolutionKind =
+    metadata.resolutionKind === "canonical-direct" ||
+    metadata.resolutionKind === "canonical-recovered" ||
+    metadata.resolutionKind === "picker-fallback"
+      ? metadata.resolutionKind
+      : undefined;
+  const locationSource =
+    metadata.locationSource === "picker" || metadata.locationSource === "media-library"
+      ? metadata.locationSource
+      : undefined;
+  const pickerAssetIdPresent = normalizeOptionalBoolean(metadata.pickerAssetIdPresent);
+  const pickerExifPresent = normalizeOptionalBoolean(metadata.pickerExifPresent);
+  const pickerKeySample = normalizeTagList(metadata.pickerKeySample);
+
+  return assetId ||
+    resolutionKind ||
+    capturedAtSource ||
+    locationSource ||
+    pickerAssetIdPresent !== undefined ||
+    pickerExifPresent !== undefined ||
+    pickerKeySample
+    ? {
+        assetId,
+        resolutionKind,
+        capturedAtSource,
+        locationSource,
+        pickerAssetIdPresent,
+        pickerExifPresent,
+        pickerKeySample
+      }
+    : undefined;
 }
 
 export function normalizePhotoAnalysisRecord(analysis: PhotoAnalysisMetadata | undefined): PhotoAnalysisMetadata | undefined {
@@ -166,6 +223,8 @@ export function normalizePhotoRecord(photo: PhotoItem, memoryProjectIds: Map<str
     ...photo,
     projectId,
     memoryId,
+    location: normalizePhotoLocation(photo.location),
+    importMetadata: normalizePhotoImportMetadata(photo.importMetadata),
     analysis: normalizePhotoAnalysisRecord(photo.analysis)
   };
 }

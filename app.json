@@ -13,10 +13,23 @@
       "supportsTablet": true
     },
     "android": {
-      "package": "com.lieber.yearbookapp"
+      "package": "com.lieber.yearbookapp",
+      "permissions": [
+        "READ_MEDIA_IMAGES",
+        "ACCESS_MEDIA_LOCATION"
+      ]
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      [
+        "expo-media-library",
+        {
+          "isAccessMediaLocationEnabled": true,
+          "granularPermissions": [
+            "photo"
+          ]
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

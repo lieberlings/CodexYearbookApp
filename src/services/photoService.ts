@@ -1,135 +1,154 @@
 import * as FileSystem from "expo-file-system/legacy";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
-import { PhotoItem } from "../types";
+import * as MediaLibrary from "expo-media-library";
+import {
+  ensureAndroidMediaLibraryPermission,
+  getAndroidMediaLibraryPermissionProbe,
+  probeAndroidMediaLibraryAssetMetadata,
+  resolveCanonicalPhotoMetadataAndroid
+} from "./photoCanonicalResolver.android";
+import type { AndroidMediaLibraryAssetProbe } from "./photoCanonicalResolver.android";
+import {
+  buildPickedPhotoAsset,
+  buildPickedPhotoAssetFromMediaLibraryAsset,
+  PickedPhotoAsset
+} from "./photoMetadataIngestion";
+
+export type { PickedPhotoAsset } from "./photoMetadataIngestion";
 
 const PHOTOS_DIR = `${FileSystem.documentDirectory}photos`;
 
-export type PickedPhotoAsset = {
+export type MediaLibraryAssetProbe = AndroidMediaLibraryAssetProbe;
+
+export type MediaLibraryPhotoChoice = {
+  id: string;
   uri: string;
-  fileName?: string | null;
-  width?: number;
-  height?: number;
-  capturedAt?: string;
-  location?: PhotoItem["location"];
+  filename: string;
+  width: number;
+  height: number;
+  creationTime: number;
 };
 
-function toIsoDateString(value: unknown): string | undefined {
-  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
-    const timestamp = value < 1e12 ? value * 1000 : value;
-    return new Date(timestamp).toISOString();
-  }
+export type MediaLibraryPhotoCatalogProbe = {
+  permissionStatus?: string;
+  permissionGranted: boolean;
+  canAskAgain: boolean;
+  requestAttempted: boolean;
+  requestGranted: boolean;
+  queryAttempted: boolean;
+  returnedCount: number;
+  totalCount?: number;
+  error?: string;
+};
 
-  if (typeof value !== "string") {
-    return undefined;
-  }
 
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return undefined;
-  }
-
-  const normalized = trimmed
-    .replace(/^(\d{4}):(\d{2}):(\d{2})/, "$1-$2-$3")
-    .replace(" ", "T");
-  const parsed = Date.parse(normalized);
-  if (!Number.isFinite(parsed)) {
-    return undefined;
-  }
-  return new Date(parsed).toISOString();
+export async function probeMediaLibraryAssetMetadata(
+  assetId: string | undefined
+): Promise<MediaLibraryAssetProbe> {
+  return probeAndroidMediaLibraryAssetMetadata(assetId);
 }
 
-function parseExifFraction(part: string): number | undefined {
-  const trimmed = part.trim();
-  if (!trimmed) {
-    return undefined;
-  }
-  if (!trimmed.includes("/")) {
-    const direct = Number.parseFloat(trimmed);
-    return Number.isFinite(direct) ? direct : undefined;
-  }
-
-  const [numerator, denominator] = trimmed.split("/");
-  const num = Number.parseFloat(numerator ?? "");
-  const den = Number.parseFloat(denominator ?? "");
-  if (!Number.isFinite(num) || !Number.isFinite(den) || den === 0) {
-    return undefined;
-  }
-  return num / den;
+export async function getRecentMediaLibraryPhotoChoices(limit = 24): Promise<MediaLibraryPhotoChoice[]> {
+  const result = await getRecentMediaLibraryPhotoChoicesWithProbe(limit);
+  return result.choices;
 }
 
-function applyCoordinateRef(value: number, ref: unknown): number {
-  const normalizedRef = typeof ref === "string" ? ref.trim().toUpperCase() : "";
-  if (normalizedRef === "S" || normalizedRef === "W") {
-    return -Math.abs(value);
+export async function getRecentMediaLibraryPhotoChoicesWithProbe(
+  limit = 24
+): Promise<{
+  choices: MediaLibraryPhotoChoice[];
+  probe: MediaLibraryPhotoCatalogProbe;
+}> {
+  const permissionProbe = await getAndroidMediaLibraryPermissionProbe();
+  if (!permissionProbe.permissionGranted) {
+    return {
+      choices: [],
+      probe: {
+        permissionStatus: permissionProbe.permissionStatus,
+        permissionGranted: false,
+        canAskAgain: permissionProbe.canAskAgain,
+        requestAttempted: permissionProbe.requestAttempted,
+        requestGranted: permissionProbe.requestGranted,
+        queryAttempted: false,
+        returnedCount: 0
+      }
+    };
   }
-  return value;
+
+  try {
+    const page = await MediaLibrary.getAssetsAsync({
+      first: limit,
+      mediaType: MediaLibrary.MediaType.photo,
+      sortBy: [MediaLibrary.SortBy.creationTime]
+    });
+
+    return {
+      choices: page.assets.map((asset) => ({
+        id: asset.id,
+        uri: asset.uri,
+        filename: asset.filename,
+        width: asset.width,
+        height: asset.height,
+        creationTime: asset.creationTime
+      })),
+      probe: {
+        permissionStatus: permissionProbe.permissionStatus,
+        permissionGranted: true,
+        canAskAgain: permissionProbe.canAskAgain,
+        requestAttempted: permissionProbe.requestAttempted,
+        requestGranted: permissionProbe.requestGranted,
+        queryAttempted: true,
+        returnedCount: page.assets.length,
+        totalCount: page.totalCount
+      }
+    };
+  } catch (error) {
+    return {
+      choices: [],
+      probe: {
+        permissionStatus: permissionProbe.permissionStatus,
+        permissionGranted: true,
+        canAskAgain: permissionProbe.canAskAgain,
+        requestAttempted: permissionProbe.requestAttempted,
+        requestGranted: permissionProbe.requestGranted,
+        queryAttempted: true,
+        returnedCount: 0,
+        error: error instanceof Error ? error.message : "Media Library asset query failed."
+      }
+    };
+  }
 }
 
-function parseExifCoordinate(value: unknown, ref?: unknown): number | undefined {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return applyCoordinateRef(value, ref);
-  }
-
-  if (typeof value !== "string") {
+export async function pickPhotoFromMediaLibraryByAssetId(
+  assetId: string
+): Promise<PickedPhotoAsset | undefined> {
+  const permissionGranted = await ensureAndroidMediaLibraryPermission();
+  if (!permissionGranted) {
     return undefined;
   }
 
-  const trimmed = value.trim();
-  if (!trimmed) {
+  try {
+    const assetInfo = await MediaLibrary.getAssetInfoAsync(assetId);
+    return buildPickedPhotoAssetFromMediaLibraryAsset(assetInfo, {
+      exif: (assetInfo as { exif?: Record<string, unknown> | null }).exif ?? undefined,
+      location:
+        assetInfo.location && typeof assetInfo.location === "object"
+          ? {
+              latitude: (assetInfo.location as { latitude?: unknown }).latitude,
+              longitude: (assetInfo.location as { longitude?: unknown }).longitude
+            }
+          : undefined,
+      creationTime: assetInfo.creationTime
+    });
+  } catch {
     return undefined;
   }
-
-  const numeric = Number.parseFloat(trimmed);
-  if (Number.isFinite(numeric) && /^-?\d+(\.\d+)?$/.test(trimmed)) {
-    return applyCoordinateRef(numeric, ref);
-  }
-
-  const parts = trimmed.split(",").map((part) => parseExifFraction(part));
-  if (parts.length === 0 || parts.some((part) => part === undefined)) {
-    return undefined;
-  }
-
-  const [degrees = 0, minutes = 0, seconds = 0] = parts as number[];
-  const decimal = Math.abs(degrees) + minutes / 60 + seconds / 3600;
-  return applyCoordinateRef(decimal, ref);
 }
 
-function extractCapturedAt(asset: ImagePicker.ImagePickerAsset): string | undefined {
-  const exif = asset.exif ?? undefined;
-  return (
-    toIsoDateString(exif?.DateTimeOriginal) ??
-    toIsoDateString(exif?.DateTimeDigitized) ??
-    toIsoDateString(exif?.DateTime) ??
-    toIsoDateString(exif?.CreationDate) ??
-    toIsoDateString(asset.file?.lastModified)
-  );
-}
-
-function extractLocation(asset: ImagePicker.ImagePickerAsset): PhotoItem["location"] | undefined {
-  const exif = asset.exif ?? undefined;
-  const latitude = parseExifCoordinate(exif?.GPSLatitude ?? exif?.latitude, exif?.GPSLatitudeRef);
-  const longitude = parseExifCoordinate(exif?.GPSLongitude ?? exif?.longitude, exif?.GPSLongitudeRef);
-
-  if (typeof latitude !== "number" || typeof longitude !== "number") {
-    return undefined;
-  }
-
-  return {
-    latitude,
-    longitude
-  };
-}
-
-function toPickedPhotoAsset(asset: ImagePicker.ImagePickerAsset): PickedPhotoAsset {
-  return {
-    uri: asset.uri,
-    fileName: asset.fileName,
-    width: asset.width,
-    height: asset.height,
-    capturedAt: extractCapturedAt(asset),
-    location: extractLocation(asset)
-  };
+export async function pickPhotosFromMediaLibraryByAssetIds(assetIds: string[]): Promise<PickedPhotoAsset[]> {
+  const resolved = await Promise.all(assetIds.map((assetId) => pickPhotoFromMediaLibraryByAssetId(assetId)));
+  return resolved.filter((asset): asset is PickedPhotoAsset => Boolean(asset));
 }
 
 export async function ensurePhotosDirectory(): Promise<void> {
@@ -158,7 +177,12 @@ export async function pickImagesFromLibrary(): Promise<PickedPhotoAsset[]> {
     return [];
   }
 
-  return result.assets.map(toPickedPhotoAsset);
+  return Promise.all(
+    result.assets.map(async (asset) => {
+      const resolved = await resolveCanonicalPhotoMetadataAndroid(asset);
+      return buildPickedPhotoAsset(asset, resolved);
+    })
+  );
 }
 
 export async function pickSingleImageFromLibrary(): Promise<ImagePicker.ImagePickerAsset | null> {

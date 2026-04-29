@@ -90,7 +90,8 @@ describe("storage Milestone 2 foundations", () => {
       timelineMode: "ongoing",
       includeFutureProjectPhotos: true,
       assistLevel: "balanced",
-      styleIntensity: "warm"
+      styleIntensity: "warm",
+      finalizationStatus: "idle"
     });
     expect(data.memories[0]).toMatchObject({
       id: "memory-1",

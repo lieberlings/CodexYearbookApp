@@ -1,6 +1,20 @@
 import { PhotoAnalysisPatch, PhotoAnalysisServiceInput } from "./photoAnalysisTypes";
 
-// Face detection is a later Milestone 3 task. Keep the contract in place now.
-export function detectPhotoFaces(_input: PhotoAnalysisServiceInput): PhotoAnalysisPatch | undefined {
-  return undefined;
+// This remains privacy-safe groundwork only. We infer coarse face-related cues from
+// already-local structural metadata instead of attempting recognition or cloud calls.
+export function detectPhotoFaces(input: PhotoAnalysisServiceInput): PhotoAnalysisPatch | undefined {
+  const portraitLike = input.photo.analysis?.subjectCues?.portraitLike === true;
+  const groupPhotoLike = input.photo.analysis?.subjectCues?.groupPhotoLike === true;
+
+  if (!portraitLike && !groupPhotoLike) {
+    return undefined;
+  }
+
+  return {
+    faces: {
+      faceCount: groupPhotoLike ? 2 : 1,
+      hasFace: true,
+      hasMultipleFaces: groupPhotoLike
+    }
+  };
 }

@@ -143,7 +143,7 @@ The orchestrator should:
 ---
 
 ### Task 3 — Implement coarse quality analysis
-**Status:** not started
+**Status:** completed
 
 #### Goal
 Add lightweight quality-related metadata that helps the app choose stronger photos.
@@ -174,7 +174,7 @@ Implement initial heuristics/signals such as:
 ---
 
 ### Task 4 — Implement coarse scene/content tagging
-**Status:** not started
+**Status:** completed
 
 #### Goal
 Add generalized scene/content tags that improve suggestions and styling cues.
@@ -209,7 +209,7 @@ Generate coarse tags such as:
 ---
 
 ### Task 5 — Integrate analysis metadata into suggestion quality
-**Status:** not started
+**Status:** completed
 
 #### Goal
 Use image-analysis metadata to improve the current suggestion system.
@@ -244,7 +244,7 @@ Use quality and scene metadata where available.
 ---
 
 ### Task 6 — Add a finalization entry point and data model
-**Status:** not started
+**Status:** completed
 
 #### Goal
 Create the structural beginning of the finalization phase.
@@ -276,7 +276,7 @@ Add:
 ---
 
 ### Task 7 — Add missing moments and strongest unused photos to finalization
-**Status:** not started
+**Status:** completed
 
 #### Goal
 Make finalization useful by surfacing meaningful end-stage opportunities.
@@ -308,7 +308,7 @@ Add finalization suggestions for:
 ---
 
 ### Task 8 — Add recurring highlight collections to finalization
-**Status:** not started
+**Status:** completed
 
 #### Goal
 Surface broader recurring themes near the end of the project.
@@ -339,7 +339,7 @@ Add finalization suggestions for:
 ---
 
 ### Task 9 — Add privacy-safe face detection groundwork
-**Status:** not started
+**Status:** completed
 
 #### Goal
 Lay the foundation for later person/profile features without implementing full recognition.
@@ -370,7 +370,7 @@ Add:
 ---
 
 ### Task 10 — Add focused tests for Milestone 3 foundations
-**Status:** not started
+**Status:** completed
 
 #### Goal
 Add focused tests for the new metadata, orchestration, suggestion integration, and finalization foundations.
@@ -445,7 +445,7 @@ Milestone 3 is complete when:
 ## Recently completed
 - Milestone 1: project-scoped suggestion foundation
 - Milestone 2: project photo pool, collections, watching, candidate additions, stabilization, and focused foundation tests
-- Milestone 3: photo analysis metadata model, persistence, and orchestration scaffolding
+- Milestone 3: photo analysis metadata, orchestration, quality/scene heuristics, metadata-aware ranking, finalization flow, privacy-safe face groundwork, and focused foundation tests
 
 ---
 

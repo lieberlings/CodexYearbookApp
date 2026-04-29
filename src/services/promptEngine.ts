@@ -1,4 +1,4 @@
-import { Memory, PhotoItem, PromptItem, Suggestion } from "../types";
+import { FinalizationSuggestion, Memory, PhotoItem, PromptItem, Suggestion } from "../types";
 import { makeId } from "../lib/id";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -12,6 +12,11 @@ const COLLECTION_SPAN_MIN_DAYS = 14;
 const COLLECTION_MIN_DISTINCT_DAYS = 3;
 const COLLECTION_MIN_PHOTO_COUNT = 6;
 const COLLECTION_CANDIDATE_LIMIT = 12;
+const FINALIZATION_MISSING_MOMENT_LIMIT = 2;
+const FINALIZATION_UNUSED_LIMIT = 10;
+const FINALIZATION_HIGHLIGHT_LIMIT = 3;
+const FINALIZATION_HIGHLIGHT_MIN_COUNT = 4;
+const FINALIZATION_HIGHLIGHT_MIN_DISTINCT_DAYS = 2;
 
 type EventSignalKind = "time-cluster" | "photo-spike" | "location-pattern";
 
@@ -44,6 +49,84 @@ function sortByTimeline(photos: PhotoItem[]): PhotoItem[] {
   return [...photos].sort((a, b) => getPhotoTimestamp(a) - getPhotoTimestamp(b));
 }
 
+function getQualityScore(photo: PhotoItem): number {
+  return photo.analysis?.quality?.qualityScore ?? 0.5;
+}
+
+function getHeroCandidateScore(photo: PhotoItem): number {
+  return photo.analysis?.quality?.heroCandidateScore ?? getQualityScore(photo);
+}
+
+function isWeakPhoto(photo: PhotoItem): boolean {
+  return photo.analysis?.quality?.isBlurry === true || getQualityScore(photo) < 0.28;
+}
+
+function getPhotoAnalysisTags(photo: PhotoItem): string[] {
+  const tags = new Set<string>([
+    ...(photo.analysis?.sceneTags ?? []),
+    ...(photo.analysis?.themeTags ?? [])
+  ]);
+
+  if (photo.analysis?.subjectCues?.portraitLike) {
+    tags.add("portrait");
+  }
+  if (photo.analysis?.subjectCues?.groupPhotoLike) {
+    tags.add("group");
+  }
+
+  return Array.from(tags);
+}
+
+function getEventPhotoStrengthScore(photo: PhotoItem): number {
+  let score = getQualityScore(photo) * 2.5 + getHeroCandidateScore(photo) * 1.8;
+  const tags = getPhotoAnalysisTags(photo);
+
+  if (tags.includes("scenic")) {
+    score += 0.5;
+  }
+  if (tags.includes("group")) {
+    score += 0.4;
+  }
+  if (tags.includes("portrait")) {
+    score += 0.25;
+  }
+  if (isWeakPhoto(photo)) {
+    score -= 1.5;
+  }
+
+  return score;
+}
+
+function rankEventCandidatePhotos(photos: PhotoItem[]): PhotoItem[] {
+  return [...photos].sort((a, b) => {
+    const scoreDiff = getEventPhotoStrengthScore(b) - getEventPhotoStrengthScore(a);
+    if (scoreDiff !== 0) {
+      return scoreDiff;
+    }
+    return getPhotoTimestamp(a) - getPhotoTimestamp(b);
+  });
+}
+
+function getFinalizationPhotoStrengthScore(photo: PhotoItem): number {
+  let score = getQualityScore(photo) * 2.5 + getHeroCandidateScore(photo) * 2.1;
+  const tags = getPhotoAnalysisTags(photo);
+
+  if (tags.includes("scenic")) {
+    score += 0.7;
+  }
+  if (tags.includes("group")) {
+    score += 0.5;
+  }
+  if (photo.location) {
+    score += 0.25;
+  }
+  if (isWeakPhoto(photo)) {
+    score -= 2;
+  }
+
+  return score;
+}
+
 function getRecentPhotoBurstSignal(source: EventSignalSource, sourcePhotos: PhotoItem[], now: Date): EventSignal | undefined {
   const recentPhotos = sourcePhotos.filter((photo) => now.getTime() - getPhotoTimestamp(photo) <= RECENT_BURST_WINDOW_MS);
   if (recentPhotos.length < RECENT_BURST_MIN_COUNT) {
@@ -55,7 +138,7 @@ function getRecentPhotoBurstSignal(source: EventSignalSource, sourcePhotos: Phot
       source.kind === "memory"
         ? `Suggested because ${recentPhotos.length} photos in "${source.title}" were captured within about 3 days.`
         : `Suggested because ${recentPhotos.length} project photos were captured within about 3 days and may belong in one event memory.`,
-    candidatePhotoIds: recentPhotos.map((photo) => photo.id)
+    candidatePhotoIds: rankEventCandidatePhotos(recentPhotos).map((photo) => photo.id)
   };
 }
 
@@ -63,15 +146,20 @@ function getLargestTimeCluster(memoryPhotos: PhotoItem[]): PhotoItem[] {
   const ordered = sortByTimeline(memoryPhotos);
   let bestStart = 0;
   let bestEnd = 0;
+  let bestScore = -Infinity;
   let start = 0;
 
   for (let end = 0; end < ordered.length; end += 1) {
     while (start <= end && getPhotoTimestamp(ordered[end]) - getPhotoTimestamp(ordered[start]) > TIME_CLUSTER_WINDOW_MS) {
       start += 1;
     }
-    if (end - start > bestEnd - bestStart) {
+    const candidate = ordered.slice(start, end + 1);
+    const candidateScore =
+      candidate.reduce((sum, photo) => sum + getEventPhotoStrengthScore(photo), 0) / Math.max(candidate.length, 1);
+    if (end - start > bestEnd - bestStart || (end - start === bestEnd - bestStart && candidateScore > bestScore)) {
       bestStart = start;
       bestEnd = end;
+      bestScore = candidateScore;
     }
   }
 
@@ -89,7 +177,7 @@ function getTimeClusterSignal(source: EventSignalSource, sourcePhotos: PhotoItem
       source.kind === "memory"
         ? `Suggested because ${cluster.length} photos in "${source.title}" were taken close together in time.`
         : `Suggested because ${cluster.length} project photos were taken close together in time and look like one event.`,
-    candidatePhotoIds: cluster.map((photo) => photo.id)
+    candidatePhotoIds: rankEventCandidatePhotos(cluster).map((photo) => photo.id)
   };
 }
 
@@ -122,7 +210,7 @@ function getLocationPatternSignal(source: EventSignalSource, sourcePhotos: Photo
       source.kind === "memory"
         ? `Suggested because "${source.title}" includes geotagged photos across ${distinctBuckets.size} nearby places.`
         : `Suggested because these project photos include geotagged movement across ${distinctBuckets.size} nearby places.`,
-    candidatePhotoIds: locatedPhotos.map((photo) => photo.id)
+    candidatePhotoIds: rankEventCandidatePhotos(locatedPhotos).map((photo) => photo.id)
   };
 }
 
@@ -263,6 +351,17 @@ function getProjectPoolSources(
     });
 }
 
+function getDistinctDayCount(photos: PhotoItem[]): number {
+  return new Set(
+    photos
+      .map((photo) => {
+        const timestamp = getPhotoTimestamp(photo);
+        return timestamp > 0 ? new Date(timestamp).toISOString().slice(0, 10) : undefined;
+      })
+      .filter((value): value is string => Boolean(value))
+  ).size;
+}
+
 function buildCollectionSuggestion(projectId: string, photos: PhotoItem[], now: Date): Suggestion | undefined {
   const unassigned = sortByTimeline(photos.filter((photo) => photo.projectId === projectId && !photo.memoryId));
   if (unassigned.length < COLLECTION_MIN_PHOTO_COUNT) {
@@ -298,6 +397,162 @@ function buildCollectionSuggestion(projectId: string, photos: PhotoItem[], now: 
     candidatePhotoIds: suggestCollectionCandidatePhotos(unassigned, []).map((photo) => photo.id),
     createdAt: new Date(Math.min(...timestamps)).toISOString()
   };
+}
+
+function getUnassignedProjectPhotos(projectId: string, photos: PhotoItem[]): PhotoItem[] {
+  return photos.filter((photo) => photo.projectId === projectId && !photo.memoryId);
+}
+
+function buildMissingMomentSuggestions(
+  projectId: string,
+  memories: Memory[],
+  photos: PhotoItem[],
+  now: Date
+): FinalizationSuggestion[] {
+  const coveredDays = new Set(
+    photos
+      .filter((photo) => photo.projectId === projectId && photo.memoryId && memories.some((memory) => memory.id === photo.memoryId))
+      .map((photo) => {
+        const timestamp = getPhotoTimestamp(photo);
+        return timestamp > 0 ? new Date(timestamp).toISOString().slice(0, 10) : undefined;
+      })
+      .filter((value): value is string => Boolean(value))
+  );
+
+  return getProjectPoolSources(projectId, photos, now)
+    .filter(({ photos: sourcePhotos }) => {
+      const sourceDays = new Set(
+        sourcePhotos
+          .map((photo) => {
+            const timestamp = getPhotoTimestamp(photo);
+            return timestamp > 0 ? new Date(timestamp).toISOString().slice(0, 10) : undefined;
+          })
+          .filter((value): value is string => Boolean(value))
+      );
+      return Array.from(sourceDays).some((day) => !coveredDays.has(day));
+    })
+    .map(({ source, photos: sourcePhotos }) => {
+      const ranked = rankEventCandidatePhotos(sourcePhotos);
+      const score =
+        ranked.reduce((sum, photo) => sum + getFinalizationPhotoStrengthScore(photo), 0) / Math.max(ranked.length, 1);
+
+      return {
+        suggestion: {
+          id: `finalization:missing:${projectId}:${source.id}`,
+          projectId,
+          type: "missing-moment" as const,
+          title: source.title,
+          message: `These photos look like a missing moment near the end of the project and are not strongly represented in existing memories yet.`,
+          candidatePhotoIds: ranked.slice(0, 8).map((photo) => photo.id),
+          createdAt: getSuggestionCreatedAt(source, ranked.map((photo) => photo.id), sourcePhotos, now)
+        },
+        score
+      };
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, FINALIZATION_MISSING_MOMENT_LIMIT)
+    .map((item) => item.suggestion);
+}
+
+function buildStrongestUnusedPhotosSuggestion(projectId: string, photos: PhotoItem[], now: Date): FinalizationSuggestion | undefined {
+  const unassigned = getUnassignedProjectPhotos(projectId, photos);
+  if (unassigned.length === 0) {
+    return undefined;
+  }
+
+  const ranked = [...unassigned]
+    .filter((photo) => !isWeakPhoto(photo) || getQualityScore(photo) >= 0.45)
+    .sort((a, b) => {
+      const scoreDiff = getFinalizationPhotoStrengthScore(b) - getFinalizationPhotoStrengthScore(a);
+      if (scoreDiff !== 0) {
+        return scoreDiff;
+      }
+      return getPhotoTimestamp(a) - getPhotoTimestamp(b);
+    });
+
+  if (ranked.length < 3) {
+    return undefined;
+  }
+
+  return {
+    id: `finalization:unused:${projectId}`,
+    projectId,
+    type: "strongest-unused-photos",
+    title: "Strongest unused photos",
+    message: `Suggested because ${ranked.length} strong project photos are still unused and may strengthen the end of the book.`,
+    candidatePhotoIds: ranked.slice(0, FINALIZATION_UNUSED_LIMIT).map((photo) => photo.id),
+    createdAt: new Date(Math.min(...ranked.map(getPhotoTimestamp).filter((timestamp) => timestamp > 0))).toISOString()
+  };
+}
+
+function buildRecurringHighlightSuggestions(projectId: string, photos: PhotoItem[]): FinalizationSuggestion[] {
+  const projectPhotos = photos.filter((photo) => photo.projectId === projectId);
+  const highlightDefinitions = [
+    {
+      tag: "scenic",
+      title: "Scenic highlights",
+      message: "Strong scenic moments repeat across the project and could support a final highlight collection.",
+      matcher: (photo: PhotoItem) => getPhotoAnalysisTags(photo).includes("scenic")
+    },
+    {
+      tag: "nature-like",
+      title: "Nature highlights",
+      message: "Nature-leaning photos recur across multiple dates and may be worth a final collection pass.",
+      matcher: (photo: PhotoItem) => getPhotoAnalysisTags(photo).includes("nature-like")
+    },
+    {
+      tag: "party-like",
+      title: "Celebration highlights",
+      message: "Celebration-like moments appear repeatedly and may deserve a recap collection.",
+      matcher: (photo: PhotoItem) => getPhotoAnalysisTags(photo).includes("party-like")
+    },
+    {
+      tag: "group",
+      title: "Group highlights",
+      message: "Group-photo moments appear across the project and could support a final social highlight collection.",
+      matcher: (photo: PhotoItem) => getPhotoAnalysisTags(photo).includes("group")
+    }
+  ] as const;
+
+  const candidates = highlightDefinitions.flatMap((definition) => {
+      const matchingPhotos = projectPhotos.filter(definition.matcher);
+      const distinctDays = getDistinctDayCount(matchingPhotos);
+      if (matchingPhotos.length < FINALIZATION_HIGHLIGHT_MIN_COUNT || distinctDays < FINALIZATION_HIGHLIGHT_MIN_DISTINCT_DAYS) {
+        return [];
+      }
+
+      const ranked = [...matchingPhotos].sort((a, b) => {
+        const scoreDiff = getFinalizationPhotoStrengthScore(b) - getFinalizationPhotoStrengthScore(a);
+        if (scoreDiff !== 0) {
+          return scoreDiff;
+        }
+        return getPhotoTimestamp(a) - getPhotoTimestamp(b);
+      });
+
+      const score =
+        ranked.reduce((sum, photo) => sum + getFinalizationPhotoStrengthScore(photo), 0) / Math.max(ranked.length, 1);
+
+      const suggestion: FinalizationSuggestion = {
+          id: `finalization:highlight:${projectId}:${definition.tag}`,
+          projectId,
+          type: "highlight-collection" as const,
+          title: definition.title,
+          message: definition.message,
+          candidatePhotoIds: ranked.slice(0, 10).map((photo) => photo.id),
+          createdAt: new Date(Math.min(...ranked.map(getPhotoTimestamp).filter((timestamp) => timestamp > 0))).toISOString(),
+          highlightTag: definition.tag
+      };
+
+      return [{
+        suggestion,
+        score
+      }];
+    });
+
+  return candidates
+    .sort((a, b) => b.score - a.score)
+    .slice(0, FINALIZATION_HIGHLIGHT_LIMIT)
+    .map((item) => item.suggestion);
 }
 
 function tokenizeHookTerms(hooks: string[]): string[] {
@@ -338,6 +593,36 @@ function selectEvenlySpacedPhotos(photos: PhotoItem[], limit: number): PhotoItem
   return selected;
 }
 
+function getHookTagMatches(photo: PhotoItem, tokens: string[]): number {
+  if (tokens.length === 0) {
+    return 0;
+  }
+
+  const photoTags = new Set(getPhotoAnalysisTags(photo));
+  return tokens.filter((token) => photoTags.has(token)).length;
+}
+
+function getCollectionCandidateScore(photo: PhotoItem, tokens: string[]): number {
+  let score = getQualityScore(photo) * 2.5 + getHeroCandidateScore(photo) * 1.5;
+  score += getHookTagMatches(photo, tokens) * 1.8;
+
+  const photoTags = new Set(getPhotoAnalysisTags(photo));
+  if (photoTags.has("scenic")) {
+    score += 0.6;
+  }
+  if (photoTags.has("group")) {
+    score += 0.35;
+  }
+  if (photo.location) {
+    score += 0.3;
+  }
+  if (isWeakPhoto(photo)) {
+    score -= 1.5;
+  }
+
+  return score;
+}
+
 export function suggestCollectionCandidatePhotos(
   projectPoolPhotos: PhotoItem[],
   hooks: string[],
@@ -355,8 +640,16 @@ export function suggestCollectionCandidatePhotos(
   const ordered = sortByTimeline(projectPoolPhotos);
   const preferred = wantsLocationBias ? ordered.filter((photo) => photo.location) : ordered;
   const source = preferred.length >= Math.min(4, limit) ? preferred : ordered;
+  const ranked = [...source].sort((a, b) => {
+    const scoreDiff = getCollectionCandidateScore(b, tokens) - getCollectionCandidateScore(a, tokens);
+    if (scoreDiff !== 0) {
+      return scoreDiff;
+    }
+    return getPhotoTimestamp(a) - getPhotoTimestamp(b);
+  });
+  const shortlist = sortByTimeline(ranked.slice(0, Math.max(limit, Math.min(ranked.length, limit * 2))));
 
-  return selectEvenlySpacedPhotos(source, limit);
+  return selectEvenlySpacedPhotos(shortlist, limit);
 }
 
 export function suggestCandidatePhotosForMemory(
@@ -384,6 +677,18 @@ export function suggestCandidatePhotosForMemory(
       .map(getLocationBucketKey)
       .filter((bucket): bucket is string => typeof bucket === "string")
   );
+  const memoryTagCounts = new Map<string, number>();
+  memoryPhotos.forEach((photo) => {
+    getPhotoAnalysisTags(photo).forEach((tag) => {
+      memoryTagCounts.set(tag, (memoryTagCounts.get(tag) ?? 0) + 1);
+    });
+  });
+  const dominantMemoryTags = new Set(
+    Array.from(memoryTagCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([tag]) => tag)
+  );
 
   return unassigned
     .map((photo) => {
@@ -407,6 +712,18 @@ export function suggestCandidatePhotosForMemory(
       const bucket = getLocationBucketKey(photo);
       if (bucket && memoryLocationBuckets.has(bucket)) {
         score += 4;
+      }
+
+      if (dominantMemoryTags.size > 0) {
+        const sharedTags = getPhotoAnalysisTags(photo).filter((tag) => dominantMemoryTags.has(tag)).length;
+        score += sharedTags * 1.25;
+      }
+
+      score += getQualityScore(photo) * 2.5;
+      score += getHeroCandidateScore(photo) * 1.5;
+
+      if (isWeakPhoto(photo)) {
+        score -= 2;
       }
 
       return {
@@ -475,6 +792,21 @@ export function generateSuggestionsForProject(
   return collectionSuggestion
     ? [...memorySuggestions, ...projectPoolSuggestions, collectionSuggestion]
     : [...memorySuggestions, ...projectPoolSuggestions];
+}
+
+export function generateFinalizationSuggestionsForProject(
+  projectId: string,
+  memories: Memory[],
+  photos: PhotoItem[],
+  now: Date = new Date()
+): FinalizationSuggestion[] {
+  const missingMomentSuggestions = buildMissingMomentSuggestions(projectId, memories, photos, now);
+  const strongestUnusedPhotosSuggestion = buildStrongestUnusedPhotosSuggestion(projectId, photos, now);
+  const recurringHighlightSuggestions = buildRecurringHighlightSuggestions(projectId, photos);
+
+  return strongestUnusedPhotosSuggestion
+    ? [...missingMomentSuggestions, strongestUnusedPhotosSuggestion, ...recurringHighlightSuggestions]
+    : [...missingMomentSuggestions, ...recurringHighlightSuggestions];
 }
 
 export function generatePrompts(memories: Memory[], photos: PhotoItem[], now: Date = new Date()): PromptItem[] {

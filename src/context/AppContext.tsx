@@ -1,5 +1,6 @@
 import { PropsWithChildren, createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { makeId } from "../lib/id";
+import { normalizePhotoLocation } from "../lib/photoLocation";
 import { loadAppData, saveAppData } from "../storage";
 import {
   applyPhotoAssignmentToMemory,
@@ -22,6 +23,7 @@ import {
   PhotoItem,
   Project,
   ProjectAssistLevel,
+  ProjectFinalizationStatus,
   ProjectStyleIntensity,
   ProjectTimelineMode,
   ProjectType,
@@ -55,6 +57,8 @@ type AppContextValue = {
   keepWatchingSuggestion: (suggestionId: string) => void;
   dismissSuggestion: (suggestionId: string) => void;
   snoozeSuggestion: (suggestionId: string) => void;
+  startProjectFinalization: (projectId: string) => void;
+  completeProjectFinalization: (projectId: string) => void;
   pickProjectThumbnail: () => Promise<string | undefined>;
   createProject: (
     name: string,
@@ -263,6 +267,9 @@ export function AppProvider({ children }: PropsWithChildren) {
             endDate: undefined,
             assistLevel: "balanced",
             styleIntensity: "warm",
+            finalizationStatus: "idle",
+            finalizationStartedAt: undefined,
+            finalizationUpdatedAt: undefined,
             createdAt: now,
             updatedAt: now
           }),
@@ -334,7 +341,8 @@ export function AppProvider({ children }: PropsWithChildren) {
           height: asset.height,
           capturedAt: asset.capturedAt ?? now,
           addedAt: now,
-          location: asset.location
+          location: normalizePhotoLocation(asset.location),
+          importMetadata: asset.importMetadata
         });
       }
 
@@ -369,6 +377,9 @@ export function AppProvider({ children }: PropsWithChildren) {
         endDate: options?.endDate ?? undefined,
         assistLevel: options?.assistLevel ?? "balanced",
         styleIntensity: options?.styleIntensity ?? "warm",
+        finalizationStatus: "idle",
+        finalizationStartedAt: undefined,
+        finalizationUpdatedAt: undefined,
         thumbnailUri,
         createdAt: now,
         updatedAt: now
@@ -418,6 +429,32 @@ export function AppProvider({ children }: PropsWithChildren) {
     },
     []
   );
+
+  const updateProjectFinalizationStatus = useCallback((projectId: string, status: ProjectFinalizationStatus) => {
+    const now = new Date().toISOString();
+    setProjects((prev) =>
+      prev.map((project) =>
+        project.id === projectId
+          ? {
+              ...project,
+              finalizationStatus: status,
+              finalizationStartedAt:
+                status === "idle" ? undefined : project.finalizationStartedAt ?? now,
+              finalizationUpdatedAt: status === "idle" ? undefined : now,
+              updatedAt: now
+            }
+          : project
+      )
+    );
+  }, []);
+
+  const startProjectFinalization = useCallback((projectId: string) => {
+    updateProjectFinalizationStatus(projectId, "in-progress");
+  }, [updateProjectFinalizationStatus]);
+
+  const completeProjectFinalization = useCallback((projectId: string) => {
+    updateProjectFinalizationStatus(projectId, "reviewed");
+  }, [updateProjectFinalizationStatus]);
 
   const deleteProject = useCallback((projectId: string) => {
     setProjects((prevProjects) => prevProjects.filter((project) => project.id !== projectId));
@@ -1421,6 +1458,8 @@ export function AppProvider({ children }: PropsWithChildren) {
       keepWatchingSuggestion,
       dismissSuggestion,
       snoozeSuggestion,
+      startProjectFinalization,
+      completeProjectFinalization,
       pickProjectThumbnail,
       createProject,
       updateProject,
@@ -1467,6 +1506,7 @@ export function AppProvider({ children }: PropsWithChildren) {
       addPhotosToMemory,
       dismissSuggestion,
       createMemory,
+      completeProjectFinalization,
       createPageSection,
       createProject,
       deleteMemory,
@@ -1500,6 +1540,7 @@ export function AppProvider({ children }: PropsWithChildren) {
       analyzeProjectPhotos,
       scanProjectSuggestions,
       snoozeSuggestion,
+      startProjectFinalization,
       suggestions,
       keepWatchingSuggestion,
       setMemoryPrimaryPhoto,

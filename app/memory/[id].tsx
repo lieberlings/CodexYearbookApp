@@ -18,6 +18,7 @@ import {
 } from "react-native";
 import DraggableFlatList from "react-native-draggable-flatlist";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { MediaLibrarySelectionModal } from "../../src/components/MediaLibrarySelectionModal";
 import { useAppData } from "../../src/context/AppContext";
 import { DragOverlay } from "../../src/editor/drag/DragOverlay";
 import { DragTargetRegistry } from "../../src/editor/drag/dragTargets";
@@ -28,6 +29,7 @@ import { applySlotOverridesToPage } from "../../src/layout/overrides";
 import { clampPhotoOffset, getPhotoAspect, getPhotoRenderMetrics, getPhotoScaleBounds } from "../../src/layout/photoMetrics";
 import { listTemplatesForPhotoCount, TemplateDefinition } from "../../src/layout/templates";
 import { SlotOverride, useEditorStore } from "../../src/state/editorStore";
+import { pickPhotosFromMediaLibraryByAssetIds } from "../../src/services/photoService";
 import { MemoryPageSection, PageTextBox, TextBoxAlignment } from "../../src/types";
 
 type InspectorKind = "layout" | "background" | "border" | "text";
@@ -182,7 +184,7 @@ export default function MemoryDetailsScreen() {
     getMemoryById,
     getPhotosByMemoryId,
     getPageSectionsByMemoryId,
-    addPhotosToMemory,
+    addPhotoAssetsToMemory,
     createPageSection,
     deletePageSection,
     deletePhotos,
@@ -205,6 +207,7 @@ export default function MemoryDetailsScreen() {
   const clearPageOverrides = useEditorStore((state) => state.clearPageOverrides);
 
   const [adding, setAdding] = useState(false);
+  const [mediaLibraryPickerVisible, setMediaLibraryPickerVisible] = useState(false);
   const [openInspector, setOpenInspector] = useState<{ pageId: string; kind: InspectorKind } | undefined>(undefined);
   const [photoEditor, setPhotoEditor] = useState<PhotoEditorState | undefined>(undefined);
   const [selectedTextBoxId, setSelectedTextBoxId] = useState<string | undefined>(undefined);
@@ -681,9 +684,23 @@ export default function MemoryDetailsScreen() {
   }
 
   async function onAddPhotos() {
+    if (adding) {
+      return;
+    }
+    setMediaLibraryPickerVisible(true);
+  }
+
+  async function onImportMediaLibraryPhotos(assetIds: string[]) {
     try {
       setAdding(true);
-      const count = await addPhotosToMemory(memoryId);
+      const selected = await pickPhotosFromMediaLibraryByAssetIds(assetIds);
+      if (selected.length === 0) {
+        setMediaLibraryPickerVisible(false);
+        return;
+      }
+      const createdPhotoIds = await addPhotoAssetsToMemory(memoryId, selected);
+      const count = createdPhotoIds.length;
+      setMediaLibraryPickerVisible(false);
       if (count > 0) {
         Alert.alert("Photos added", `${count} photo(s) added to this memory.`);
       }
@@ -1772,6 +1789,22 @@ export default function MemoryDetailsScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      <MediaLibrarySelectionModal
+        visible={mediaLibraryPickerVisible}
+        title="Add Memory Photos"
+        subtitle="Choose photos directly from Media Library so this memory keeps canonical asset ids and richer GPS/EXIF metadata."
+        confirmLabel="Add to Memory"
+        selectionMode="multiple"
+        confirming={adding}
+        bottomInset={insets.bottom}
+        onClose={() => {
+          if (!adding) {
+            setMediaLibraryPickerVisible(false);
+          }
+        }}
+        onConfirm={onImportMediaLibraryPhotos}
+      />
 
       <Modal
         visible={Boolean(photoEditor && selectedPage && selectedSlot && selectedSlotPhoto)}

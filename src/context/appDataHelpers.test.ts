@@ -13,6 +13,7 @@ import { Memory, PhotoItem, Project, Suggestion } from "../types";
 
 function makeProject(overrides: Partial<Project> & Pick<Project, "id" | "name" | "projectType" | "timelineMode" | "includeFutureProjectPhotos" | "assistLevel" | "styleIntensity" | "createdAt" | "updatedAt">): Project {
   return {
+    finalizationStatus: "idle",
     ...overrides
   };
 }
@@ -38,6 +39,15 @@ describe("appDataHelpers Milestone 2 foundations", () => {
         uri: "file:///photo.jpg",
         capturedAt: "2024-01-01T00:00:00.000Z",
         addedAt: "2024-01-01T00:00:00.000Z",
+        importMetadata: {
+          assetId: " asset-1 ",
+          resolutionKind: "canonical-recovered",
+          capturedAtSource: "media-library",
+          locationSource: "picker",
+          pickerAssetIdPresent: true,
+          pickerExifPresent: false,
+          pickerKeySample: [" assetId ", "", "uri"]
+        },
         analysis: {
           analysisVersion: 3,
           analyzedAt: "2024-02-01T10:00:00.000Z",
@@ -104,6 +114,34 @@ describe("appDataHelpers Milestone 2 foundations", () => {
         localEmbeddingRef: "emb-1"
       }
     });
+    expect(normalized?.importMetadata).toEqual({
+      assetId: "asset-1",
+      resolutionKind: "canonical-recovered",
+      capturedAtSource: "media-library",
+      locationSource: "picker",
+      pickerAssetIdPresent: true,
+      pickerExifPresent: false,
+      pickerKeySample: ["assetId", "uri"]
+    });
+  });
+
+  it("drops invalid persisted placeholder GPS data instead of keeping 0,0", () => {
+    const normalized = normalizePhotoRecord(
+      {
+        id: "photo-location",
+        projectId: "project-1",
+        uri: "file:///photo.jpg",
+        capturedAt: "2024-01-01T00:00:00.000Z",
+        addedAt: "2024-01-01T00:00:00.000Z",
+        location: {
+          latitude: 0,
+          longitude: 0
+        }
+      },
+      new Map()
+    );
+
+    expect(normalized?.location).toBeUndefined();
   });
 
   it("scopes project photos using the project timeline and date range", () => {
