@@ -110,6 +110,14 @@ export type PhotoSimilarityMetadata = {
   representativeScore?: number;
 };
 
+export type PhotoNativeImageLabelMetadata = {
+  source: "android-mlkit-image-labeling";
+  text: string;
+  confidence: number;
+  index?: number;
+  normalizedTag?: string;
+};
+
 export type PhotoSensitiveAnalysisRefs = {
   privateFaceDataRef?: string;
   localEmbeddingRef?: string;
@@ -137,6 +145,7 @@ export type PhotoAnalysisMetadata = {
   subjectCues?: PhotoSubjectCues;
   faces?: PhotoFaceMetadata;
   similarity?: PhotoSimilarityMetadata;
+  nativeLabels?: PhotoNativeImageLabelMetadata[];
   safeExternalTags?: string[];
   localOnly?: PhotoSensitiveAnalysisRefs;
 };

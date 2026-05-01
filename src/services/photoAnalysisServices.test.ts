@@ -2,7 +2,7 @@ import { describe, expect, it } from "@jest/globals";
 import { PhotoItem, Project } from "../types";
 import { detectPhotoFaces } from "./faceDetectionService";
 import { analyzePhotoQuality } from "./photoQualityService";
-import { analyzePhotoScene } from "./sceneAnalysisService";
+import { analyzePhotoScene, normalizeTagsFromNativeImageLabels } from "./sceneAnalysisService";
 
 function makeProject(overrides: Partial<Project> & Pick<Project, "id" | "name" | "projectType" | "timelineMode" | "includeFutureProjectPhotos" | "assistLevel" | "styleIntensity" | "createdAt" | "updatedAt">): Project {
   return {
@@ -57,7 +57,7 @@ describe("photo analysis services", () => {
     expect(weak?.quality?.isLowLight).toBe(true);
   });
 
-  it("produces coarse scene and theme tags from aspect, timing, location, and local project context", () => {
+  it("produces coarse scene and theme tags from aspect, timing, location, and local project context", async () => {
     const project = makeProject({
       id: "project-1",
       name: "Trip",
@@ -121,7 +121,7 @@ describe("photo analysis services", () => {
       })
     ];
 
-    const scene = analyzePhotoScene({
+    const scene = await analyzePhotoScene({
       photo: target,
       project,
       projectPhotos,
@@ -130,6 +130,16 @@ describe("photo analysis services", () => {
 
     expect(scene?.sceneTags).toEqual(expect.arrayContaining(["landscape", "outdoor", "scenic"]));
     expect(scene?.themeTags).toEqual(expect.arrayContaining(["nature-like", "party-like", "sunset-like"]));
+  });
+
+  it("normalizes trusted native image labels into privacy-safe tags without changing scene tags directly", () => {
+    const tags = normalizeTagsFromNativeImageLabels([
+      { text: "Beach", confidence: 0.91, index: 1 },
+      { text: "Dog", confidence: 0.88, index: 2 },
+      { text: "Vehicle", confidence: 0.49, index: 3 }
+    ]);
+
+    expect(tags).toEqual(["animal", "beach", "outdoor", "pet-like"]);
   });
 
   it("adds privacy-safe face groundwork from portrait/group cues without exposing identity metadata", () => {

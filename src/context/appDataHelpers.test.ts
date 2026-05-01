@@ -73,6 +73,20 @@ describe("appDataHelpers Milestone 2 foundations", () => {
             similarityClusterId: " sim-1 ",
             representativeScore: 0.72
           },
+          nativeLabels: [
+            {
+              source: "android-mlkit-image-labeling",
+              text: " Beach ",
+              confidence: 0.9321,
+              index: 12,
+              normalizedTag: " beach "
+            },
+            {
+              source: "android-mlkit-image-labeling",
+              text: "",
+              confidence: 0.8
+            }
+          ],
           safeExternalTags: [" seaside ", "", "travel"],
           localOnly: {
             privateFaceDataRef: " face-ref-1 ",
@@ -108,6 +122,15 @@ describe("appDataHelpers Milestone 2 foundations", () => {
         similarityClusterId: "sim-1",
         representativeScore: 0.72
       },
+      nativeLabels: [
+        {
+          source: "android-mlkit-image-labeling",
+          text: "Beach",
+          confidence: 0.9321,
+          index: 12,
+          normalizedTag: "beach"
+        }
+      ],
       safeExternalTags: ["seaside", "travel"],
       localOnly: {
         privateFaceDataRef: "face-ref-1",

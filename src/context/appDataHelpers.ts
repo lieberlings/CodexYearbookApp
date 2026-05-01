@@ -4,6 +4,7 @@ import {
   PhotoAnalysisMetadata,
   PhotoImportMetadata,
   PhotoItem,
+  PhotoNativeImageLabelMetadata,
   Project,
   ProjectTimelineMode,
   Suggestion
@@ -134,6 +135,23 @@ export function normalizePhotoAnalysisRecord(analysis: PhotoAnalysisMetadata | u
     similarityClusterId: normalizeOptionalString(analysis.similarity?.similarityClusterId),
     representativeScore: normalizeOptionalNumber(analysis.similarity?.representativeScore)
   };
+  const nativeLabels = Array.isArray(analysis.nativeLabels)
+    ? analysis.nativeLabels.reduce<PhotoNativeImageLabelMetadata[]>((labels, label) => {
+        const text = normalizeOptionalString(label.text);
+        const confidence = normalizeOptionalNumber(label.confidence);
+        if (label.source !== "android-mlkit-image-labeling" || !text || confidence === undefined) {
+          return labels;
+        }
+        labels.push({
+          source: "android-mlkit-image-labeling",
+          text,
+          confidence,
+          index: normalizeOptionalNumber(label.index),
+          normalizedTag: normalizeOptionalString(label.normalizedTag)
+        });
+        return labels;
+      }, [])
+    : undefined;
   const localOnly = {
     privateFaceDataRef: normalizeOptionalString(analysis.localOnly?.privateFaceDataRef),
     localEmbeddingRef: normalizeOptionalString(analysis.localOnly?.localEmbeddingRef)
@@ -148,6 +166,7 @@ export function normalizePhotoAnalysisRecord(analysis: PhotoAnalysisMetadata | u
     subjectCues: Object.values(subjectCues).some((value) => value !== undefined) ? subjectCues : undefined,
     faces: Object.values(faces).some((value) => value !== undefined) ? faces : undefined,
     similarity: Object.values(similarity).some((value) => value !== undefined) ? similarity : undefined,
+    nativeLabels: nativeLabels && nativeLabels.length > 0 ? nativeLabels : undefined,
     safeExternalTags: normalizeTagList(analysis.safeExternalTags),
     localOnly: Object.values(localOnly).some((value) => value !== undefined) ? localOnly : undefined
   };
@@ -187,6 +206,7 @@ export function mergePhotoAnalysisMetadata(
       ...existing?.similarity,
       ...patch?.similarity
     },
+    nativeLabels: patch?.nativeLabels ?? existing?.nativeLabels,
     safeExternalTags: patch?.safeExternalTags ?? existing?.safeExternalTags,
     localOnly: {
       ...existing?.localOnly,

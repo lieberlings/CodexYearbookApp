@@ -27,6 +27,7 @@ import {
   suggestCandidatePhotosForMemory,
   suggestCollectionCandidatePhotos
 } from "../../src/services/promptEngine";
+import { labelImageLocally, NativeImageLabelingResult } from "../../src/services/nativeImageLabeling";
 import {
   MediaLibraryAssetProbe,
   PickedPhotoAsset,
@@ -39,6 +40,7 @@ import {
   FinalizationSuggestion,
   Memory,
   PhotoItem,
+  PhotoNativeImageLabelMetadata,
   PhotoMetadataResolutionKind,
   PhotoMetadataSource,
   Suggestion
@@ -153,6 +155,40 @@ function getLocationSourceLabel(photo: PhotoItem): string {
     return "Legacy stored location";
   }
   return "No GPS metadata";
+}
+
+function formatNativeLabels(labels: PhotoNativeImageLabelMetadata[] | undefined): string {
+  return Array.isArray(labels) && labels.length > 0
+    ? labels
+        .map((label) => {
+          const confidence = Math.round(label.confidence * 100);
+          const normalized = label.normalizedTag ? ` -> ${label.normalizedTag}` : "";
+          return `${label.text} (${confidence}%)${normalized}`;
+        })
+        .join("\n")
+    : "—";
+}
+
+function formatNativeLabelProbe(result: NativeImageLabelingResult | null, busy: boolean): string {
+  if (busy) {
+    return "Checking...";
+  }
+  if (!result) {
+    return "—";
+  }
+  if (!result.available) {
+    return result.error ?? "Native image labeling unavailable.";
+  }
+  if (result.labels.length === 0) {
+    return "No labels returned.";
+  }
+  return result.labels
+    .map((label) => {
+      const confidence = Math.round(label.confidence * 100);
+      const index = typeof label.index === "number" ? ` #${label.index}` : "";
+      return `${label.text} (${confidence}%)${index}`;
+    })
+    .join("\n");
 }
 
 function InspectorField({ label, value }: { label: string; value: InspectorFieldValue }) {
@@ -402,6 +438,8 @@ export default function ProjectDetailsScreen() {
   const [analysisInspectorFeedback, setAnalysisInspectorFeedback] = useState<StatusCard | undefined>(undefined);
   const [analysisInspectorProbe, setAnalysisInspectorProbe] = useState<MediaLibraryAssetProbe | null>(null);
   const [analysisInspectorProbeBusy, setAnalysisInspectorProbeBusy] = useState(false);
+  const [nativeLabelProbe, setNativeLabelProbe] = useState<NativeImageLabelingResult | null>(null);
+  const [nativeLabelProbeBusy, setNativeLabelProbeBusy] = useState(false);
   const [projectPhotoPickerVisible, setProjectPhotoPickerVisible] = useState(false);
   const [projectPhotoPickerBusy, setProjectPhotoPickerBusy] = useState(false);
   const [composerMediaLibraryVisible, setComposerMediaLibraryVisible] = useState(false);
@@ -492,6 +530,32 @@ export default function ProjectDetailsScreen() {
     }
 
     void runProbe();
+    return () => {
+      cancelled = true;
+    };
+  }, [analysisInspectorVisible, selectedInspectorPhoto]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function runNativeLabelProbe() {
+      if (!analysisInspectorVisible || !selectedInspectorPhoto) {
+        if (!cancelled) {
+          setNativeLabelProbe(null);
+          setNativeLabelProbeBusy(false);
+        }
+        return;
+      }
+
+      setNativeLabelProbeBusy(true);
+      const result = await labelImageLocally(selectedInspectorPhoto.uri);
+      if (!cancelled) {
+        setNativeLabelProbe(result);
+        setNativeLabelProbeBusy(false);
+      }
+    }
+
+    void runNativeLabelProbe();
     return () => {
       cancelled = true;
     };
@@ -1185,6 +1249,7 @@ export default function ProjectDetailsScreen() {
     setAnalysisInspectorVisible(false);
     setAnalysisInspectorFeedback(undefined);
     setAnalysisInspectorProbe(null);
+    setNativeLabelProbe(null);
   }, [analysisInspectorBusy]);
 
   const closeMediaLibraryPicker = useCallback(() => {
@@ -2401,6 +2466,41 @@ export default function ProjectDetailsScreen() {
                       <InspectorField
                         label="Theme Tags"
                         value={selectedInspectorPhoto.analysis?.themeTags?.join(", ")}
+                      />
+                    </InspectorSection>
+
+                    <InspectorSection title="Native Image Labels">
+                      <InspectorField
+                        label="Persisted Fields"
+                        value="analysis.nativeLabels, analysis.safeExternalTags"
+                      />
+                      <InspectorField
+                        label="Product Behavior"
+                        value="Not used by suggestions or finalization yet"
+                      />
+                      <InspectorField
+                        label="Persisted Native Labels"
+                        value={formatNativeLabels(selectedInspectorPhoto.analysis?.nativeLabels)}
+                      />
+                      <InspectorField
+                        label="Persisted Normalized Tags"
+                        value={selectedInspectorPhoto.analysis?.safeExternalTags?.join(", ")}
+                      />
+                    </InspectorSection>
+
+                    <InspectorSection title="ML Kit Live Probe">
+                      <InspectorField label="Debug-only Field" value="Native label probe result is not persisted" />
+                      <InspectorField
+                        label="Native Source"
+                        value={nativeLabelProbeBusy ? "Checking..." : nativeLabelProbe?.source}
+                      />
+                      <InspectorField
+                        label="Native Module Available"
+                        value={nativeLabelProbeBusy ? "Checking..." : nativeLabelProbe?.available}
+                      />
+                      <InspectorField
+                        label="Raw Native Labels"
+                        value={formatNativeLabelProbe(nativeLabelProbe, nativeLabelProbeBusy)}
                       />
                     </InspectorSection>
 

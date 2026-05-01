@@ -1,7 +1,83 @@
 import { PhotoAnalysisPatch, PhotoAnalysisServiceInput } from "./photoAnalysisTypes";
+import { labelImageLocally } from "./nativeImageLabeling";
+import type { NativeImageLabel } from "./nativeImageLabeling";
 
 const PARTY_WINDOW_MS = 4 * 60 * 60 * 1000;
 const PARTY_CLUSTER_MIN_COUNT = 5;
+const PERSISTED_NATIVE_LABEL_THRESHOLD = 0.5;
+const MAX_PERSISTED_NATIVE_LABELS = 8;
+
+const NATIVE_LABEL_TAG_MAP: Record<string, string[]> = {
+  beach: ["beach", "outdoor"],
+  bird: ["animal"],
+  building: ["city"],
+  "christmas tree": ["holiday-like"],
+  city: ["city"],
+  cloud: ["outdoor"],
+  dog: ["pet-like", "animal"],
+  cat: ["pet-like", "animal"],
+  dessert: ["food"],
+  dish: ["food"],
+  face: ["portrait"],
+  fireworks: ["celebration-like"],
+  flower: ["nature-like"],
+  food: ["food"],
+  furniture: ["indoor"],
+  house: ["indoor"],
+  lake: ["water", "outdoor", "nature-like"],
+  landscape: ["landscape", "scenic", "outdoor"],
+  meal: ["food"],
+  mountain: ["mountain", "scenic", "outdoor", "nature-like"],
+  ocean: ["water", "beach", "outdoor"],
+  person: ["portrait"],
+  plant: ["nature-like"],
+  sky: ["outdoor"],
+  snow: ["winter-like", "outdoor"],
+  stadium: ["sports-like"],
+  sunset: ["sunset-like", "scenic", "outdoor"],
+  tree: ["nature-like", "outdoor"],
+  vehicle: ["travel"],
+  water: ["water", "outdoor"]
+};
+
+function normalizeLabelKey(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+export function normalizeTagsFromNativeImageLabels(labels: NativeImageLabel[]): string[] {
+  const tags = new Set<string>();
+  labels.forEach((label) => {
+    if (label.confidence < PERSISTED_NATIVE_LABEL_THRESHOLD) {
+      return;
+    }
+    const mapped = NATIVE_LABEL_TAG_MAP[normalizeLabelKey(label.text)];
+    mapped?.forEach((tag) => tags.add(tag));
+  });
+  return Array.from(tags).sort();
+}
+
+function buildNativeLabelPatch(labels: NativeImageLabel[]): PhotoAnalysisPatch | undefined {
+  const strongLabels = labels
+    .filter((label) => label.confidence >= PERSISTED_NATIVE_LABEL_THRESHOLD)
+    .sort((a, b) => b.confidence - a.confidence)
+    .slice(0, MAX_PERSISTED_NATIVE_LABELS);
+
+  if (strongLabels.length === 0) {
+    return undefined;
+  }
+
+  const normalizedTags = normalizeTagsFromNativeImageLabels(strongLabels);
+  return {
+    nativeLabels: strongLabels.map((label) => ({
+      source: "android-mlkit-image-labeling",
+      text: label.text,
+      confidence: Number(label.confidence.toFixed(4)),
+      index: label.index,
+      normalizedTag: NATIVE_LABEL_TAG_MAP[normalizeLabelKey(label.text)]?.[0]
+    })),
+    safeExternalTags: normalizedTags.length > 0 ? normalizedTags : undefined
+  };
+}
 
 function getPhotoTimestamp(input: PhotoAnalysisServiceInput): number {
   const capturedAt = Date.parse(input.photo.capturedAt);
@@ -34,7 +110,7 @@ function getNearbyProjectClusterCount(input: PhotoAnalysisServiceInput): number 
   }).length;
 }
 
-export function analyzePhotoScene(input: PhotoAnalysisServiceInput): PhotoAnalysisPatch | undefined {
+export async function analyzePhotoScene(input: PhotoAnalysisServiceInput): Promise<PhotoAnalysisPatch | undefined> {
   const width = input.photo.width ?? 0;
   const height = input.photo.height ?? 0;
   const hasDimensions = width > 0 && height > 0;
@@ -91,13 +167,24 @@ export function analyzePhotoScene(input: PhotoAnalysisServiceInput): PhotoAnalys
     subjectCues.groupPhotoLike = true;
   }
 
-  if (sceneTags.size === 0 && themeTags.size === 0 && Object.keys(subjectCues).length === 0) {
+  const heuristicPatch: PhotoAnalysisPatch | undefined =
+    sceneTags.size === 0 && themeTags.size === 0 && Object.keys(subjectCues).length === 0
+      ? undefined
+      : {
+          sceneTags: Array.from(sceneTags).sort(),
+          themeTags: Array.from(themeTags).sort(),
+          subjectCues: Object.keys(subjectCues).length > 0 ? subjectCues : undefined
+        };
+
+  const nativeResult = await labelImageLocally(input.photo.uri);
+  const nativePatch = nativeResult.available ? buildNativeLabelPatch(nativeResult.labels) : undefined;
+
+  if (!heuristicPatch && !nativePatch) {
     return undefined;
   }
 
   return {
-    sceneTags: Array.from(sceneTags).sort(),
-    themeTags: Array.from(themeTags).sort(),
-    subjectCues: Object.keys(subjectCues).length > 0 ? subjectCues : undefined
+    ...heuristicPatch,
+    ...nativePatch
   };
 }
