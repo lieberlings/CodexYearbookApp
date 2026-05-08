@@ -22,12 +22,19 @@ import { MediaLibrarySelectionModal } from "../../src/components/MediaLibrarySel
 import { useAppData } from "../../src/context/AppContext";
 import { formatPhotoLocation, normalizePhotoLocation } from "../../src/lib/photoLocation";
 import { exportProjectToPdf, sharePdf } from "../../src/services/exportService";
+import { detectPhotoFacesHeuristic } from "../../src/services/faceDetectionService";
+import { detectFacesLocally, NativeFaceDetectionResult } from "../../src/services/nativeFaceDetection";
 import {
   generateFinalizationSuggestionsForProject,
   suggestCandidatePhotosForMemory,
   suggestCollectionCandidatePhotos
 } from "../../src/services/promptEngine";
 import { labelImageLocally, NativeImageLabelingResult } from "../../src/services/nativeImageLabeling";
+import { analyzePhotoSceneHeuristics, normalizeTagsFromNativeImageLabels } from "../../src/services/sceneAnalysisService";
+import {
+  generateProjectPhotoClusters,
+  ProjectPhotoCluster
+} from "../../src/services/projectClusterEngine";
 import {
   MediaLibraryAssetProbe,
   PickedPhotoAsset,
@@ -39,7 +46,9 @@ import { useEditorStore } from "../../src/state/editorStore";
 import {
   FinalizationSuggestion,
   Memory,
+  PhotoAnalysisSignalSource,
   PhotoItem,
+  PhotoNativeFaceMetadata,
   PhotoNativeImageLabelMetadata,
   PhotoMetadataResolutionKind,
   PhotoMetadataSource,
@@ -64,6 +73,18 @@ type ThumbnailChoice =
   | { kind: "staged"; stagedKey: string };
 
 type InspectorFieldValue = string | number | boolean | null | undefined;
+type InspectorDebugReportInput = {
+  projectId: string;
+  photo: PhotoItem;
+  mediaLibraryProbe: MediaLibraryAssetProbe | null;
+  mediaLibraryProbeBusy: boolean;
+  nativeLabelProbe: NativeImageLabelingResult | null;
+  nativeLabelProbeBusy: boolean;
+  nativeFaceProbe: NativeFaceDetectionResult | null;
+  nativeFaceProbeBusy: boolean;
+  heuristicScenePreview: ReturnType<typeof analyzePhotoSceneHeuristics>;
+  heuristicFacePreview: ReturnType<typeof detectPhotoFacesHeuristic>;
+};
 
 function orderKey(items: { id: string }[]): string {
   return items.map((item) => item.id).join("|");
@@ -191,6 +212,124 @@ function formatNativeLabelProbe(result: NativeImageLabelingResult | null, busy: 
     .join("\n");
 }
 
+function formatTagList(tags: string[] | undefined): string {
+  return tags && tags.length > 0 ? tags.join(", ") : "—";
+}
+
+function formatAnalysisSource(source: PhotoAnalysisSignalSource | undefined): string {
+  switch (source) {
+    case "android-mlkit-image-labeling":
+      return "Android ML Kit image labeling";
+    case "android-mlkit-face-detection":
+      return "Android ML Kit face detection";
+    case "heuristic-fallback":
+      return "Heuristic fallback";
+    default:
+      return "Unknown";
+  }
+}
+
+function formatNativeFaces(faces: PhotoNativeFaceMetadata[] | undefined): string {
+  return Array.isArray(faces) && faces.length > 0
+    ? faces
+        .map((face, index) => {
+          const bounds = `${Math.round(face.bounds.width)}x${Math.round(face.bounds.height)} @ ${Math.round(
+            face.bounds.x
+          )},${Math.round(face.bounds.y)}`;
+          const smile =
+            typeof face.smilingProbability === "number"
+              ? ` smile ${Math.round(face.smilingProbability * 100)}%`
+              : "";
+          return `Face ${index + 1}: ${bounds}${smile}`;
+        })
+        .join("\n")
+    : "—";
+}
+
+function formatNativeFaceProbe(result: NativeFaceDetectionResult | null, busy: boolean): string {
+  if (busy) {
+    return "Checking...";
+  }
+  if (!result) {
+    return "—";
+  }
+  if (!result.available) {
+    return result.error ?? "Native face detection unavailable.";
+  }
+  if (result.faces.length === 0) {
+    return "No faces returned.";
+  }
+  return result.faces
+    .map((face, index) => {
+      const bounds = `${Math.round(face.bounds.width)}x${Math.round(face.bounds.height)} @ ${Math.round(
+        face.bounds.x
+      )},${Math.round(face.bounds.y)}`;
+      const smile =
+        typeof face.smilingProbability === "number" ? ` smile ${Math.round(face.smilingProbability * 100)}%` : "";
+      return `Face ${index + 1}: ${bounds}${smile}`;
+    })
+    .join("\n");
+}
+
+function buildInspectorDebugReport(input: InspectorDebugReportInput): string {
+  const {
+    projectId,
+    photo,
+    mediaLibraryProbe,
+    mediaLibraryProbeBusy,
+    nativeLabelProbe,
+    nativeLabelProbeBusy,
+    nativeFaceProbe,
+    nativeFaceProbeBusy,
+    heuristicScenePreview,
+    heuristicFacePreview
+  } = input;
+  const report = {
+    generatedAt: new Date().toISOString(),
+    projectId,
+    photo: {
+      id: photo.id,
+      memoryId: photo.memoryId,
+      uri: photo.uri,
+      width: photo.width,
+      height: photo.height,
+      capturedAt: photo.capturedAt,
+      addedAt: photo.addedAt,
+      location: photo.location,
+      importMetadata: photo.importMetadata
+    },
+    probes: {
+      mediaLibrary: {
+        busy: mediaLibraryProbeBusy,
+        result: mediaLibraryProbe
+      },
+      nativeImageLabels: {
+        busy: nativeLabelProbeBusy,
+        result: nativeLabelProbe,
+        normalizedTags:
+          nativeLabelProbe?.available === true
+            ? normalizeTagsFromNativeImageLabels(nativeLabelProbe.labels)
+            : undefined
+      },
+      nativeFaces: {
+        busy: nativeFaceProbeBusy,
+        result: nativeFaceProbe
+      }
+    },
+    heuristicPreview: {
+      scene: heuristicScenePreview,
+      faces: heuristicFacePreview
+    },
+    persistedAnalysis: photo.analysis
+  };
+
+  return [
+    "YEARBOOK_IMAGE_ANALYSIS_DEBUG_REPORT_START",
+    JSON.stringify(report, null, 2),
+    "YEARBOOK_IMAGE_ANALYSIS_DEBUG_REPORT_END"
+  ].join("\n");
+}
+
 function InspectorField({ label, value }: { label: string; value: InspectorFieldValue }) {
   return (
     <View style={styles.analysisFieldRow}>
@@ -269,6 +408,36 @@ function getFinalizationTypeLabel(type: FinalizationSuggestion["type"]): string 
     default:
       return "Highlight Collection";
   }
+}
+
+function getClusterTypeLabel(type: ProjectPhotoCluster["type"]): string {
+  return type === "collection" ? "Collection-like" : "Event-like";
+}
+
+function formatClusterTimeRange(cluster: ProjectPhotoCluster): string {
+  if (!cluster.startTime && !cluster.endTime) {
+    return "Unknown time";
+  }
+  const start = cluster.startTime ? new Date(cluster.startTime) : undefined;
+  const end = cluster.endTime ? new Date(cluster.endTime) : undefined;
+  if (!start || Number.isNaN(start.getTime())) {
+    return "Unknown time";
+  }
+  const startLabel = start.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  if (!end || Number.isNaN(end.getTime()) || start.toDateString() === end.toDateString()) {
+    return startLabel;
+  }
+  return `${startLabel} - ${end.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`;
+}
+
+function formatClusterLocation(cluster: ProjectPhotoCluster): string {
+  if (!cluster.locationSummary) {
+    return "No GPS cluster cue";
+  }
+  if (!cluster.locationSummary.center || cluster.locationSummary.bucketCount > 1) {
+    return `${cluster.locationSummary.locatedPhotoCount} geotagged photos across ${cluster.locationSummary.bucketCount} area bucket${cluster.locationSummary.bucketCount === 1 ? "" : "s"}`;
+  }
+  return `${cluster.locationSummary.locatedPhotoCount} geotagged photos in 1 area near ${cluster.locationSummary.center.latitude.toFixed(3)}, ${cluster.locationSummary.center.longitude.toFixed(3)}`;
 }
 
 function buildStagedAssets(assets: PickedPhotoAsset[]): StagedAsset[] {
@@ -429,6 +598,9 @@ export default function ProjectDetailsScreen() {
   const [suggestionScanState, setSuggestionScanState] = useState<"idle" | "scanning" | "empty" | "error" | "done">("idle");
   const [suggestionScanError, setSuggestionScanError] = useState<string | undefined>(undefined);
   const [suggestionsExpanded, setSuggestionsExpanded] = useState(false);
+  const [clusterInspectorExpanded, setClusterInspectorExpanded] = useState(false);
+  const [clusterAnalysisBusy, setClusterAnalysisBusy] = useState(false);
+  const [clusterAnalysisFeedback, setClusterAnalysisFeedback] = useState<StatusCard | undefined>(undefined);
   const [showDismissedSuggestions, setShowDismissedSuggestions] = useState(false);
   const [projectPhotoIntakeBusy, setProjectPhotoIntakeBusy] = useState(false);
   const [projectPhotoFeedback, setProjectPhotoFeedback] = useState<StatusCard | undefined>(undefined);
@@ -440,6 +612,8 @@ export default function ProjectDetailsScreen() {
   const [analysisInspectorProbeBusy, setAnalysisInspectorProbeBusy] = useState(false);
   const [nativeLabelProbe, setNativeLabelProbe] = useState<NativeImageLabelingResult | null>(null);
   const [nativeLabelProbeBusy, setNativeLabelProbeBusy] = useState(false);
+  const [nativeFaceProbe, setNativeFaceProbe] = useState<NativeFaceDetectionResult | null>(null);
+  const [nativeFaceProbeBusy, setNativeFaceProbeBusy] = useState(false);
   const [projectPhotoPickerVisible, setProjectPhotoPickerVisible] = useState(false);
   const [projectPhotoPickerBusy, setProjectPhotoPickerBusy] = useState(false);
   const [composerMediaLibraryVisible, setComposerMediaLibraryVisible] = useState(false);
@@ -468,6 +642,11 @@ export default function ProjectDetailsScreen() {
     () => [...unassignedProjectPhotos].slice(-6).reverse(),
     [unassignedProjectPhotos]
   );
+  const projectClusters = useMemo(
+    () => generateProjectPhotoClusters(projectId, projectPhotos),
+    [projectId, projectPhotos]
+  );
+  const topProjectClusters = useMemo(() => projectClusters.slice(0, 8), [projectClusters]);
   const inspectorSelectablePhotos = useMemo(
     () =>
       [...projectPhotos].sort((a, b) => {
@@ -483,6 +662,65 @@ export default function ProjectDetailsScreen() {
         ? inspectorSelectablePhotos.find((photo) => photo.id === analysisInspectorPhotoId) ?? null
         : null,
     [analysisInspectorPhotoId, inspectorSelectablePhotos]
+  );
+  const heuristicScenePreview = useMemo(
+    () =>
+      selectedInspectorPhoto
+        ? analyzePhotoSceneHeuristics({
+            photo: selectedInspectorPhoto,
+            project,
+            projectPhotos,
+            now: new Date().toISOString()
+          })
+        : undefined,
+    [project, projectPhotos, selectedInspectorPhoto]
+  );
+  const heuristicFacePreview = useMemo(
+    () =>
+      selectedInspectorPhoto
+        ? detectPhotoFacesHeuristic({
+            photo: {
+              ...selectedInspectorPhoto,
+              analysis: {
+                ...selectedInspectorPhoto.analysis,
+                subjectCues: selectedInspectorPhoto.analysis?.subjectCues ?? heuristicScenePreview?.subjectCues
+              }
+            },
+            project,
+            projectPhotos,
+            now: new Date().toISOString()
+          })
+        : undefined,
+    [heuristicScenePreview, project, projectPhotos, selectedInspectorPhoto]
+  );
+  const inspectorDebugReport = useMemo(
+    () =>
+      selectedInspectorPhoto
+        ? buildInspectorDebugReport({
+            projectId,
+            photo: selectedInspectorPhoto,
+            mediaLibraryProbe: analysisInspectorProbe,
+            mediaLibraryProbeBusy: analysisInspectorProbeBusy,
+            nativeLabelProbe,
+            nativeLabelProbeBusy,
+            nativeFaceProbe,
+            nativeFaceProbeBusy,
+            heuristicScenePreview,
+            heuristicFacePreview
+          })
+        : "",
+    [
+      analysisInspectorProbe,
+      analysisInspectorProbeBusy,
+      heuristicFacePreview,
+      heuristicScenePreview,
+      nativeFaceProbe,
+      nativeFaceProbeBusy,
+      nativeLabelProbe,
+      nativeLabelProbeBusy,
+      projectId,
+      selectedInspectorPhoto
+    ]
   );
   const candidatePhotosByMemoryId = useMemo(
     () =>
@@ -530,6 +768,32 @@ export default function ProjectDetailsScreen() {
     }
 
     void runProbe();
+    return () => {
+      cancelled = true;
+    };
+  }, [analysisInspectorVisible, selectedInspectorPhoto]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function runNativeFaceProbe() {
+      if (!analysisInspectorVisible || !selectedInspectorPhoto) {
+        if (!cancelled) {
+          setNativeFaceProbe(null);
+          setNativeFaceProbeBusy(false);
+        }
+        return;
+      }
+
+      setNativeFaceProbeBusy(true);
+      const result = await detectFacesLocally(selectedInspectorPhoto.uri);
+      if (!cancelled) {
+        setNativeFaceProbe(result);
+        setNativeFaceProbeBusy(false);
+      }
+    }
+
+    void runNativeFaceProbe();
     return () => {
       cancelled = true;
     };
@@ -1250,6 +1514,7 @@ export default function ProjectDetailsScreen() {
     setAnalysisInspectorFeedback(undefined);
     setAnalysisInspectorProbe(null);
     setNativeLabelProbe(null);
+    setNativeFaceProbe(null);
   }, [analysisInspectorBusy]);
 
   const closeMediaLibraryPicker = useCallback(() => {
@@ -1369,6 +1634,64 @@ export default function ProjectDetailsScreen() {
     },
     [analyzeProjectPhotos, project, selectedInspectorPhoto]
   );
+
+  const analyzeAllProjectPhotosForClusters = useCallback(async () => {
+    if (!project || clusterAnalysisBusy) {
+      return;
+    }
+    if (projectPhotos.length === 0) {
+      setClusterAnalysisFeedback({
+        icon: "images-outline",
+        title: "No project photos",
+        message: "Add photos to the project pool before running full project analysis.",
+        tone: "empty"
+      });
+      return;
+    }
+
+    try {
+      setClusterAnalysisBusy(true);
+      setClusterAnalysisFeedback({
+        icon: "analytics-outline",
+        title: "Analyzing project photos",
+        message: `Running local analysis for ${pluralize(projectPhotos.length, "project photo")}.`,
+        tone: "info"
+      });
+      const result = await analyzeProjectPhotos(project.id, { force: true });
+      setClusterInspectorExpanded(true);
+      setClusterAnalysisFeedback({
+        icon: "checkmark-circle-outline",
+        title: "Project analysis complete",
+        message: `${pluralize(result.analyzedPhotoIds.length, "photo")} analyzed. ${pluralize(
+          result.skippedPhotoIds.length,
+          "photo"
+        )} skipped.`,
+        tone: "success"
+      });
+    } catch (error) {
+      setClusterAnalysisFeedback({
+        icon: "warning-outline",
+        title: "Project analysis failed",
+        message: error instanceof Error ? error.message : "The project-level analysis run did not complete.",
+        tone: "error"
+      });
+    } finally {
+      setClusterAnalysisBusy(false);
+    }
+  }, [analyzeProjectPhotos, clusterAnalysisBusy, project, projectPhotos.length]);
+
+  const logInspectorDebugReport = useCallback(() => {
+    if (!inspectorDebugReport) {
+      return;
+    }
+    console.log(inspectorDebugReport);
+    setAnalysisInspectorFeedback({
+      icon: "terminal-outline",
+      title: "Debug report logged",
+      message: "The full inspector report was printed to the Metro terminal and is also selectable below.",
+      tone: "info"
+    });
+  }, [inspectorDebugReport]);
 
   const onStartFinalization = useCallback(() => {
     if (!project) {
@@ -1574,6 +1897,55 @@ export default function ProjectDetailsScreen() {
     );
   }, []);
 
+  const renderClusterCard = useCallback(
+    (cluster: ProjectPhotoCluster) => {
+      const bestPhotos = cluster.bestPhotoIds
+        .map((photoId) => projectPhotos.find((photo) => photo.id === photoId))
+        .filter((photo): photo is PhotoItem => Boolean(photo))
+        .slice(0, 4);
+
+      return (
+        <View key={cluster.id} style={styles.clusterCard}>
+          <View style={styles.suggestionCardHeader}>
+            <Text style={styles.suggestionTitle}>{getClusterTypeLabel(cluster.type)}</Text>
+            <View style={[styles.suggestionStatusBadge, styles.clusterScoreBadge]}>
+              <Text style={[styles.suggestionStatusText, styles.clusterScoreText]}>{cluster.score}</Text>
+            </View>
+          </View>
+          <Text style={styles.suggestionMessage}>{cluster.explanation}</Text>
+          <Text style={styles.suggestionMeta}>
+            {formatClusterTimeRange(cluster)} | {pluralize(cluster.photoCount, "photo")} |{" "}
+            {pluralize(cluster.bestPhotoIds.length, "best pick")}
+          </Text>
+          <Text style={styles.suggestionLifecycleNote}>{formatClusterLocation(cluster)}</Text>
+          <Text style={styles.suggestionLifecycleNote}>
+            Quality avg {cluster.qualitySummary.averageQuality} / best {cluster.qualitySummary.bestQuality} |{" "}
+            {cluster.faceSummary.facePhotoCount} face photos, {cluster.faceSummary.groupPhotoCount} group photos
+          </Text>
+          <Text style={styles.suggestionMeta}>
+            Cues: {cluster.cues.length > 0 ? cluster.cues.join(", ") : "none"}{"\n"}
+            Tags: {cluster.supportingTags.length > 0 ? cluster.supportingTags.join(", ") : "none"}
+          </Text>
+          {cluster.recurrence ? (
+            <Text style={styles.suggestionLifecycleNote}>
+              Recurs across {cluster.recurrence.distinctDays} days over {cluster.recurrence.spanDays} days.
+            </Text>
+          ) : null}
+          {bestPhotos.length > 0 ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.clusterBestPhotoRow}>
+              {bestPhotos.map((photo) => (
+                <Pressable key={photo.id} style={styles.clusterBestPhoto} onPress={() => openAnalysisInspector(photo.id)}>
+                  <Image source={{ uri: photo.uri }} style={styles.clusterBestPhotoImage} />
+                </Pressable>
+              ))}
+            </ScrollView>
+          ) : null}
+        </View>
+      );
+    },
+    [openAnalysisInspector, projectPhotos]
+  );
+
   const toolbarBottom = insets.bottom + 24;
   const bottomToolbarHeight = insets.bottom + 102;
   const composerCanSave = composerTitle.trim().length > 0 && !composerSaving;
@@ -1713,6 +2085,84 @@ export default function ProjectDetailsScreen() {
                     </Pressable>
                   ))}
                 </ScrollView>
+              ) : null}
+
+              <View style={styles.sectionHeaderRow}>
+                <Text style={styles.sectionHeading}>Cluster Inspector</Text>
+                <View style={styles.sectionControlRow}>
+                  <Pressable
+                    style={[styles.dismissedToggle, clusterAnalysisBusy ? styles.scanButtonDisabled : null]}
+                    onPress={() => void analyzeAllProjectPhotosForClusters()}
+                    disabled={clusterAnalysisBusy}
+                  >
+                    {clusterAnalysisBusy ? (
+                      <ActivityIndicator color="#9ab2dd" size="small" />
+                    ) : (
+                      <Ionicons name="analytics-outline" size={15} color="#9ab2dd" />
+                    )}
+                    <Text style={styles.dismissedToggleText}>
+                      {clusterAnalysisBusy ? "Analyzing..." : "Analyze All"}
+                    </Text>
+                  </Pressable>
+                  <Pressable style={styles.dismissedToggle} onPress={() => setClusterInspectorExpanded((prev) => !prev)}>
+                    <Ionicons
+                      name={clusterInspectorExpanded ? "chevron-up-outline" : "chevron-down-outline"}
+                      size={15}
+                      color="#9ab2dd"
+                    />
+                    <Text style={styles.dismissedToggleText}>
+                      {clusterInspectorExpanded
+                        ? `Collapse clusters (${projectClusters.length})`
+                        : `Expand clusters (${projectClusters.length})`}
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+              <Text style={styles.sectionSubheading}>
+                Developer-only grouping preview for event-like moments and recurring collection candidates. This does not create memories or suggestions.
+              </Text>
+              <Text style={styles.suggestionSummary}>
+                Vocabulary: time-burst, same-day, multi-day, location, faces, quality, scenic, food, pet, travel, recurring-theme.
+              </Text>
+              {clusterAnalysisFeedback ? (
+                <View
+                  style={[
+                    styles.suggestionsStateCard,
+                    clusterAnalysisFeedback.tone === "error" ? styles.suggestionsStateCardError : null,
+                    clusterAnalysisFeedback.tone === "info" ? styles.suggestionsStateCardInfo : null,
+                    clusterAnalysisFeedback.tone === "success" ? styles.suggestionsStateCardSuccess : null
+                  ]}
+                >
+                  {clusterAnalysisBusy ? (
+                    <ActivityIndicator color="#dbe8ff" />
+                  ) : (
+                    <Ionicons
+                      name={clusterAnalysisFeedback.icon}
+                      size={24}
+                      color={
+                        clusterAnalysisFeedback.tone === "error"
+                          ? "#ff9aae"
+                          : clusterAnalysisFeedback.tone === "success"
+                            ? "#82efb4"
+                            : "#7fa7ff"
+                      }
+                    />
+                  )}
+                  <Text style={styles.emptyTitle}>{clusterAnalysisFeedback.title}</Text>
+                  <Text style={styles.emptyText}>{clusterAnalysisFeedback.message}</Text>
+                </View>
+              ) : null}
+              {clusterInspectorExpanded && projectClusters.length === 0 ? (
+                <View style={styles.suggestionsEmptyCard}>
+                  <Ionicons name="git-branch-outline" size={28} color="#5d7097" />
+                  <Text style={styles.emptyTitle}>No strong clusters yet</Text>
+                  <Text style={styles.emptyText}>
+                    Add or analyze more project photos. The first pass needs close time groups or repeated themes across days.
+                  </Text>
+                </View>
+              ) : null}
+              {clusterInspectorExpanded && topProjectClusters.length > 0 ? (
+                <View style={styles.suggestionList}>{topProjectClusters.map(renderClusterCard)}</View>
               ) : null}
 
               <View style={styles.sectionHeaderRow}>
@@ -2355,6 +2805,14 @@ export default function ProjectDetailsScreen() {
                         <Ionicons name="refresh-outline" size={15} color="#9ab2dd" />
                         <Text style={styles.dismissedToggleText}>Force Reanalyze</Text>
                       </Pressable>
+                      <Pressable
+                        style={[styles.dismissedToggle, !inspectorDebugReport ? styles.scanButtonDisabled : null]}
+                        onPress={logInspectorDebugReport}
+                        disabled={!inspectorDebugReport}
+                      >
+                        <Ionicons name="terminal-outline" size={15} color="#9ab2dd" />
+                        <Text style={styles.dismissedToggleText}>Log Report</Text>
+                      </Pressable>
                     </View>
 
                     <InspectorSection title="Base Metadata">
@@ -2460,23 +2918,47 @@ export default function ProjectDetailsScreen() {
 
                     <InspectorSection title="Scene and Theme">
                       <InspectorField
+                        label="Persisted Source"
+                        value={formatAnalysisSource(selectedInspectorPhoto.analysis?.sources?.scene)}
+                      />
+                      <InspectorField
                         label="Scene Tags"
-                        value={selectedInspectorPhoto.analysis?.sceneTags?.join(", ")}
+                        value={formatTagList(selectedInspectorPhoto.analysis?.sceneTags)}
                       />
                       <InspectorField
                         label="Theme Tags"
-                        value={selectedInspectorPhoto.analysis?.themeTags?.join(", ")}
+                        value={formatTagList(selectedInspectorPhoto.analysis?.themeTags)}
+                      />
+                    </InspectorSection>
+
+                    <InspectorSection title="Heuristic Scene/Face Preview">
+                      <InspectorField label="Debug-only Field" value="Live fallback preview is not persisted here" />
+                      <InspectorField label="Heuristic Scene Tags" value={formatTagList(heuristicScenePreview?.sceneTags)} />
+                      <InspectorField label="Heuristic Theme Tags" value={formatTagList(heuristicScenePreview?.themeTags)} />
+                      <InspectorField
+                        label="Heuristic Portrait-like"
+                        value={heuristicScenePreview?.subjectCues?.portraitLike}
+                      />
+                      <InspectorField
+                        label="Heuristic Group-photo-like"
+                        value={heuristicScenePreview?.subjectCues?.groupPhotoLike}
+                      />
+                      <InspectorField label="Heuristic Face Count" value={heuristicFacePreview?.faces?.faceCount} />
+                      <InspectorField label="Heuristic Has Face" value={heuristicFacePreview?.faces?.hasFace} />
+                      <InspectorField
+                        label="Heuristic Has Multiple Faces"
+                        value={heuristicFacePreview?.faces?.hasMultipleFaces}
                       />
                     </InspectorSection>
 
                     <InspectorSection title="Native Image Labels">
                       <InspectorField
                         label="Persisted Fields"
-                        value="analysis.nativeLabels, analysis.safeExternalTags"
+                        value="analysis.nativeLabels, analysis.sceneTags, analysis.themeTags, analysis.safeExternalTags"
                       />
                       <InspectorField
                         label="Product Behavior"
-                        value="Not used by suggestions or finalization yet"
+                        value="Raw labels are inspector-first; broader behavior consumes only normalized app tags"
                       />
                       <InspectorField
                         label="Persisted Native Labels"
@@ -2484,7 +2966,7 @@ export default function ProjectDetailsScreen() {
                       />
                       <InspectorField
                         label="Persisted Normalized Tags"
-                        value={selectedInspectorPhoto.analysis?.safeExternalTags?.join(", ")}
+                        value={formatTagList(selectedInspectorPhoto.analysis?.safeExternalTags)}
                       />
                     </InspectorSection>
 
@@ -2502,6 +2984,14 @@ export default function ProjectDetailsScreen() {
                         label="Raw Native Labels"
                         value={formatNativeLabelProbe(nativeLabelProbe, nativeLabelProbeBusy)}
                       />
+                      <InspectorField
+                        label="Live Normalized Tags"
+                        value={
+                          nativeLabelProbe?.available
+                            ? formatTagList(normalizeTagsFromNativeImageLabels(nativeLabelProbe.labels))
+                            : "—"
+                        }
+                      />
                     </InspectorSection>
 
                     <InspectorSection title="Subject Cues">
@@ -2516,11 +3006,46 @@ export default function ProjectDetailsScreen() {
                     </InspectorSection>
 
                     <InspectorSection title="Face Metadata">
+                      <InspectorField
+                        label="Persisted Source"
+                        value={formatAnalysisSource(selectedInspectorPhoto.analysis?.sources?.faces)}
+                      />
                       <InspectorField label="Face Count" value={selectedInspectorPhoto.analysis?.faces?.faceCount} />
                       <InspectorField label="Has Face" value={selectedInspectorPhoto.analysis?.faces?.hasFace} />
                       <InspectorField
                         label="Has Multiple Faces"
                         value={selectedInspectorPhoto.analysis?.faces?.hasMultipleFaces}
+                      />
+                    </InspectorSection>
+
+                    <InspectorSection title="Native Face Detection">
+                      <InspectorField
+                        label="Persisted Fields"
+                        value="analysis.nativeFaces, analysis.faces, analysis.subjectCues"
+                      />
+                      <InspectorField
+                        label="Product Behavior"
+                        value="No person recognition; raw face boxes stay local/debug-facing"
+                      />
+                      <InspectorField
+                        label="Persisted Native Faces"
+                        value={formatNativeFaces(selectedInspectorPhoto.analysis?.nativeFaces)}
+                      />
+                    </InspectorSection>
+
+                    <InspectorSection title="ML Kit Face Live Probe">
+                      <InspectorField label="Debug-only Field" value="Native face probe result is not persisted" />
+                      <InspectorField
+                        label="Native Source"
+                        value={nativeFaceProbeBusy ? "Checking..." : nativeFaceProbe?.source}
+                      />
+                      <InspectorField
+                        label="Native Module Available"
+                        value={nativeFaceProbeBusy ? "Checking..." : nativeFaceProbe?.available}
+                      />
+                      <InspectorField
+                        label="Raw Native Faces"
+                        value={formatNativeFaceProbe(nativeFaceProbe, nativeFaceProbeBusy)}
                       />
                     </InspectorSection>
 
@@ -2552,6 +3077,12 @@ export default function ProjectDetailsScreen() {
                         label="Local Embedding Ref"
                         value={selectedInspectorPhoto.analysis?.localOnly?.localEmbeddingRef}
                       />
+                    </InspectorSection>
+
+                    <InspectorSection title="Copyable Debug Report">
+                      <Text selectable style={styles.analysisCodeBlock}>
+                        {inspectorDebugReport}
+                      </Text>
                     </InspectorSection>
 
                     <InspectorSection title="Raw Analysis Snapshot">
@@ -3150,6 +3681,38 @@ const styles = StyleSheet.create({
     borderColor: "#20304d",
     padding: 16,
     gap: 10
+  },
+  clusterCard: {
+    borderRadius: 20,
+    backgroundColor: "#0f1b2f",
+    borderWidth: 1,
+    borderColor: "#294266",
+    padding: 16,
+    gap: 10
+  },
+  clusterScoreBadge: {
+    backgroundColor: "#10213f",
+    borderColor: "#2f80ff"
+  },
+  clusterScoreText: {
+    color: "#8fc2ff"
+  },
+  clusterBestPhotoRow: {
+    gap: 10,
+    paddingRight: 12
+  },
+  clusterBestPhoto: {
+    width: 74,
+    height: 74,
+    borderRadius: 16,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#2d4f82",
+    backgroundColor: "#14223a"
+  },
+  clusterBestPhotoImage: {
+    width: "100%",
+    height: "100%"
   },
   suggestionCardHeader: {
     flexDirection: "row",

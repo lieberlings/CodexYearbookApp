@@ -6,6 +6,20 @@ const PARTY_WINDOW_MS = 4 * 60 * 60 * 1000;
 const PARTY_CLUSTER_MIN_COUNT = 5;
 const PERSISTED_NATIVE_LABEL_THRESHOLD = 0.5;
 const MAX_PERSISTED_NATIVE_LABELS = 8;
+const SCENE_TAGS = new Set([
+  "animal",
+  "beach",
+  "city",
+  "food",
+  "group",
+  "indoor",
+  "landscape",
+  "mountain",
+  "outdoor",
+  "portrait",
+  "scenic",
+  "water"
+]);
 
 const NATIVE_LABEL_TAG_MAP: Record<string, string[]> = {
   beach: ["beach", "outdoor"],
@@ -56,18 +70,27 @@ export function normalizeTagsFromNativeImageLabels(labels: NativeImageLabel[]): 
   return Array.from(tags).sort();
 }
 
-function buildNativeLabelPatch(labels: NativeImageLabel[]): PhotoAnalysisPatch | undefined {
+function splitNativeTags(tags: string[]): Pick<PhotoAnalysisPatch, "sceneTags" | "themeTags"> {
+  const sceneTags = tags.filter((tag) => SCENE_TAGS.has(tag));
+  const themeTags = tags.filter((tag) => !SCENE_TAGS.has(tag));
+  return {
+    sceneTags: sceneTags.length > 0 ? sceneTags : undefined,
+    themeTags: themeTags.length > 0 ? themeTags : undefined
+  };
+}
+
+export function buildNativeLabelPatch(labels: NativeImageLabel[]): PhotoAnalysisPatch | undefined {
   const strongLabels = labels
     .filter((label) => label.confidence >= PERSISTED_NATIVE_LABEL_THRESHOLD)
     .sort((a, b) => b.confidence - a.confidence)
     .slice(0, MAX_PERSISTED_NATIVE_LABELS);
 
-  if (strongLabels.length === 0) {
-    return undefined;
-  }
-
   const normalizedTags = normalizeTagsFromNativeImageLabels(strongLabels);
+  const splitTags = splitNativeTags(normalizedTags);
   return {
+    sources: {
+      scene: "android-mlkit-image-labeling"
+    },
     nativeLabels: strongLabels.map((label) => ({
       source: "android-mlkit-image-labeling",
       text: label.text,
@@ -75,7 +98,10 @@ function buildNativeLabelPatch(labels: NativeImageLabel[]): PhotoAnalysisPatch |
       index: label.index,
       normalizedTag: NATIVE_LABEL_TAG_MAP[normalizeLabelKey(label.text)]?.[0]
     })),
-    safeExternalTags: normalizedTags.length > 0 ? normalizedTags : undefined
+    // Empty arrays intentionally clear stale heuristic tags from previous analysis runs.
+    sceneTags: splitTags.sceneTags ?? [],
+    themeTags: splitTags.themeTags ?? [],
+    safeExternalTags: normalizedTags
   };
 }
 
@@ -110,7 +136,7 @@ function getNearbyProjectClusterCount(input: PhotoAnalysisServiceInput): number 
   }).length;
 }
 
-export async function analyzePhotoScene(input: PhotoAnalysisServiceInput): Promise<PhotoAnalysisPatch | undefined> {
+export function analyzePhotoSceneHeuristics(input: PhotoAnalysisServiceInput): PhotoAnalysisPatch | undefined {
   const width = input.photo.width ?? 0;
   const height = input.photo.height ?? 0;
   const hasDimensions = width > 0 && height > 0;
@@ -167,24 +193,25 @@ export async function analyzePhotoScene(input: PhotoAnalysisServiceInput): Promi
     subjectCues.groupPhotoLike = true;
   }
 
-  const heuristicPatch: PhotoAnalysisPatch | undefined =
-    sceneTags.size === 0 && themeTags.size === 0 && Object.keys(subjectCues).length === 0
-      ? undefined
-      : {
-          sceneTags: Array.from(sceneTags).sort(),
-          themeTags: Array.from(themeTags).sort(),
-          subjectCues: Object.keys(subjectCues).length > 0 ? subjectCues : undefined
-        };
-
-  const nativeResult = await labelImageLocally(input.photo.uri);
-  const nativePatch = nativeResult.available ? buildNativeLabelPatch(nativeResult.labels) : undefined;
-
-  if (!heuristicPatch && !nativePatch) {
+  if (sceneTags.size === 0 && themeTags.size === 0 && Object.keys(subjectCues).length === 0) {
     return undefined;
   }
 
   return {
-    ...heuristicPatch,
-    ...nativePatch
+    sources: {
+      scene: "heuristic-fallback"
+    },
+    sceneTags: Array.from(sceneTags).sort(),
+    themeTags: Array.from(themeTags).sort(),
+    subjectCues: Object.keys(subjectCues).length > 0 ? subjectCues : undefined
   };
+}
+
+export async function analyzePhotoScene(input: PhotoAnalysisServiceInput): Promise<PhotoAnalysisPatch | undefined> {
+  const nativeResult = await labelImageLocally(input.photo.uri);
+  if (nativeResult.available) {
+    return buildNativeLabelPatch(nativeResult.labels);
+  }
+
+  return analyzePhotoSceneHeuristics(input);
 }

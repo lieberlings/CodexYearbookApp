@@ -104,6 +104,16 @@ export type PhotoFaceMetadata = {
   hasMultipleFaces?: boolean;
 };
 
+export type PhotoAnalysisSignalSource =
+  | "heuristic-fallback"
+  | "android-mlkit-image-labeling"
+  | "android-mlkit-face-detection";
+
+export type PhotoAnalysisSourceMetadata = {
+  scene?: PhotoAnalysisSignalSource;
+  faces?: PhotoAnalysisSignalSource;
+};
+
 export type PhotoSimilarityMetadata = {
   duplicateClusterId?: string;
   similarityClusterId?: string;
@@ -116,6 +126,22 @@ export type PhotoNativeImageLabelMetadata = {
   confidence: number;
   index?: number;
   normalizedTag?: string;
+};
+
+export type PhotoNativeFaceMetadata = {
+  source: "android-mlkit-face-detection";
+  bounds: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  headEulerAngleY?: number;
+  headEulerAngleZ?: number;
+  smilingProbability?: number;
+  leftEyeOpenProbability?: number;
+  rightEyeOpenProbability?: number;
+  trackingId?: number;
 };
 
 export type PhotoSensitiveAnalysisRefs = {
@@ -139,6 +165,7 @@ export type PhotoImportMetadata = {
 export type PhotoAnalysisMetadata = {
   analysisVersion?: number;
   analyzedAt?: string;
+  sources?: PhotoAnalysisSourceMetadata;
   quality?: PhotoQualityMetadata;
   sceneTags?: string[];
   themeTags?: string[];
@@ -146,6 +173,7 @@ export type PhotoAnalysisMetadata = {
   faces?: PhotoFaceMetadata;
   similarity?: PhotoSimilarityMetadata;
   nativeLabels?: PhotoNativeImageLabelMetadata[];
+  nativeFaces?: PhotoNativeFaceMetadata[];
   safeExternalTags?: string[];
   localOnly?: PhotoSensitiveAnalysisRefs;
 };

@@ -2,9 +2,11 @@ import { normalizePhotoLocation } from "../lib/photoLocation";
 import {
   Memory,
   PhotoAnalysisMetadata,
+  PhotoAnalysisSignalSource,
   PhotoImportMetadata,
   PhotoItem,
   PhotoNativeImageLabelMetadata,
+  PhotoNativeFaceMetadata,
   Project,
   ProjectTimelineMode,
   Suggestion
@@ -63,6 +65,14 @@ function normalizeTagList(value: unknown): string[] | undefined {
     .map((item) => (typeof item === "string" ? item.trim() : ""))
     .filter(Boolean);
   return normalized.length > 0 ? normalized : undefined;
+}
+
+function normalizeAnalysisSignalSource(value: unknown): PhotoAnalysisSignalSource | undefined {
+  return value === "heuristic-fallback" ||
+    value === "android-mlkit-image-labeling" ||
+    value === "android-mlkit-face-detection"
+    ? value
+    : undefined;
 }
 
 function normalizePhotoImportMetadata(
@@ -135,6 +145,10 @@ export function normalizePhotoAnalysisRecord(analysis: PhotoAnalysisMetadata | u
     similarityClusterId: normalizeOptionalString(analysis.similarity?.similarityClusterId),
     representativeScore: normalizeOptionalNumber(analysis.similarity?.representativeScore)
   };
+  const sources = {
+    scene: normalizeAnalysisSignalSource(analysis.sources?.scene),
+    faces: normalizeAnalysisSignalSource(analysis.sources?.faces)
+  };
   const nativeLabels = Array.isArray(analysis.nativeLabels)
     ? analysis.nativeLabels.reduce<PhotoNativeImageLabelMetadata[]>((labels, label) => {
         const text = normalizeOptionalString(label.text);
@@ -152,6 +166,31 @@ export function normalizePhotoAnalysisRecord(analysis: PhotoAnalysisMetadata | u
         return labels;
       }, [])
     : undefined;
+  const nativeFaces = Array.isArray(analysis.nativeFaces)
+    ? analysis.nativeFaces.reduce<PhotoNativeFaceMetadata[]>((faces, face) => {
+        if (face.source !== "android-mlkit-face-detection") {
+          return faces;
+        }
+        const x = normalizeOptionalNumber(face.bounds?.x);
+        const y = normalizeOptionalNumber(face.bounds?.y);
+        const width = normalizeOptionalNumber(face.bounds?.width);
+        const height = normalizeOptionalNumber(face.bounds?.height);
+        if (x === undefined || y === undefined || width === undefined || height === undefined) {
+          return faces;
+        }
+        faces.push({
+          source: "android-mlkit-face-detection",
+          bounds: { x, y, width, height },
+          headEulerAngleY: normalizeOptionalNumber(face.headEulerAngleY),
+          headEulerAngleZ: normalizeOptionalNumber(face.headEulerAngleZ),
+          smilingProbability: normalizeOptionalNumber(face.smilingProbability),
+          leftEyeOpenProbability: normalizeOptionalNumber(face.leftEyeOpenProbability),
+          rightEyeOpenProbability: normalizeOptionalNumber(face.rightEyeOpenProbability),
+          trackingId: normalizeOptionalNumber(face.trackingId)
+        });
+        return faces;
+      }, [])
+    : undefined;
   const localOnly = {
     privateFaceDataRef: normalizeOptionalString(analysis.localOnly?.privateFaceDataRef),
     localEmbeddingRef: normalizeOptionalString(analysis.localOnly?.localEmbeddingRef)
@@ -160,6 +199,7 @@ export function normalizePhotoAnalysisRecord(analysis: PhotoAnalysisMetadata | u
   const normalized: PhotoAnalysisMetadata = {
     analysisVersion: normalizeOptionalNumber(analysis.analysisVersion),
     analyzedAt: normalizeOptionalString(analysis.analyzedAt),
+    sources: Object.values(sources).some((value) => value !== undefined) ? sources : undefined,
     quality: Object.values(quality).some((value) => value !== undefined) ? quality : undefined,
     sceneTags: normalizeTagList(analysis.sceneTags),
     themeTags: normalizeTagList(analysis.themeTags),
@@ -167,6 +207,7 @@ export function normalizePhotoAnalysisRecord(analysis: PhotoAnalysisMetadata | u
     faces: Object.values(faces).some((value) => value !== undefined) ? faces : undefined,
     similarity: Object.values(similarity).some((value) => value !== undefined) ? similarity : undefined,
     nativeLabels: nativeLabels && nativeLabels.length > 0 ? nativeLabels : undefined,
+    nativeFaces: nativeFaces && nativeFaces.length > 0 ? nativeFaces : undefined,
     safeExternalTags: normalizeTagList(analysis.safeExternalTags),
     localOnly: Object.values(localOnly).some((value) => value !== undefined) ? localOnly : undefined
   };
@@ -192,6 +233,10 @@ export function mergePhotoAnalysisMetadata(
       ...existing?.quality,
       ...patch?.quality
     },
+    sources: {
+      ...existing?.sources,
+      ...patch?.sources
+    },
     sceneTags: patch?.sceneTags ?? existing?.sceneTags,
     themeTags: patch?.themeTags ?? existing?.themeTags,
     subjectCues: {
@@ -207,6 +252,7 @@ export function mergePhotoAnalysisMetadata(
       ...patch?.similarity
     },
     nativeLabels: patch?.nativeLabels ?? existing?.nativeLabels,
+    nativeFaces: patch?.nativeFaces ?? existing?.nativeFaces,
     safeExternalTags: patch?.safeExternalTags ?? existing?.safeExternalTags,
     localOnly: {
       ...existing?.localOnly,

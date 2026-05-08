@@ -39,6 +39,8 @@ export type MediaLibraryPhotoCatalogProbe = {
   queryAttempted: boolean;
   returnedCount: number;
   totalCount?: number;
+  hasNextPage?: boolean;
+  endCursor?: string;
   error?: string;
 };
 
@@ -49,13 +51,14 @@ export async function probeMediaLibraryAssetMetadata(
   return probeAndroidMediaLibraryAssetMetadata(assetId);
 }
 
-export async function getRecentMediaLibraryPhotoChoices(limit = 24): Promise<MediaLibraryPhotoChoice[]> {
+export async function getRecentMediaLibraryPhotoChoices(limit = 60): Promise<MediaLibraryPhotoChoice[]> {
   const result = await getRecentMediaLibraryPhotoChoicesWithProbe(limit);
   return result.choices;
 }
 
 export async function getRecentMediaLibraryPhotoChoicesWithProbe(
-  limit = 24
+  limit = 60,
+  after?: string
 ): Promise<{
   choices: MediaLibraryPhotoChoice[];
   probe: MediaLibraryPhotoCatalogProbe;
@@ -77,11 +80,16 @@ export async function getRecentMediaLibraryPhotoChoicesWithProbe(
   }
 
   try {
-    const page = await MediaLibrary.getAssetsAsync({
+    const queryOptions: Parameters<typeof MediaLibrary.getAssetsAsync>[0] = {
       first: limit,
       mediaType: MediaLibrary.MediaType.photo,
       sortBy: [MediaLibrary.SortBy.creationTime]
-    });
+    };
+    if (after) {
+      queryOptions.after = after;
+    }
+
+    const page = await MediaLibrary.getAssetsAsync(queryOptions);
 
     return {
       choices: page.assets.map((asset) => ({
@@ -100,7 +108,9 @@ export async function getRecentMediaLibraryPhotoChoicesWithProbe(
         requestGranted: permissionProbe.requestGranted,
         queryAttempted: true,
         returnedCount: page.assets.length,
-        totalCount: page.totalCount
+        totalCount: page.totalCount,
+        hasNextPage: page.hasNextPage,
+        endCursor: page.endCursor
       }
     };
   } catch (error) {

@@ -15,6 +15,7 @@ import {
 import { getRecentMediaLibraryPhotoChoicesWithProbe, MediaLibraryPhotoCatalogProbe, MediaLibraryPhotoChoice } from "../services/photoService";
 
 type SelectionMode = "single" | "multiple";
+const MEDIA_LIBRARY_PAGE_SIZE = 60;
 
 type Props = {
   visible: boolean;
@@ -67,10 +68,17 @@ export function MediaLibrarySelectionModal({
   const [choicesError, setChoicesError] = useState<string | undefined>(undefined);
   const [catalogProbe, setCatalogProbe] = useState<MediaLibraryPhotoCatalogProbe | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [thumbnailErrorIds, setThumbnailErrorIds] = useState<string[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | undefined>(undefined);
+  const [hasNextPage, setHasNextPage] = useState(false);
 
   useEffect(() => {
     if (!visible) {
       setSelectedIds([]);
+      setThumbnailErrorIds([]);
+      setChoices([]);
+      setNextCursor(undefined);
+      setHasNextPage(false);
       return;
     }
 
@@ -79,12 +87,14 @@ export function MediaLibrarySelectionModal({
       try {
         setChoicesBusy(true);
         setChoicesError(undefined);
-        const { choices: nextChoices, probe } = await getRecentMediaLibraryPhotoChoicesWithProbe();
+        const { choices: nextChoices, probe } = await getRecentMediaLibraryPhotoChoicesWithProbe(MEDIA_LIBRARY_PAGE_SIZE);
         if (cancelled) {
           return;
         }
         setChoices(nextChoices);
         setCatalogProbe(probe);
+        setNextCursor(probe.endCursor);
+        setHasNextPage(Boolean(probe.hasNextPage));
         if (nextChoices.length === 0) {
           if (!probe.permissionGranted) {
             setChoicesError(
@@ -130,6 +140,32 @@ export function MediaLibrarySelectionModal({
     };
   }, [visible]);
 
+  const loadMore = useCallback(async () => {
+    if (choicesBusy || confirming || !hasNextPage) {
+      return;
+    }
+
+    try {
+      setChoicesBusy(true);
+      setChoicesError(undefined);
+      const { choices: nextChoices, probe } = await getRecentMediaLibraryPhotoChoicesWithProbe(
+        MEDIA_LIBRARY_PAGE_SIZE,
+        nextCursor
+      );
+      setCatalogProbe(probe);
+      setNextCursor(probe.endCursor);
+      setHasNextPage(Boolean(probe.hasNextPage));
+      setChoices((prev) => {
+        const seen = new Set(prev.map((choice) => choice.id));
+        return [...prev, ...nextChoices.filter((choice) => !seen.has(choice.id))];
+      });
+    } catch (error) {
+      setChoicesError(error instanceof Error ? error.message : "Unable to load more Media Library photo assets.");
+    } finally {
+      setChoicesBusy(false);
+    }
+  }, [choicesBusy, confirming, hasNextPage, nextCursor]);
+
   const toggleSelection = useCallback(
     async (assetId: string) => {
       if (confirming) {
@@ -150,6 +186,10 @@ export function MediaLibrarySelectionModal({
     }
     await onConfirm(selectedIds);
   }, [confirming, onConfirm, selectedIds, selectionMode]);
+
+  const markThumbnailError = useCallback((assetId: string) => {
+    setThumbnailErrorIds((prev) => (prev.includes(assetId) ? prev : [...prev, assetId]));
+  }, []);
 
   return (
     <Modal transparent animationType="slide" visible={visible} onRequestClose={onClose}>
@@ -184,37 +224,76 @@ export function MediaLibrarySelectionModal({
                 </View>
               ) : null}
 
-              {choicesBusy ? (
+              {choicesBusy && choices.length === 0 ? (
                 <View style={styles.emptyCard}>
                   <ActivityIndicator color="#7fa7ff" />
                   <Text style={styles.emptyTitle}>Loading Media Library assets</Text>
                   <Text style={styles.emptyText}>Fetching recent photo assets for canonical project and memory imports.</Text>
                 </View>
               ) : choices.length > 0 ? (
-                <View style={styles.grid}>
-                  {choices.map((asset) => {
-                    const selected = selectedIds.includes(asset.id);
-                    return (
-                      <Pressable
-                        key={asset.id}
-                        style={[styles.gridItem, selected ? styles.gridItemSelected : null]}
-                        onPress={() => void toggleSelection(asset.id)}
-                        disabled={confirming}
-                      >
-                        <Image source={{ uri: asset.uri }} style={styles.gridImage} />
-                        <View style={[styles.badge, selected ? styles.badgeSelected : null]}>
-                          {confirming && (selectionMode === "single" || selected) ? (
-                            <ActivityIndicator color="#ffffff" size="small" />
+                <>
+                  <View style={styles.grid}>
+                    {choices.map((asset) => {
+                      const selected = selectedIds.includes(asset.id);
+                      const thumbnailFailed = thumbnailErrorIds.includes(asset.id);
+                      return (
+                        <Pressable
+                          key={asset.id}
+                          style={[styles.gridItem, selected ? styles.gridItemSelected : null]}
+                          onPress={() => void toggleSelection(asset.id)}
+                          disabled={confirming}
+                        >
+                          {thumbnailFailed ? (
+                            <View style={styles.thumbnailFallback}>
+                              <Ionicons name="image-outline" size={30} color="#6d82aa" />
+                              <Text numberOfLines={2} style={styles.thumbnailFallbackText}>
+                                Preview unavailable
+                              </Text>
+                            </View>
                           ) : (
-                            <Text style={[styles.badgeText, selected ? styles.badgeTextSelected : null]}>
-                              {selectionMode === "single" ? "Import" : selected ? "Selected" : "Select"}
-                            </Text>
+                            <Image
+                              source={{ uri: asset.uri }}
+                              style={styles.gridImage}
+                              resizeMode="cover"
+                              onError={() => markThumbnailError(asset.id)}
+                            />
                           )}
-                        </View>
+                          <View style={[styles.badge, selected ? styles.badgeSelected : null]}>
+                            {confirming && (selectionMode === "single" || selected) ? (
+                              <ActivityIndicator color="#ffffff" size="small" />
+                            ) : (
+                              <Text style={[styles.badgeText, selected ? styles.badgeTextSelected : null]}>
+                                {selectionMode === "single" ? "Import" : selected ? "Selected" : "Select"}
+                              </Text>
+                            )}
+                          </View>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                  <View style={styles.catalogFooter}>
+                    <Text style={styles.catalogFooterText}>
+                      Showing {choices.length}
+                      {catalogProbe?.totalCount ? ` of ${catalogProbe.totalCount}` : ""} Media Library photos.
+                      {thumbnailErrorIds.length > 0
+                        ? ` ${thumbnailErrorIds.length} preview thumbnail${thumbnailErrorIds.length === 1 ? "" : "s"} failed but can still be selected.`
+                        : ""}
+                    </Text>
+                    {hasNextPage ? (
+                      <Pressable
+                        style={[styles.loadMoreButton, choicesBusy || confirming ? styles.primaryButtonDisabled : null]}
+                        onPress={() => void loadMore()}
+                        disabled={choicesBusy || confirming}
+                      >
+                        {choicesBusy ? (
+                          <ActivityIndicator color="#eef4ff" />
+                        ) : (
+                          <Text style={styles.loadMoreButtonText}>Load More</Text>
+                        )}
                       </Pressable>
-                    );
-                  })}
-                </View>
+                    ) : null}
+                  </View>
+                </>
               ) : (
                 <View style={styles.emptyCard}>
                   <Ionicons name="albums-outline" size={30} color="#5d7097" />
@@ -384,6 +463,20 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%"
   },
+  thumbnailFallback: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingHorizontal: 10,
+    backgroundColor: "#101a2d"
+  },
+  thumbnailFallbackText: {
+    color: "#9eb0d3",
+    fontSize: 12,
+    fontWeight: "700",
+    textAlign: "center"
+  },
   badge: {
     position: "absolute",
     left: 10,
@@ -411,6 +504,31 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 12
+  },
+  catalogFooter: {
+    gap: 10,
+    alignItems: "center"
+  },
+  catalogFooterText: {
+    color: "#8ea3ca",
+    fontSize: 12,
+    fontWeight: "700",
+    textAlign: "center"
+  },
+  loadMoreButton: {
+    minHeight: 42,
+    borderRadius: 999,
+    backgroundColor: "#172a48",
+    borderWidth: 1,
+    borderColor: "#2d4f82",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 18
+  },
+  loadMoreButtonText: {
+    color: "#eef4ff",
+    fontSize: 13,
+    fontWeight: "800"
   },
   primaryButton: {
     flexGrow: 1,

@@ -62,15 +62,21 @@ function isWeakPhoto(photo: PhotoItem): boolean {
 }
 
 function getPhotoAnalysisTags(photo: PhotoItem): string[] {
-  const tags = new Set<string>([
-    ...(photo.analysis?.sceneTags ?? []),
-    ...(photo.analysis?.themeTags ?? [])
-  ]);
+  const useSceneTags = photo.analysis?.sources?.scene !== "android-mlkit-image-labeling";
+  const useFaceCues = photo.analysis?.sources?.faces !== "android-mlkit-face-detection";
+  const tags = new Set<string>(
+    useSceneTags
+      ? [
+          ...(photo.analysis?.sceneTags ?? []),
+          ...(photo.analysis?.themeTags ?? [])
+        ]
+      : []
+  );
 
-  if (photo.analysis?.subjectCues?.portraitLike) {
+  if (useFaceCues && photo.analysis?.subjectCues?.portraitLike) {
     tags.add("portrait");
   }
-  if (photo.analysis?.subjectCues?.groupPhotoLike) {
+  if (useFaceCues && photo.analysis?.subjectCues?.groupPhotoLike) {
     tags.add("group");
   }
 

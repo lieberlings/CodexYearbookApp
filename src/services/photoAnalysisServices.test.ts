@@ -1,8 +1,8 @@
 import { describe, expect, it } from "@jest/globals";
 import { PhotoItem, Project } from "../types";
-import { detectPhotoFaces } from "./faceDetectionService";
+import { buildNativeFacePatch, detectPhotoFacesHeuristic } from "./faceDetectionService";
 import { analyzePhotoQuality } from "./photoQualityService";
-import { analyzePhotoScene, normalizeTagsFromNativeImageLabels } from "./sceneAnalysisService";
+import { analyzePhotoScene, buildNativeLabelPatch, normalizeTagsFromNativeImageLabels } from "./sceneAnalysisService";
 
 function makeProject(overrides: Partial<Project> & Pick<Project, "id" | "name" | "projectType" | "timelineMode" | "includeFutureProjectPhotos" | "assistLevel" | "styleIntensity" | "createdAt" | "updatedAt">): Project {
   return {
@@ -130,9 +130,10 @@ describe("photo analysis services", () => {
 
     expect(scene?.sceneTags).toEqual(expect.arrayContaining(["landscape", "outdoor", "scenic"]));
     expect(scene?.themeTags).toEqual(expect.arrayContaining(["nature-like", "party-like", "sunset-like"]));
+    expect(scene?.sources?.scene).toBe("heuristic-fallback");
   });
 
-  it("normalizes trusted native image labels into privacy-safe tags without changing scene tags directly", () => {
+  it("normalizes trusted native image labels into the restrained app tag vocabulary", () => {
     const tags = normalizeTagsFromNativeImageLabels([
       { text: "Beach", confidence: 0.91, index: 1 },
       { text: "Dog", confidence: 0.88, index: 2 },
@@ -140,6 +141,76 @@ describe("photo analysis services", () => {
     ]);
 
     expect(tags).toEqual(["animal", "beach", "outdoor", "pet-like"]);
+  });
+
+  it("builds a native image-label patch with normalized scene/theme tags and raw labels separated", () => {
+    const patch = buildNativeLabelPatch([
+      { text: "Beach", confidence: 0.91, index: 1 },
+      { text: "Sunset", confidence: 0.72, index: 2 },
+      { text: "Vehicle", confidence: 0.49, index: 3 }
+    ]);
+
+    expect(patch).toMatchObject({
+      sources: {
+        scene: "android-mlkit-image-labeling"
+      },
+      sceneTags: ["beach", "outdoor", "scenic"],
+      themeTags: ["sunset-like"],
+      safeExternalTags: ["beach", "outdoor", "scenic", "sunset-like"],
+      nativeLabels: [
+        {
+          source: "android-mlkit-image-labeling",
+          text: "Beach",
+          confidence: 0.91,
+          index: 1,
+          normalizedTag: "beach"
+        },
+        {
+          source: "android-mlkit-image-labeling",
+          text: "Sunset",
+          confidence: 0.72,
+          index: 2,
+          normalizedTag: "sunset-like"
+        }
+      ]
+    });
+  });
+
+  it("clears stale heuristic scene tags when native labels have no app-level mapping", () => {
+    const patch = buildNativeLabelPatch([
+      { text: "Fun", confidence: 0.91, index: 386 },
+      { text: "Product", confidence: 0.88, index: 78 },
+      { text: "Cool", confidence: 0.87, index: 303 }
+    ]);
+
+    expect(patch).toMatchObject({
+      sources: {
+        scene: "android-mlkit-image-labeling"
+      },
+      sceneTags: [],
+      themeTags: [],
+      safeExternalTags: [],
+      nativeLabels: [
+        {
+          source: "android-mlkit-image-labeling",
+          text: "Fun",
+          confidence: 0.91,
+          index: 386
+        },
+        {
+          source: "android-mlkit-image-labeling",
+          text: "Product",
+          confidence: 0.88,
+          index: 78
+        },
+        {
+          source: "android-mlkit-image-labeling",
+          text: "Cool",
+          confidence: 0.87,
+          index: 303
+        }
+      ]
+    });
   });
 
   it("adds privacy-safe face groundwork from portrait/group cues without exposing identity metadata", () => {
@@ -176,18 +247,21 @@ describe("photo analysis services", () => {
       }
     });
 
-    const portraitFaces = detectPhotoFaces({
+    const portraitFaces = detectPhotoFacesHeuristic({
       photo: portraitPhoto,
       projectPhotos: [portraitPhoto, groupPhoto],
       now: "2024-07-11T00:00:00.000Z"
     });
-    const groupFaces = detectPhotoFaces({
+    const groupFaces = detectPhotoFacesHeuristic({
       photo: groupPhoto,
       projectPhotos: [portraitPhoto, groupPhoto],
       now: "2024-07-11T00:00:00.000Z"
     });
 
     expect(portraitFaces).toEqual({
+      sources: {
+        faces: "heuristic-fallback"
+      },
       faces: {
         faceCount: 1,
         hasFace: true,
@@ -195,6 +269,9 @@ describe("photo analysis services", () => {
       }
     });
     expect(groupFaces).toEqual({
+      sources: {
+        faces: "heuristic-fallback"
+      },
       faces: {
         faceCount: 2,
         hasFace: true,
@@ -202,5 +279,53 @@ describe("photo analysis services", () => {
       }
     });
     expect("localOnly" in (groupFaces ?? {})).toBe(false);
+  });
+
+  it("normalizes native face detection into face metadata without identity recognition", () => {
+    const photo = makePhoto({
+      id: "native-face",
+      projectId: "project-1",
+      uri: "file:///native-face.jpg",
+      width: 1000,
+      height: 1000,
+      capturedAt: "2024-07-10T10:00:00.000Z",
+      addedAt: "2024-07-10T10:00:00.000Z"
+    });
+
+    const patch = buildNativeFacePatch(
+      [
+        {
+          bounds: { x: 100, y: 120, width: 260, height: 280 },
+          smilingProbability: 0.65
+        }
+      ],
+      {
+        photo,
+        projectPhotos: [photo],
+        now: "2024-07-11T00:00:00.000Z"
+      }
+    );
+
+    expect(patch).toEqual({
+      sources: {
+        faces: "android-mlkit-face-detection"
+      },
+      faces: {
+        faceCount: 1,
+        hasFace: true,
+        hasMultipleFaces: false
+      },
+      subjectCues: {
+        portraitLike: true,
+        groupPhotoLike: undefined
+      },
+      nativeFaces: [
+        {
+          source: "android-mlkit-face-detection",
+          bounds: { x: 100, y: 120, width: 260, height: 280 },
+          smilingProbability: 0.65
+        }
+      ]
+    });
   });
 });

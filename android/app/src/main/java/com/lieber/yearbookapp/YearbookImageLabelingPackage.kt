@@ -7,7 +7,10 @@ import com.facebook.react.uimanager.ViewManager
 
 class YearbookImageLabelingPackage : ReactPackage {
   override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> =
-    listOf(YearbookImageLabelingModule(reactContext))
+    listOf(
+      YearbookImageLabelingModule(reactContext),
+      YearbookFaceDetectionModule(reactContext)
+    )
 
   override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> =
     emptyList()

@@ -51,6 +51,10 @@ describe("appDataHelpers Milestone 2 foundations", () => {
         analysis: {
           analysisVersion: 3,
           analyzedAt: "2024-02-01T10:00:00.000Z",
+          sources: {
+            scene: "android-mlkit-image-labeling",
+            faces: "android-mlkit-face-detection"
+          },
           quality: {
             qualityScore: 0.84,
             heroCandidateScore: 0.91,
@@ -87,6 +91,18 @@ describe("appDataHelpers Milestone 2 foundations", () => {
               confidence: 0.8
             }
           ],
+          nativeFaces: [
+            {
+              source: "android-mlkit-face-detection",
+              bounds: {
+                x: 10,
+                y: 20,
+                width: 120,
+                height: 140
+              },
+              smilingProbability: 0.74
+            }
+          ],
           safeExternalTags: [" seaside ", "", "travel"],
           localOnly: {
             privateFaceDataRef: " face-ref-1 ",
@@ -100,6 +116,10 @@ describe("appDataHelpers Milestone 2 foundations", () => {
     expect(normalized?.analysis).toEqual({
       analysisVersion: 3,
       analyzedAt: "2024-02-01T10:00:00.000Z",
+      sources: {
+        scene: "android-mlkit-image-labeling",
+        faces: "android-mlkit-face-detection"
+      },
       quality: {
         qualityScore: 0.84,
         heroCandidateScore: 0.91,
@@ -129,6 +149,18 @@ describe("appDataHelpers Milestone 2 foundations", () => {
           confidence: 0.9321,
           index: 12,
           normalizedTag: "beach"
+        }
+      ],
+      nativeFaces: [
+        {
+          source: "android-mlkit-face-detection",
+          bounds: {
+            x: 10,
+            y: 20,
+            width: 120,
+            height: 140
+          },
+          smilingProbability: 0.74
         }
       ],
       safeExternalTags: ["seaside", "travel"],

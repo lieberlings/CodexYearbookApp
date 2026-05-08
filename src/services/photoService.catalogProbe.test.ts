@@ -87,7 +87,9 @@ describe("getRecentMediaLibraryPhotoChoicesWithProbe", () => {
           creationTime: 1710000000000
         }
       ],
-      totalCount: 42
+      totalCount: 42,
+      hasNextPage: true,
+      endCursor: "cursor-1"
     });
 
     const result = await getRecentMediaLibraryPhotoChoicesWithProbe(12);
@@ -115,7 +117,32 @@ describe("getRecentMediaLibraryPhotoChoicesWithProbe", () => {
       requestGranted: true,
       queryAttempted: true,
       returnedCount: 1,
-      totalCount: 42
+      totalCount: 42,
+      hasNextPage: true,
+      endCursor: "cursor-1"
+    });
+  });
+
+  it("requests the next media-library page when an after cursor is provided", async () => {
+    mockGetPermissionsAsync.mockResolvedValue({
+      granted: true,
+      status: "granted",
+      canAskAgain: true
+    });
+    mockGetAssetsAsync.mockResolvedValue({
+      assets: [],
+      totalCount: 42,
+      hasNextPage: false,
+      endCursor: undefined
+    });
+
+    await getRecentMediaLibraryPhotoChoicesWithProbe(60, "cursor-1");
+
+    expect(mockGetAssetsAsync).toHaveBeenCalledWith({
+      first: 60,
+      after: "cursor-1",
+      mediaType: "photo",
+      sortBy: ["creationTime"]
     });
   });
 
