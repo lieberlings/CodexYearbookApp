@@ -1,496 +1,208 @@
-# Photobook Implementation Roadmap
+# Current Engineering Roadmap — MVP Reset
 
-## Purpose
+## Why the roadmap changed
+The app has working prototypes for project photo pools, image analysis, native ML Kit, cluster inspection, and project-level grouping. These are useful, but they are too complex for the current MVP.
 
-This roadmap translates the product vision into implementation phases that fit the existing architecture.
+The MVP roadmap now prioritizes:
+- memory-level editing
+- on-device date/location suggested memories
+- user-led theme picker flows
+- simple finalization
 
-The current codebase already has strong foundations:
-- local-first app structure
-- `Project -> Memory -> PageSection -> Photo` domain model
-- `AppContext` as central editing/data boundary
-- shared preview/export/editor rendering assumptions
-- basic prompt engine using burst/location/time logic
+## Current MVP architecture direction
 
-The goal is to extend this architecture, not replace it.
+### User-visible entities
+- Project
+- Memory
+- Suggested Memory
+- Theme Page
+- Finalization
 
----
+### Internal entities
+- LibraryScanCandidate
+- CandidatePhotoRef
+- SuggestedMemoryCandidate
+- ThemePhotoSelection
 
-## Core Engineering Principles
+### Hidden/dev-only infrastructure
+- single-image analysis inspector
+- cluster inspector
+- media-library probe tools
+- raw ML Kit label/face debug output
 
-### 1. Preserve canonical data flow
-`AppContext` should remain the main orchestrator for project and memory operations.
+## Phase 1 — MVP UI reset
 
-### 2. Prefer extension over rewrite
-Existing page generation, preview, export, and storage should be incrementally evolved.
+### Goal
+Simplify the project screen and remove debug-heavy concepts from normal UX.
 
-### 3. Intelligence produces suggestions, not hidden mutations
-New smart features should create suggestion objects that users can accept or dismiss.
+### Tasks
+- hide project-level photo pool UI
+- hide image analysis inspector behind dev-only access
+- hide cluster inspector behind dev-only access
+- hide media-library probe tools behind dev-only access
+- preserve memory list and memory editor
+- preserve suggested memory placeholder/section
+- preserve finalization entry if already available
 
-### 4. Protect privacy boundaries explicitly
-Sensitive analysis must remain local-first wherever feasible.
+### Definition of done
+Normal users see:
+- project summary
+- memories
+- suggested memories
+- suggested theme pages
+- finalization
 
-### 5. Build for yearbooks and vacations first
-Every major decision should be evaluated against these use cases first.
+Normal users do not see:
+- raw clusters
+- raw native labels
+- raw face metadata
+- probe buttons
+- project photo management
 
----
+## Phase 2 — On-device library scan for suggested memories
 
-## Target Domain Additions
+### Goal
+Generate suggested event memories from local media-library metadata without requiring project-level photo import.
 
-## Project
-Add fields such as:
-- `projectType`
-- `timelineMode` (`ongoing | past | hybrid`)
-- `startDate`
-- `endDate`
-- `assistLevel`
-- `styleIntensity`
-- `privacyMode`
-- `collaborators`
-- `entityProfiles`
-- `finalizationState`
-
-## Memory
-Add:
-- `kind` (`event | collection | hybrid`)
-- `status` (`suggested | watching | active | finalized | archived`)
-- `membershipMode` (`time | semantic | mixed | manual`)
-- `dateRange?`
-- `themeTags`
-- `hiddenTags`
-- `placeholderPageCount?`
-- `sourceSuggestionId?`
-
-## Suggestion
-New model:
-- `id`
-- `projectId`
-- `type` (`event | collection | photo-addition | style | finalization`)
-- `status` (`new | snoozed | dismissed | accepted`)
-- `confidence`
-- `reasons[]`
-- `candidatePhotoIds[]`
-- `candidateTags[]`
-- `proposedTitle`
-- `createdFromSignals`
-
-## Photo metadata layer
-Extend photo-level metadata handling:
+### Inputs
+- project timeline mode
+- start/end date
+- scan interval
+- on-device media-library assets
 - timestamp
-- geodata if allowed
-- image quality score
-- duplicate/near-duplicate grouping
-- scene/theme tags
-- entity/person tags
-- safe-to-external generalized tags
+- GPS/location when available
+- asset id
+- dimensions
+- optional face/quality signals
 
----
+### Output
+SuggestedMemory candidates with:
+- id
+- projectId
+- title
+- candidate photo refs
+- date span
+- location summary
+- score
+- explanation
+- status:
+  - new
+  - snoozed
+  - accepted
+  - rejected
 
-## Architecture Workstreams
+### Requirements
+- scan by date range
+- detect bursts/time clusters
+- detect location clusters and location changes
+- do not import candidate photos automatically
+- on accept, import selected photos into a normal memory
+- on reject, discard candidate refs
+- preserve stable suggestion ids across repeated scans
 
-### Workstream A: Domain model and persistence
-Primary responsibility:
-- types
-- storage
-- migrations
-- model safety
-- backward compatibility
-
-Likely files:
-- `src/types.ts`
-- `src/storage.ts`
-- migration helpers
-- `src/context/AppContext.tsx`
-
-### Workstream B: Suggestion engine
-Primary responsibility:
-- photo metadata extraction
-- event clustering
-- recurring collection detection
-- suggestion generation
-- explanation strings
-
-Likely files:
-- `src/services/promptEngine.ts` -> evolve into broader suggestion engine
-- metadata helpers
-- indexing/background scan services
-
-### Workstream C: Project UX surfaces
-Primary responsibility:
-- project tabs/sections
-- suggestions screen
-- watching state
-- finalization flow
-- memory creation flows
-
-Likely files:
-- project screens
-- prompt/suggestion UI
-- memory detail/edit screens
-
-### Workstream D: Layout and page-generation evolution
-Primary responsibility:
-- new page archetypes
-- collection spread layouts
-- finalization-added pages
-- consistency with preview/export
-
-Likely files:
-- `src/layout/templates.ts`
-- `src/layout/pagination.ts`
-- related rendering components
-
-### Workstream E: Privacy and sync
-Primary responsibility:
-- local sensitive analysis boundaries
-- collaboration sync design
-- safe external generation boundaries
-
----
-
-## Phased Roadmap
-
-## Phase 1 — Smart Project Setup & Suggestion Foundation
+## Phase 3 — Ongoing and hybrid scan behavior
 
 ### Goal
-Turn the app from a mostly manual photobook builder into a suggestion-driven builder without disrupting existing editing flows.
+Make ongoing and hybrid projects useful without depending on unreliable background scheduling.
 
-### Deliverables
-1. Extend domain models:
-   - `Memory.kind`
-   - `Memory.status`
-   - `Suggestion`
-   - `Project.timelineMode`
-   - `Project.assistLevel`
-   - `Project.styleIntensity`
+### Scan interval options
+- manual
+- 1 day
+- 1 week
+- 1 month
 
-2. Add persistence and migrations for new fields.
+### MVP behavior
+- scan manually
+- scan on project open when interval elapsed
+- record lastScanAt
+- dedupe against accepted/rejected/snoozed suggestions
 
-3. Replace standalone “prompt center” thinking with project-scoped suggestions.
+### Deferred
+- true background scanning
+- push notifications
+- cross-device sync
 
-4. Add project settings UI for:
-   - project type
-   - timeline mode
-   - assist level
-   - style intensity
-   - date range
-
-5. Add retroactive scan on project creation.
-
-6. Create first event-memory suggestions from existing signals:
-   - time clusters
-   - burst patterns
-   - location changes
-
-7. Add user actions:
-   - accept
-   - dismiss
-   - snooze
-
-8. Add “why suggested” explanation text.
-
-### Acceptance criteria
-- A user can create a yearbook or vacation project with a date range.
-- The app can scan relevant photos and show project-scoped suggestions.
-- Suggestions can be accepted into memories or dismissed.
-- Existing editor, preview, and export still work.
-
-### Notes
-This phase should be conservative and low-risk.
-Do not block progress on advanced AI or collaboration.
-
----
-
-## Phase 2 — Event Detection Improvements & Collection Foundation
+## Phase 4 — Theme page picker/search
 
 ### Goal
-Add useful recurring-theme support and make smart suggestions much more relevant for yearbooks and vacations.
+Support user-led theme pages using picker/search flows.
 
-### Deliverables
-1. Improve event clustering logic:
-   - better cluster grouping
-   - dedupe handling
-   - hero-photo selection improvements
+### Workflow
+1. user chooses a suggested theme or enters custom term
+2. app opens Android Photo Picker search-highlight flow where available
+3. user selects photos
+4. user chooses create new theme or add to existing theme
+5. app imports selected photos at highest available quality
 
-2. Add collection memory support:
-   - `kind = collection`
-   - watching state
-   - manual collection creation
-   - collection metadata and rule scaffolding
+### Android implementation direction
+Use Android Photo Picker search highlighting where available:
+- `EXTRA_PICK_IMAGES_HIGHLIGHT_SEARCH_RESULTS`
+- `KEY_PICK_IMAGES_HIGHLIGHT_SEARCH_TEXT_QUERY`
 
-3. Add collection suggestion generation for early supported themes:
-   - faces/person profiles later
-   - pets
-   - hiking
-   - scenic views
-   - food highlights
-   - family/group patterns where feasible
+Fallback:
+- show the suggested search term in the app
+- open picker normally
+- user searches/selects manually
 
-4. Add candidate photo-addition suggestions to existing memories.
+### Requirements
+- selected photos only
+- no unattended cloud scanning
+- preserve source dimensions
+- preserve highest available/original-quality source
+- record source metadata
 
-5. Add collection-specific memory view behavior:
-   - candidate photo count
-   - recommended picks
-   - “keep watching”
-   - optional placeholder page count
+### Deferred
+- iOS equivalent
+- web equivalent
+- automatic theme clustering
+- Gemini/Nano interpretation
+- CLIP/vector grouping
 
-### Acceptance criteria
-- A project can contain both event and collection memories.
-- A collection can be created manually or from suggestion.
-- Collection suggestions can remain in watching state.
-- Users can review and accept suggested photo additions.
-
-### Notes
-Do not overcomplicate automated semantic detection initially.
-Manual collection creation with smart fill is acceptable early.
-
----
-
-## Phase 3 — Finalization Flow
+## Phase 5 — Finalization
 
 ### Goal
-Provide a guided finishing stage that helps users add emotional richness and quality polish near the end.
+Help users finish a book using already accepted material.
 
-### Deliverables
-1. Add a `Finalize` project section.
-2. Add finalization scans for:
-   - missing moments
-   - recurring collections now strong enough to suggest
-   - strongest unused photos
-   - cover and ending page improvements
-   - visual balance issues
+### Inputs
+- photos in accepted memories
+- photos in accepted theme pages
 
-3. Add finalization suggestion type:
-   - `type = finalization`
+### Behavior
+- show unused accepted photos
+- allow user to add to pages or discard
+- suggest simple wrap-up pages
 
-4. Add guided finalization flow with small steps:
-   - missing moments
-   - highlight collections
-   - best unused photos
-   - book polish
+### Deferred
+- scanning entire raw library during finalization
+- automatic book generation
+- commerce/order flow
 
-5. Add placeholder page / reserved spread support for collection memories.
+## Phase 6 — Future intelligence
 
-### Acceptance criteria
-- A mostly finished project can enter finalization.
-- The app proposes optional additions and polish.
-- The user can skip finalization and still proceed.
+### Later improvements
+- optional native image analysis
+- better quality scoring
+- person/profile features
+- Gemini/Nano cluster interpretation
+- cloud picker integration
+- iOS/web parity
 
-### Notes
-This is a major product differentiator.
-It also solves the problem of themes that become meaningful only near the end.
+These should not block the MVP.
 
----
+## Engineering rules for MVP reset
 
-## Phase 4 — Privacy-Safe Person Features
+### Do
+- keep memory editor stable
+- use temporary library candidate refs
+- keep accepted photos as memory/theme photos
+- keep scans scoped to project settings
+- preserve canonical media resolver work
+- preserve Android GPS handling
 
-### Goal
-Enable high-value yearbook features like person-driven collections while protecting user trust.
-
-### Deliverables
-1. Add local person profile support.
-2. Add on-device face clustering / person matching if feasible in chosen stack.
-3. Add project entity profiles:
-   - people
-   - pets
-   - possibly named themes
-
-4. Add person-driven suggestions:
-   - Leo Through the Year
-   - Family Moments
-   - Faces mosaic candidate pages
-
-5. Add controls:
-   - disable people recognition
-   - remove a person profile
-   - hide a person from suggestions
-
-### Acceptance criteria
-- Person-based collections work without raw identity needing to leave the private layer.
-- Users have clear privacy controls.
-
-### Notes
-Do not let this phase delay earlier product value.
-This is powerful, but complexity is high.
-
----
-
-## Phase 5 — Collaboration v1
-
-### Goal
-Allow low-complexity shared contribution.
-
-### Deliverables
-1. Add project invitations.
-2. Add simple role model:
-   - owner
-   - contributor
-
-3. Sync:
-   - project metadata
-   - memories
-   - added photos
-   - accepted suggestion states
-
-4. Add owner moderation where needed for contributed photos.
-
-### Acceptance criteria
-- A contributor can add photos to a project.
-- The owner can see and use contributed content.
-- Editing authority remains with the owner.
-
-### Notes
-Do not attempt live collaborative layout editing in v1.
-
----
-
-## Phase 6 — Design Personalization & Decorative Assistance
-
-### Goal
-Improve emotional quality without breaking tasteful defaults.
-
-### Deliverables
-1. Add style intensity settings if not already complete:
-   - Minimal
-   - Warm
-   - Playful
-   - Expressive
-
-2. Add memory-level style overrides.
-3. Add generalized tag-driven decorative suggestions:
-   - borders
-   - accents
-   - stickers
-   - background cues
-
-4. Add explicit “generate sticker” or similar optional prompt-based decoration.
-5. Add preview-before-apply on all generated decorations.
-
-### Acceptance criteria
-- Decoration remains subtle by default.
-- Users can opt into more expression when desired.
-
----
-
-## Phase 7 — Ordering & Commerce
-
-### Goal
-Make the product commercially complete.
-
-### Deliverables
-1. Add print spec handling.
-2. Add book option selection:
-   - size
-   - page count
-   - paper/cover options as needed
-
-3. Add checkout flow.
-4. Add shipping flow.
-5. Add reorder path.
-
-### Acceptance criteria
-- A finished book can be ordered end-to-end in-app.
-
-### Notes
-This is not early priority, but domain assumptions should keep this future-compatible.
-
----
-
-## Milestone Recommendation
-
-### Milestone 1
-Smart setup + event suggestions
-
-### Milestone 2
-Collections + watching
-
-### Milestone 3
-Finalization
-
-These three milestones alone create a strong product foundation.
-
----
-
-## Suggested Implementation Order for Current Repo
-
-1. Extend types and storage models.
-2. Add migrations for new project and memory fields.
-3. Introduce `Suggestion` domain objects.
-4. Update `AppContext` to manage suggestions and memory conversion.
-5. Add project-level Suggestions UI.
-6. Add project creation flow updates for timeline and assist settings.
-7. Add retroactive scanning.
-8. Refactor prompt engine into broader suggestion engine.
-9. Add collection support.
-10. Add finalization.
-
----
-
-## Suggested Technical Boundaries
-
-### Local-only or privacy-sensitive
-Prefer local-first for:
-- person recognition
-- child profile associations
-- sensitive project identity metadata
-- high-resolution photo analysis if feasible
-
-### Safe-to-external
-Potentially safe to externalize:
-- generalized, non-identifying theme tags
-- decorative generation prompts
-- print/order operations
-- sync metadata where properly secured
-
----
-
-## Testing Strategy
-
-### Unit tests
-- clustering logic
-- suggestion generation
-- memory conversion
-- migration safety
-- layout selection
-
-### Integration tests
-- project creation with retro scan
-- accept/dismiss suggestion flows
-- memory creation from suggestion
-- finalization flow
-
-### UX validation tests
-Run scenario tests for:
-- yearbook parent
-- vacation traveler
-- privacy-sensitive parent
-- contributor adds photos to owner project
-
----
-
-## Risks
-
-### Product risks
-- over-suggesting
-- confusing event vs collection behavior
-- privacy ambiguity
-- noisy finalization flow
-
-### Technical risks
-- storage migrations
-- performance of repeated scanning
-- too much logic inside UI components
-- over-coupling suggestion engine to render/editor code
-
----
-
-## Recommended Immediate Next Tasks
-
-1. Add new domain types and migration plan.
-2. Convert prompt-engine outputs into `Suggestion` objects.
-3. Add project-scoped Suggestions screen.
-4. Add project setup fields for timeline and assist level.
-5. Add retroactive scan entry point.
-6. Add simple manual collection memory type before automating more collection detection.
-7. Stub finalization screen early.
-
-This order creates product momentum while keeping implementation stable.
+### Do not
+- expose project photo pool as normal UX
+- auto-import suggestion photos
+- depend on raw ML Kit labels for core MVP behavior
+- depend on cloud Google Photos full-library scanning
+- require full image analysis for suggested memories
+- expand debug tooling in normal UX
