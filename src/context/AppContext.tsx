@@ -54,6 +54,7 @@ type AppContextValue = {
   ) => Promise<Pick<PhotoAnalysisRunResult, "analyzedPhotoIds" | "skippedPhotoIds">>;
   scanProjectSuggestions: (projectId: string, scopeOverrides?: ProjectPhotoScopeOverrides) => Promise<Suggestion[]>;
   acceptSuggestion: (suggestionId: string) => Promise<string | undefined>;
+  linkSuggestionToMemory: (suggestionId: string, memoryId: string) => void;
   keepWatchingSuggestion: (suggestionId: string) => void;
   dismissSuggestion: (suggestionId: string) => void;
   snoozeSuggestion: (suggestionId: string) => void;
@@ -1352,6 +1353,10 @@ export function AppProvider({ children }: PropsWithChildren) {
     [createMemory, projects, suggestions]
   );
 
+  const linkSuggestionToMemory = useCallback((suggestionId: string, memoryId: string) => {
+    setSuggestions((prev) => markSuggestionAccepted(prev, suggestionId, memoryId));
+  }, []);
+
   const keepWatchingSuggestion = useCallback((suggestionId: string) => {
     updateSuggestionStatus(suggestionId, "watching");
   }, [updateSuggestionStatus]);
@@ -1455,6 +1460,7 @@ export function AppProvider({ children }: PropsWithChildren) {
       analyzeProjectPhotos,
       scanProjectSuggestions,
       acceptSuggestion,
+      linkSuggestionToMemory,
       keepWatchingSuggestion,
       dismissSuggestion,
       snoozeSuggestion,
@@ -1503,6 +1509,7 @@ export function AppProvider({ children }: PropsWithChildren) {
       addPhotosToProject,
       assignPhotosToMemory,
       acceptSuggestion,
+      linkSuggestionToMemory,
       addPhotosToMemory,
       dismissSuggestion,
       createMemory,

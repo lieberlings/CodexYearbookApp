@@ -56,6 +56,7 @@ import {
 } from "../../src/types";
 
 type MemoryComposerMode = "create" | "edit";
+type ProjectAddIntent = "memory" | "collection" | "suggestions";
 type StatusCardTone = "info" | "success" | "error" | "empty";
 type StatusCard = {
   icon: keyof typeof Ionicons.glyphMap;
@@ -73,6 +74,10 @@ type ThumbnailChoice =
   | { kind: "staged"; stagedKey: string };
 
 type InspectorFieldValue = string | number | boolean | null | undefined;
+
+const DEV_TOOLS_ENABLED = __DEV__;
+const INLINE_PROJECT_SECTIONS_ENABLED = false;
+const SUGGESTED_THEME_PAGE_LABELS = ["Pets", "Beach", "Birthdays", "Hiking", "Funny faces"];
 type InspectorDebugReportInput = {
   projectId: string;
   photo: PhotoItem;
@@ -456,13 +461,15 @@ function buildStagedAssets(assets: PickedPhotoAsset[]): StagedAsset[] {
 function getThumbnailUri(
   choice: ThumbnailChoice | undefined,
   existingPhotos: PhotoItem[],
-  stagedAssets: StagedAsset[]
+  stagedAssets: StagedAsset[],
+  projectPhotos: PhotoItem[] = []
 ): string | undefined {
   if (!choice) {
     return undefined;
   }
   if (choice.kind === "existing") {
-    return existingPhotos.find((photo) => photo.id === choice.photoId)?.uri;
+    return existingPhotos.find((photo) => photo.id === choice.photoId)?.uri
+      ?? projectPhotos.find((photo) => photo.id === choice.photoId)?.uri;
   }
   return stagedAssets.find((asset) => asset.key === choice.stagedKey)?.uri;
 }
@@ -558,7 +565,7 @@ export default function ProjectDetailsScreen() {
     analyzeProjectPhotos,
     getSuggestionsByProjectId,
     scanProjectSuggestions,
-    acceptSuggestion,
+    linkSuggestionToMemory,
     keepWatchingSuggestion,
     dismissSuggestion,
     snoozeSuggestion,
@@ -579,6 +586,8 @@ export default function ProjectDetailsScreen() {
   const slotOverridesByPage = useEditorStore((state) => state.slotOverridesByPage);
 
   const [exporting, setExporting] = useState(false);
+  const [addMenuVisible, setAddMenuVisible] = useState(false);
+  const [projectMenuVisible, setProjectMenuVisible] = useState(false);
   const [composerVisible, setComposerVisible] = useState(false);
   const [composerMode, setComposerMode] = useState<MemoryComposerMode>("create");
   const [composerMemoryId, setComposerMemoryId] = useState<string | null>(null);
@@ -586,6 +595,7 @@ export default function ProjectDetailsScreen() {
   const [composerMemoryKind, setComposerMemoryKind] = useState<Memory["kind"]>("event");
   const [composerCollectionHooks, setComposerCollectionHooks] = useState("");
   const [composerSelectedProjectPhotoIds, setComposerSelectedProjectPhotoIds] = useState<string[]>([]);
+  const [composerSourceSuggestionId, setComposerSourceSuggestionId] = useState<string | null>(null);
   const [composerStagedAssets, setComposerStagedAssets] = useState<StagedAsset[]>([]);
   const [composerThumbnailChoice, setComposerThumbnailChoice] = useState<ThumbnailChoice | undefined>(undefined);
   const [composerSaving, setComposerSaving] = useState(false);
@@ -598,6 +608,10 @@ export default function ProjectDetailsScreen() {
   const [suggestionScanState, setSuggestionScanState] = useState<"idle" | "scanning" | "empty" | "error" | "done">("idle");
   const [suggestionScanError, setSuggestionScanError] = useState<string | undefined>(undefined);
   const [suggestionsExpanded, setSuggestionsExpanded] = useState(false);
+  const [suggestionsModalVisible, setSuggestionsModalVisible] = useState(false);
+  const [suggestionReviewId, setSuggestionReviewId] = useState<string | null>(null);
+  const [suggestionSelectedPhotoIds, setSuggestionSelectedPhotoIds] = useState<string[]>([]);
+  const [devToolsExpanded, setDevToolsExpanded] = useState(false);
   const [clusterInspectorExpanded, setClusterInspectorExpanded] = useState(false);
   const [clusterAnalysisBusy, setClusterAnalysisBusy] = useState(false);
   const [clusterAnalysisFeedback, setClusterAnalysisFeedback] = useState<StatusCard | undefined>(undefined);
@@ -880,13 +894,14 @@ export default function ProjectDetailsScreen() {
     [finalizationSuggestions]
   );
   const finalizationSummary = useMemo(() => {
-    if (finalizationSuggestions.length === 0) {
-      return project?.finalizationStatus === "in-progress"
-        ? "No finalization ideas yet"
-        : "Optional end-stage review";
+    if (project?.finalizationStatus === "reviewed") {
+      return "Reviewed";
     }
-    return `${pluralize(finalizationSuggestions.length, "review opportunity")} | ${project?.finalizationStatus === "reviewed" ? "Reviewed" : project?.finalizationStatus === "in-progress" ? "In progress" : "Ready"}`;
-  }, [finalizationSuggestions.length, project?.finalizationStatus]);
+    if (project?.finalizationStatus === "in-progress") {
+      return "In progress";
+    }
+    return "Optional end-stage review";
+  }, [project?.finalizationStatus]);
   const finalizationReviewPhotos = useMemo(
     () =>
       finalizationReviewSuggestion
@@ -957,6 +972,19 @@ export default function ProjectDetailsScreen() {
     snoozedSuggestions.length,
     watchingSuggestions.length
   ]);
+  const suggestionReview = useMemo(
+    () => projectSuggestions.find((suggestion) => suggestion.id === suggestionReviewId) ?? null,
+    [projectSuggestions, suggestionReviewId]
+  );
+  const suggestionReviewPhotos = useMemo(
+    () =>
+      suggestionReview
+        ? suggestionReview.candidatePhotoIds
+            .map((photoId) => projectPhotos.find((photo) => photo.id === photoId))
+            .filter((photo): photo is PhotoItem => Boolean(photo))
+        : [],
+    [projectPhotos, suggestionReview]
+  );
 
   const suggestionStateCard = useMemo(() => {
     if (suggestionScanState === "scanning") {
@@ -1048,7 +1076,7 @@ export default function ProjectDetailsScreen() {
         icon: "flag-outline" as const,
         title: "Finalization is optional",
         message:
-          "Use finalization near the end of a project to review missing moments, strongest unused photos, and recurring highlight opportunities.",
+          "Use finalization near the end of a project to review accepted memories and theme pages before finishing the book.",
         tone: "empty" as const
       };
     }
@@ -1058,7 +1086,7 @@ export default function ProjectDetailsScreen() {
         icon: "checkmark-done-outline" as const,
         title: "No finalization issues found",
         message:
-          "This project does not currently show strong missing-moment or highlight opportunities. You can still review it manually whenever you want.",
+          "This project is ready for a manual review pass. Accepted-memory finalization details are intentionally deferred for the MVP reset.",
         tone: "info" as const
       };
     }
@@ -1071,8 +1099,8 @@ export default function ProjectDetailsScreen() {
           : "Finalization suggestions ready",
       message:
         project.finalizationStatus === "reviewed"
-          ? "These opportunities stay visible so you can revisit them before finishing the project."
-          : `We found ${pluralize(finalizationSuggestions.length, "review opportunity")} to check before wrapping up this project.`,
+          ? "The project has been marked reviewed. You can revisit the memories manually before ordering."
+          : "Use this as the project wrap-up checkpoint before previewing or ordering.",
       tone: project.finalizationStatus === "reviewed" ? ("success" as const) : ("info" as const)
     };
   }, [finalizationSuggestions.length, project]);
@@ -1088,6 +1116,13 @@ export default function ProjectDetailsScreen() {
     }
     return prioritizePrimary(getPhotosByMemoryId(composerMemory.id), composerMemory.primaryPhotoId);
   }, [composerMemory, getPhotosByMemoryId]);
+  const composerSelectableProjectPhotos = useMemo(
+    () =>
+      composerSelectedProjectPhotoIds
+        .map((photoId) => projectPhotos.find((photo) => photo.id === photoId))
+        .filter((photo): photo is PhotoItem => Boolean(photo)),
+    [composerSelectedProjectPhotoIds, projectPhotos]
+  );
   const composerCollectionTags = useMemo(
     () => parseCollectionHooks(composerCollectionHooks),
     [composerCollectionHooks]
@@ -1100,8 +1135,8 @@ export default function ProjectDetailsScreen() {
   }, [composerCollectionTags, composerMemoryKind, composerTitle, unassignedProjectPhotos]);
 
   const composerThumbnailUri = useMemo(
-    () => getThumbnailUri(composerThumbnailChoice, composerExistingPhotos, composerStagedAssets),
-    [composerExistingPhotos, composerStagedAssets, composerThumbnailChoice]
+    () => getThumbnailUri(composerThumbnailChoice, composerExistingPhotos, composerStagedAssets, projectPhotos),
+    [composerExistingPhotos, composerStagedAssets, composerThumbnailChoice, projectPhotos]
   );
   const candidateReviewMemory = useMemo(
     () => (candidateReviewMemoryId ? memories.find((memory) => memory.id === candidateReviewMemoryId) : undefined),
@@ -1120,6 +1155,7 @@ export default function ProjectDetailsScreen() {
     setComposerMemoryKind("event");
     setComposerCollectionHooks("");
     setComposerSelectedProjectPhotoIds([]);
+    setComposerSourceSuggestionId(null);
     setComposerStagedAssets([]);
     setComposerThumbnailChoice(undefined);
     setComposerSaving(false);
@@ -1135,15 +1171,16 @@ export default function ProjectDetailsScreen() {
     setFinalizationReviewSuggestion(null);
   }, []);
 
-  const openCreateComposer = useCallback(() => {
+  const openCreateComposer = useCallback((kind: Memory["kind"] = "event", options?: { title?: string; photoIds?: string[]; suggestionId?: string }) => {
     setComposerMode("create");
     setComposerMemoryId(null);
-    setComposerTitle("");
-    setComposerMemoryKind("event");
+    setComposerTitle(options?.title ?? "");
+    setComposerMemoryKind(kind);
     setComposerCollectionHooks("");
-    setComposerSelectedProjectPhotoIds([]);
+    setComposerSelectedProjectPhotoIds(options?.photoIds ?? []);
+    setComposerSourceSuggestionId(options?.suggestionId ?? null);
     setComposerStagedAssets([]);
-    setComposerThumbnailChoice(undefined);
+    setComposerThumbnailChoice(options?.photoIds?.[0] ? { kind: "existing", photoId: options.photoIds[0] } : undefined);
     setComposerVisible(true);
   }, []);
 
@@ -1160,6 +1197,7 @@ export default function ProjectDetailsScreen() {
       setComposerMemoryKind(memory.kind);
       setComposerCollectionHooks((memory.themeTags ?? []).join(", "));
       setComposerSelectedProjectPhotoIds([]);
+      setComposerSourceSuggestionId(null);
       setComposerStagedAssets([]);
       if (memory.primaryPhotoId && existingPhotos.some((photo) => photo.id === memory.primaryPhotoId)) {
         setComposerThumbnailChoice({ kind: "existing", photoId: memory.primaryPhotoId });
@@ -1231,6 +1269,9 @@ export default function ProjectDetailsScreen() {
         if (selectedPhotoId) {
           setMemoryPrimaryPhoto(createdMemoryId, selectedPhotoId);
         }
+        if (composerSourceSuggestionId) {
+          linkSuggestionToMemory(composerSourceSuggestionId, createdMemoryId);
+        }
       } else if (composerMemoryId) {
         updateMemory(composerMemoryId, {
           title: trimmedTitle,
@@ -1269,8 +1310,10 @@ export default function ProjectDetailsScreen() {
     composerThumbnailChoice,
     composerTitle,
     createMemory,
+    linkSuggestionToMemory,
     projectId,
     composerSelectedProjectPhotoIds,
+    composerSourceSuggestionId,
     setMemoryPrimaryPhoto,
     updateMemory
   ]);
@@ -1306,49 +1349,44 @@ export default function ProjectDetailsScreen() {
   }, [assignPhotosToMemory, candidateReviewMemoryId, candidateSelectedPhotoIds, closeCandidateReview]);
 
   const onOpenProjectMenu = useCallback(() => {
-    Alert.alert(project?.name ?? "Project", "", [
+    setProjectMenuVisible(true);
+  }, []);
+
+  const onChangeProjectCover = useCallback(async () => {
+    if (!project || projectMenuBusy) {
+      return;
+    }
+    try {
+      setProjectMenuBusy(true);
+      const uri = await pickProjectThumbnail();
+      if (uri) {
+        updateProject(project.id, { thumbnailUri: uri });
+      }
+      setProjectMenuVisible(false);
+    } catch (error) {
+      Alert.alert("Unable to change project cover", (error as Error).message);
+    } finally {
+      setProjectMenuBusy(false);
+    }
+  }, [pickProjectThumbnail, project, projectMenuBusy, updateProject]);
+
+  const onDeleteProjectFromMenu = useCallback(() => {
+    if (!project) {
+      return;
+    }
+    setProjectMenuVisible(false);
+    Alert.alert("Delete project", "Delete this project, all memories, and all photos inside it?", [
+      { text: "Cancel", style: "cancel" },
       {
-        text: projectMenuBusy ? "Working..." : "Change Cover Photo",
-        onPress: async () => {
-          if (!project || projectMenuBusy) {
-            return;
-          }
-          try {
-            setProjectMenuBusy(true);
-            const uri = await pickProjectThumbnail();
-            if (uri) {
-              updateProject(project.id, { thumbnailUri: uri });
-            }
-          } catch (error) {
-            Alert.alert("Unable to change project cover", (error as Error).message);
-          } finally {
-            setProjectMenuBusy(false);
-          }
-        }
-      },
-      {
-        text: "Delete Project",
+        text: "Delete",
         style: "destructive",
         onPress: () => {
-          if (!project) {
-            return;
-          }
-          Alert.alert("Delete project", "Delete this project, all memories, and all photos inside it?", [
-            { text: "Cancel", style: "cancel" },
-            {
-              text: "Delete",
-              style: "destructive",
-              onPress: () => {
-                deleteProject(project.id);
-                router.replace("/");
-              }
-            }
-          ]);
+          deleteProject(project.id);
+          router.replace("/");
         }
-      },
-      { text: "Cancel", style: "cancel" }
+      }
     ]);
-  }, [deleteProject, pickProjectThumbnail, project, projectMenuBusy, updateProject]);
+  }, [deleteProject, project]);
 
   const onOrderProject = useCallback(async () => {
     if (!project || exporting) {
@@ -1375,8 +1413,26 @@ export default function ProjectDetailsScreen() {
     }
   }, [exporting, getPageSectionsByMemoryId, getPhotosByMemoryId, memories, project, slotOverridesByPage]);
 
+  const openProjectAddMenu = useCallback(() => {
+    setAddMenuVisible(true);
+  }, []);
+
+  const openProjectAddIntent = useCallback((intent: ProjectAddIntent) => {
+    setAddMenuVisible(false);
+    if (intent === "memory") {
+      openCreateComposer("event");
+      return;
+    }
+    if (intent === "collection") {
+      openCreateComposer("collection");
+      return;
+    }
+    setSuggestionsModalVisible(true);
+    setSuggestionsExpanded(true);
+  }, [openCreateComposer]);
+
   const onAddProjectPhotos = useCallback(() => {
-    if (!project || projectPhotoIntakeBusy || projectPhotoPickerBusy) {
+    if (!DEV_TOOLS_ENABLED || !project || projectPhotoIntakeBusy || projectPhotoPickerBusy) {
       return;
     }
     setProjectPhotoPickerVisible(true);
@@ -1384,7 +1440,7 @@ export default function ProjectDetailsScreen() {
 
   const importProjectPoolPhotos = useCallback(
     async (assetIds: string[]) => {
-      if (!project || projectPhotoIntakeBusy) {
+      if (!DEV_TOOLS_ENABLED || !project || projectPhotoIntakeBusy) {
         return;
       }
       try {
@@ -1494,6 +1550,9 @@ export default function ProjectDetailsScreen() {
 
   const openAnalysisInspector = useCallback(
     (photoId?: string) => {
+      if (!DEV_TOOLS_ENABLED) {
+        return;
+      }
       if (inspectorSelectablePhotos.length === 0) {
         Alert.alert("No project photos", "Add project photos first so there is an image available to inspect.");
         return;
@@ -1525,12 +1584,15 @@ export default function ProjectDetailsScreen() {
   }, [mediaLibraryProbeBusy]);
 
   const openMediaLibraryPicker = useCallback(() => {
+    if (!DEV_TOOLS_ENABLED) {
+      return;
+    }
     setMediaLibraryPickerVisible(true);
   }, []);
 
   const importMediaLibraryProbePhoto = useCallback(
     async (assetIds: string[]) => {
-      if (!project) {
+      if (!DEV_TOOLS_ENABLED || !project) {
         return;
       }
       const assetId = assetIds[0];
@@ -1581,7 +1643,7 @@ export default function ProjectDetailsScreen() {
 
   const runInspectorAnalysis = useCallback(
     async (force: boolean) => {
-      if (!project || !selectedInspectorPhoto) {
+      if (!DEV_TOOLS_ENABLED || !project || !selectedInspectorPhoto) {
         return;
       }
 
@@ -1636,7 +1698,7 @@ export default function ProjectDetailsScreen() {
   );
 
   const analyzeAllProjectPhotosForClusters = useCallback(async () => {
-    if (!project || clusterAnalysisBusy) {
+    if (!DEV_TOOLS_ENABLED || !project || clusterAnalysisBusy) {
       return;
     }
     if (projectPhotos.length === 0) {
@@ -1681,7 +1743,7 @@ export default function ProjectDetailsScreen() {
   }, [analyzeProjectPhotos, clusterAnalysisBusy, project, projectPhotos.length]);
 
   const logInspectorDebugReport = useCallback(() => {
-    if (!inspectorDebugReport) {
+    if (!DEV_TOOLS_ENABLED || !inspectorDebugReport) {
       return;
     }
     console.log(inspectorDebugReport);
@@ -1707,18 +1769,6 @@ export default function ProjectDetailsScreen() {
     }
     completeProjectFinalization(project.id);
   }, [completeProjectFinalization, project]);
-
-  const onAcceptSuggestion = useCallback(
-    async (suggestionId: string) => {
-      try {
-        setActiveSuggestionId(suggestionId);
-        await acceptSuggestion(suggestionId);
-      } finally {
-        setActiveSuggestionId(null);
-      }
-    },
-    [acceptSuggestion]
-  );
 
   const onDismissSuggestion = useCallback(
     (suggestionId: string) => {
@@ -1747,11 +1797,43 @@ export default function ProjectDetailsScreen() {
     [keepWatchingSuggestion]
   );
 
+  const openSuggestionReview = useCallback((suggestionId: string) => {
+    const suggestion = projectSuggestions.find((item) => item.id === suggestionId);
+    if (!suggestion) {
+      return;
+    }
+    setSuggestionReviewId(suggestion.id);
+    setSuggestionSelectedPhotoIds(suggestion.candidatePhotoIds);
+  }, [projectSuggestions]);
+
+  const closeSuggestionReview = useCallback(() => {
+    setSuggestionReviewId(null);
+    setSuggestionSelectedPhotoIds([]);
+  }, []);
+
+  const createMemoryFromReviewedSuggestion = useCallback(() => {
+    const suggestion = projectSuggestions.find((item) => item.id === suggestionReviewId);
+    if (!suggestion || suggestionSelectedPhotoIds.length === 0) {
+      return;
+    }
+    closeSuggestionReview();
+    setSuggestionsModalVisible(false);
+    openCreateComposer(suggestion.type === "collection" ? "collection" : "event", {
+      title: suggestion.title,
+      photoIds: suggestionSelectedPhotoIds,
+      suggestionId: suggestion.id
+    });
+  }, [closeSuggestionReview, openCreateComposer, projectSuggestions, suggestionReviewId, suggestionSelectedPhotoIds]);
+
   const renderSuggestionCard = useCallback(
     (suggestion: Suggestion) => {
       const statusStyles = getSuggestionStatusStyle(suggestion.status);
       const isBusy = activeSuggestionId === suggestion.id;
       const candidateCount = suggestion.candidatePhotoIds.length;
+      const candidatePreviewPhotos = suggestion.candidatePhotoIds
+        .map((photoId) => projectPhotos.find((photo) => photo.id === photoId))
+        .filter((photo): photo is PhotoItem => Boolean(photo))
+        .slice(0, 4);
       const lifecycleNote =
         suggestion.status === "accepted"
           ? suggestion.acceptedMemoryId
@@ -1781,6 +1863,13 @@ export default function ProjectDetailsScreen() {
             {candidateCount > 0 ? `${pluralize(candidateCount, "candidate photo")}` : "No candidate photos attached"}
           </Text>
           <Text style={styles.suggestionLifecycleNote}>{lifecycleNote}</Text>
+          {candidatePreviewPhotos.length > 0 ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.suggestionPreviewRow}>
+              {candidatePreviewPhotos.map((photo) => (
+                <Image key={photo.id} source={{ uri: photo.uri }} style={styles.suggestionPreviewThumb} />
+              ))}
+            </ScrollView>
+          ) : null}
 
           <View style={styles.suggestionActionRow}>
             {suggestion.status === "accepted" && suggestion.acceptedMemoryId ? (
@@ -1790,29 +1879,17 @@ export default function ProjectDetailsScreen() {
                 >
                   <Text style={styles.suggestionPrimaryActionText}>Open Memory</Text>
                 </Pressable>
-            ) : suggestion.type === "collection" ? (
-              <Pressable
-                style={[
-                  styles.suggestionActionButton,
-                  styles.suggestionPrimaryAction,
-                  isBusy || suggestion.status === "accepted" ? styles.suggestionActionDisabled : null
-                ]}
-                onPress={() => void onAcceptSuggestion(suggestion.id)}
-                disabled={isBusy || suggestion.status === "accepted"}
-              >
-                <Text style={styles.suggestionPrimaryActionText}>{isBusy ? "Working..." : "Create Collection"}</Text>
-              </Pressable>
             ) : (
               <Pressable
                 style={[
                   styles.suggestionActionButton,
                   styles.suggestionPrimaryAction,
-                  isBusy || suggestion.status === "accepted" ? styles.suggestionActionDisabled : null
+                  isBusy || suggestion.status === "accepted" || candidateCount === 0 ? styles.suggestionActionDisabled : null
                 ]}
-                onPress={() => void onAcceptSuggestion(suggestion.id)}
-                disabled={isBusy || suggestion.status === "accepted"}
+                onPress={() => openSuggestionReview(suggestion.id)}
+                disabled={isBusy || suggestion.status === "accepted" || candidateCount === 0}
               >
-                <Text style={styles.suggestionPrimaryActionText}>{isBusy ? "Working..." : "Accept"}</Text>
+                <Text style={styles.suggestionPrimaryActionText}>{isBusy ? "Working..." : "Review"}</Text>
               </Pressable>
             )}
 
@@ -1861,7 +1938,7 @@ export default function ProjectDetailsScreen() {
         </View>
       );
     },
-    [activeSuggestionId, onAcceptSuggestion, onDismissSuggestion, onKeepWatchingSuggestion, onSnoozeSuggestion]
+    [activeSuggestionId, onDismissSuggestion, onKeepWatchingSuggestion, onSnoozeSuggestion, openSuggestionReview, projectPhotos]
   );
 
   const renderFinalizationSuggestionCard = useCallback((suggestion: FinalizationSuggestion) => {
@@ -1998,6 +2075,17 @@ export default function ProjectDetailsScreen() {
           ItemSeparatorComponent={() => <View style={{ height: 18 }} />}
           ListHeaderComponent={
             <View style={styles.listHeader}>
+              {DEV_TOOLS_ENABLED && devToolsExpanded ? (
+                <View style={styles.devToolsSection}>
+                  <View style={styles.sectionHeaderRow}>
+                    <View>
+                      <Text style={styles.sectionHeading}>Developer Tools</Text>
+                      <Text style={styles.sectionSubheading}>
+                        Internal photo-pool, analysis, and clustering tools are hidden from the normal MVP flow.
+                      </Text>
+                    </View>
+                  </View>
+                  <>
               <View style={[styles.sectionHeaderRow, styles.sectionHeaderRowStack]}>
                 <Text style={styles.sectionHeading}>Project Photos</Text>
                 <View style={[styles.sectionHeaderActions, styles.sectionHeaderActionsFullWidth]}>
@@ -2164,9 +2252,14 @@ export default function ProjectDetailsScreen() {
               {clusterInspectorExpanded && topProjectClusters.length > 0 ? (
                 <View style={styles.suggestionList}>{topProjectClusters.map(renderClusterCard)}</View>
               ) : null}
+                  </>
+                </View>
+              ) : null}
 
+              {INLINE_PROJECT_SECTIONS_ENABLED ? (
+                <>
               <View style={styles.sectionHeaderRow}>
-                <Text style={styles.sectionHeading}>Suggestions</Text>
+                <Text style={styles.sectionHeading}>Suggested Memories</Text>
                 <Pressable
                   style={[styles.scanButton, scanningSuggestions ? styles.scanButtonDisabled : null]}
                   onPress={onScanSuggestions}
@@ -2177,13 +2270,13 @@ export default function ProjectDetailsScreen() {
                   ) : (
                     <>
                       <Ionicons name="search-outline" size={15} color="#eef4ff" />
-                      <Text style={styles.scanButtonText}>Scan Suggestions</Text>
+                      <Text style={styles.scanButtonText}>Scan Memories</Text>
                     </>
                   )}
                 </Pressable>
               </View>
               <Text style={styles.sectionSubheading}>
-                Event and collection suggestions for this project. Actions stay local and will not create pages automatically.
+                Review suggested event memories for this project. Actions stay local and will not create pages automatically.
               </Text>
 
               {suggestionSummary ? <Text style={styles.suggestionSummary}>{suggestionSummary}</Text> : null}
@@ -2313,6 +2406,31 @@ export default function ProjectDetailsScreen() {
               ) : null}
 
               <View style={styles.sectionHeaderRow}>
+                <Text style={styles.sectionHeading}>Suggested Theme Pages</Text>
+              </View>
+              <Text style={styles.sectionSubheading}>
+                Theme pages are user-led in the MVP. Pick a theme later, then choose the exact photos before anything is imported.
+              </Text>
+              <View style={styles.themeSuggestionCard}>
+                <View style={styles.themeSuggestionHeader}>
+                  <Ionicons name="albums-outline" size={24} color="#7fa7ff" />
+                  <View style={styles.themeSuggestionTextBlock}>
+                    <Text style={styles.emptyTitle}>Theme picker scaffold</Text>
+                    <Text style={styles.emptyText}>
+                      The next slice will connect these themes to a picker/search flow. No full-library theme import runs here.
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.themeChipRow}>
+                  {SUGGESTED_THEME_PAGE_LABELS.map((label) => (
+                    <View key={label} style={styles.themeChip}>
+                      <Text style={styles.themeChipText}>{label}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+
+              <View style={styles.sectionHeaderRow}>
                 <Text style={styles.sectionHeading}>Finalization</Text>
                 {project?.finalizationStatus === "idle" ? (
                   <Pressable style={styles.scanButton} onPress={onStartFinalization}>
@@ -2329,11 +2447,12 @@ export default function ProjectDetailsScreen() {
                 )}
               </View>
               <Text style={styles.sectionSubheading}>
-                A lightweight end-stage review for missing moments, strongest unused photos, and recurring highlights across the project.
+                A lightweight end-stage entry for reviewing accepted memories and theme pages before finishing the book.
               </Text>
               <Text style={styles.suggestionSummary}>{finalizationSummary}</Text>
 
-              <View style={styles.sectionControlRow}>
+              {DEV_TOOLS_ENABLED && devToolsExpanded ? (
+                <View style={styles.sectionControlRow}>
                 <Pressable style={styles.dismissedToggle} onPress={() => setFinalizationExpanded((prev) => !prev)}>
                   <Ionicons
                     name={finalizationExpanded ? "chevron-up-outline" : "chevron-down-outline"}
@@ -2346,7 +2465,12 @@ export default function ProjectDetailsScreen() {
                       : `Expand finalization (${finalizationSuggestions.length})`}
                   </Text>
                 </Pressable>
-              </View>
+                </View>
+              ) : (
+                <Text style={styles.suggestionCollapsedHint}>
+                  Detailed finalization review is deferred until accepted-memory and theme-page inputs are wired for the MVP.
+                </Text>
+              )}
 
               {finalizationStateCard ? (
                 <View
@@ -2373,13 +2497,13 @@ export default function ProjectDetailsScreen() {
                 </View>
               ) : null}
 
-              {!finalizationExpanded && finalizationSuggestions.length > 0 ? (
+              {DEV_TOOLS_ENABLED && devToolsExpanded && !finalizationExpanded && finalizationSuggestions.length > 0 ? (
                 <Text style={styles.suggestionCollapsedHint}>
                   Finalization ideas are hidden until you expand them, so the main project workflow stays uncluttered.
                 </Text>
               ) : null}
 
-              {finalizationExpanded && missingMomentFinalizationSuggestions.length > 0 ? (
+              {DEV_TOOLS_ENABLED && devToolsExpanded && finalizationExpanded && missingMomentFinalizationSuggestions.length > 0 ? (
                 <View style={styles.suggestionGroup}>
                   <View style={styles.suggestionGroupHeader}>
                     <Text style={styles.suggestionGroupTitle}>Missing Moments</Text>
@@ -2393,7 +2517,7 @@ export default function ProjectDetailsScreen() {
                 </View>
               ) : null}
 
-              {finalizationExpanded && strongestUnusedFinalizationSuggestions.length > 0 ? (
+              {DEV_TOOLS_ENABLED && devToolsExpanded && finalizationExpanded && strongestUnusedFinalizationSuggestions.length > 0 ? (
                 <View style={styles.suggestionGroup}>
                   <View style={styles.suggestionGroupHeader}>
                     <Text style={styles.suggestionGroupTitle}>Strongest Unused Photos</Text>
@@ -2407,7 +2531,7 @@ export default function ProjectDetailsScreen() {
                 </View>
               ) : null}
 
-              {finalizationExpanded && highlightFinalizationSuggestions.length > 0 ? (
+              {DEV_TOOLS_ENABLED && devToolsExpanded && finalizationExpanded && highlightFinalizationSuggestions.length > 0 ? (
                 <View style={styles.suggestionGroup}>
                   <View style={styles.suggestionGroupHeader}>
                     <Text style={styles.suggestionGroupTitle}>Recurring Highlights</Text>
@@ -2419,6 +2543,8 @@ export default function ProjectDetailsScreen() {
                     {highlightFinalizationSuggestions.map(renderFinalizationSuggestionCard)}
                   </View>
                 </View>
+              ) : null}
+                </>
               ) : null}
 
               <View style={styles.sectionHeaderRow}>
@@ -2486,7 +2612,7 @@ export default function ProjectDetailsScreen() {
                       {item.kind === "collection" && item.themeTags && item.themeTags.length > 0 ? (
                         <Text style={styles.memoryTagsSummary}>{item.themeTags.join(" | ")}</Text>
                       ) : null}
-                      {candidatePhotos.length > 0 ? (
+                      {DEV_TOOLS_ENABLED && devToolsExpanded && candidatePhotos.length > 0 ? (
                         <Pressable
                           style={styles.memoryCandidateButton}
                           onPress={() => onOpenCandidateReview(item.id)}
@@ -2516,7 +2642,7 @@ export default function ProjectDetailsScreen() {
         />
       </View>
 
-      <Pressable onPress={openCreateComposer} style={[styles.addButton, { bottom: toolbarBottom + 22 }]}>
+      <Pressable onPress={openProjectAddMenu} style={[styles.addButton, { bottom: toolbarBottom + 22 }]}>
         <Ionicons name="add" size={34} color="#ffffff" />
       </Pressable>
 
@@ -2542,6 +2668,271 @@ export default function ProjectDetailsScreen() {
           <Text style={styles.toolbarLabel}>Notifications</Text>
         </Pressable>
       </View>
+
+      <Modal transparent animationType="fade" visible={projectMenuVisible} onRequestClose={() => setProjectMenuVisible(false)}>
+        <View style={styles.centerModalBackdrop}>
+          <View style={styles.actionMenuCard}>
+            <Text style={styles.modalTitle}>{project.name}</Text>
+            <Text style={styles.modalSubtitle}>Project options</Text>
+            {DEV_TOOLS_ENABLED ? (
+              <Pressable
+                style={styles.actionMenuButton}
+                onPress={() => {
+                  setDevToolsExpanded((prev) => !prev);
+                  setProjectMenuVisible(false);
+                }}
+              >
+                <Ionicons name="construct-outline" size={20} color="#d7e2ff" />
+                <Text style={styles.actionMenuButtonText}>
+                  {devToolsExpanded ? "Hide Developer Tools" : "Show Developer Tools"}
+                </Text>
+              </Pressable>
+            ) : null}
+            <Pressable style={styles.actionMenuButton} onPress={onChangeProjectCover} disabled={projectMenuBusy}>
+              {projectMenuBusy ? (
+                <ActivityIndicator color="#d7e2ff" />
+              ) : (
+                <Ionicons name="image-outline" size={20} color="#d7e2ff" />
+              )}
+              <Text style={styles.actionMenuButtonText}>Change Cover Photo</Text>
+            </Pressable>
+            <Pressable style={[styles.actionMenuButton, styles.actionMenuDanger]} onPress={onDeleteProjectFromMenu}>
+              <Ionicons name="trash-outline" size={20} color="#ff9aae" />
+              <Text style={styles.actionMenuDangerText}>Delete Project</Text>
+            </Pressable>
+            <Pressable style={styles.secondaryButtonLike} onPress={() => setProjectMenuVisible(false)}>
+              <Text style={styles.secondaryButtonLikeText}>Close</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal transparent animationType="fade" visible={addMenuVisible} onRequestClose={() => setAddMenuVisible(false)}>
+        <View style={styles.centerModalBackdrop}>
+          <View style={styles.actionMenuCard}>
+            <Text style={styles.modalTitle}>Add to Project</Text>
+            <Text style={styles.modalSubtitle}>Choose what you want to create or review.</Text>
+            <Pressable style={styles.actionMenuButton} onPress={() => openProjectAddIntent("memory")}>
+              <Ionicons name="images-outline" size={20} color="#d7e2ff" />
+              <View style={styles.actionMenuTextBlock}>
+                <Text style={styles.actionMenuButtonText}>Memory</Text>
+                <Text style={styles.actionMenuHint}>Create an event memory and add photos.</Text>
+              </View>
+            </Pressable>
+            <Pressable style={styles.actionMenuButton} onPress={() => openProjectAddIntent("collection")}>
+              <Ionicons name="albums-outline" size={20} color="#d7e2ff" />
+              <View style={styles.actionMenuTextBlock}>
+                <Text style={styles.actionMenuButtonText}>Collection</Text>
+                <Text style={styles.actionMenuHint}>Create a theme collection with selected photos.</Text>
+              </View>
+            </Pressable>
+            <Pressable style={styles.actionMenuButton} onPress={() => openProjectAddIntent("suggestions")}>
+              <Ionicons name="sparkles-outline" size={20} color="#d7e2ff" />
+              <View style={styles.actionMenuTextBlock}>
+                <Text style={styles.actionMenuButtonText}>Review Suggestions</Text>
+                <Text style={styles.actionMenuHint}>Scan, review, snooze, or dismiss suggested memories.</Text>
+              </View>
+            </Pressable>
+            <Pressable style={styles.secondaryButtonLike} onPress={() => setAddMenuVisible(false)}>
+              <Text style={styles.secondaryButtonLikeText}>Cancel</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal transparent animationType="slide" visible={suggestionsModalVisible} onRequestClose={() => setSuggestionsModalVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            style={styles.modalAvoider}
+          >
+            <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 18 }]}>
+              <View style={styles.modalHeader}>
+                <View>
+                  <Text style={styles.modalTitle}>Suggested Memories</Text>
+                  <Text style={styles.modalSubtitle}>
+                    Scan for local suggestions, then review photos before creating a memory or collection.
+                  </Text>
+                </View>
+                <Pressable style={styles.modalCloseButton} onPress={() => setSuggestionsModalVisible(false)}>
+                  <Ionicons name="close" size={22} color="#eef4ff" />
+                </Pressable>
+              </View>
+
+              <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
+                <View style={styles.sectionHeaderRow}>
+                  <Text style={styles.sectionHeading}>Suggestions</Text>
+                  <Pressable
+                    style={[styles.scanButton, scanningSuggestions ? styles.scanButtonDisabled : null]}
+                    onPress={onScanSuggestions}
+                    disabled={scanningSuggestions}
+                  >
+                    {scanningSuggestions ? (
+                      <ActivityIndicator color="#eef4ff" size="small" />
+                    ) : (
+                      <>
+                        <Ionicons name="search-outline" size={15} color="#eef4ff" />
+                        <Text style={styles.scanButtonText}>Scan</Text>
+                      </>
+                    )}
+                  </Pressable>
+                </View>
+
+                {suggestionStateCard ? (
+                  <View
+                    style={[
+                      styles.suggestionsStateCard,
+                      suggestionStateCard.tone === "error" ? styles.suggestionsStateCardError : null,
+                      suggestionStateCard.tone === "info" ? styles.suggestionsStateCardInfo : null,
+                      suggestionStateCard.tone === "success" ? styles.suggestionsStateCardSuccess : null
+                    ]}
+                  >
+                    {suggestionScanState === "scanning" ? (
+                      <ActivityIndicator color="#dbe8ff" />
+                    ) : (
+                      <Ionicons
+                        name={suggestionStateCard.icon}
+                        size={24}
+                        color={
+                          suggestionStateCard.tone === "error"
+                            ? "#ff9aae"
+                            : suggestionStateCard.tone === "success"
+                              ? "#82efb4"
+                              : "#7fa7ff"
+                        }
+                      />
+                    )}
+                    <Text style={styles.emptyTitle}>{suggestionStateCard.title}</Text>
+                    <Text style={styles.emptyText}>{suggestionStateCard.message}</Text>
+                  </View>
+                ) : null}
+
+                {newSuggestions.length > 0 ? (
+                  <View style={styles.suggestionGroup}>
+                    <Text style={styles.suggestionGroupTitle}>New</Text>
+                    <View style={styles.suggestionList}>{newSuggestions.map(renderSuggestionCard)}</View>
+                  </View>
+                ) : null}
+                {watchingSuggestions.length > 0 ? (
+                  <View style={styles.suggestionGroup}>
+                    <Text style={styles.suggestionGroupTitle}>Watching</Text>
+                    <View style={styles.suggestionList}>{watchingSuggestions.map(renderSuggestionCard)}</View>
+                  </View>
+                ) : null}
+                {snoozedSuggestions.length > 0 ? (
+                  <View style={styles.suggestionGroup}>
+                    <Text style={styles.suggestionGroupTitle}>Snoozed</Text>
+                    <View style={styles.suggestionList}>{snoozedSuggestions.map(renderSuggestionCard)}</View>
+                  </View>
+                ) : null}
+                {acceptedSuggestions.length > 0 ? (
+                  <View style={styles.suggestionGroup}>
+                    <Text style={styles.suggestionGroupTitle}>Accepted</Text>
+                    <View style={styles.suggestionList}>{acceptedSuggestions.map(renderSuggestionCard)}</View>
+                  </View>
+                ) : null}
+              </ScrollView>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      <Modal transparent animationType="slide" visible={Boolean(suggestionReview)} onRequestClose={closeSuggestionReview}>
+        <View style={styles.modalBackdrop}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            style={styles.modalAvoider}
+          >
+            <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 18 }]}>
+              <View style={styles.modalHeader}>
+                <View>
+                  <Text style={styles.modalTitle}>{suggestionReview?.title ?? "Review Suggestion"}</Text>
+                  <Text style={styles.modalSubtitle}>
+                    Select the photos you want, then create a memory or collection with your own title.
+                  </Text>
+                </View>
+                <Pressable style={styles.modalCloseButton} onPress={closeSuggestionReview}>
+                  <Ionicons name="close" size={22} color="#eef4ff" />
+                </Pressable>
+              </View>
+
+              <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
+                {suggestionReview ? (
+                  <Text style={styles.suggestionMessage}>{suggestionReview.message}</Text>
+                ) : null}
+
+                {suggestionReviewPhotos.length > 0 ? (
+                  <View style={styles.candidateGrid}>
+                    {suggestionReviewPhotos.map((photo) => {
+                      const selected = suggestionSelectedPhotoIds.includes(photo.id);
+                      return (
+                        <Pressable
+                          key={photo.id}
+                          style={[styles.candidateGridItem, selected ? styles.candidateGridItemSelected : null]}
+                          onPress={() =>
+                            setSuggestionSelectedPhotoIds((prev) =>
+                              prev.includes(photo.id) ? prev.filter((id) => id !== photo.id) : [...prev, photo.id]
+                            )
+                          }
+                        >
+                          <Image source={{ uri: photo.uri }} style={styles.candidateGridImage} />
+                          <View style={[styles.candidateGridCheck, selected ? styles.candidateGridCheckSelected : null]}>
+                            <Ionicons
+                              name={selected ? "checkmark" : "add"}
+                              size={16}
+                              color={selected ? "#ffffff" : "#d9e6ff"}
+                            />
+                          </View>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                ) : (
+                  <View style={styles.emptyCard}>
+                    <Ionicons name="images-outline" size={30} color="#5d7097" />
+                    <Text style={styles.emptyTitle}>No preview photos</Text>
+                    <Text style={styles.emptyText}>This suggestion does not currently have candidate photos attached.</Text>
+                  </View>
+                )}
+
+                <View style={styles.modalActions}>
+                  <Pressable style={styles.deleteMemoryButton} onPress={closeSuggestionReview}>
+                    <Text style={styles.deleteMemoryButtonText}>Close</Text>
+                  </Pressable>
+                  {suggestionReview ? (
+                    <>
+                      <Pressable style={[styles.suggestionActionButton, styles.suggestionSecondaryAction]} onPress={() => {
+                        onSnoozeSuggestion(suggestionReview.id);
+                        closeSuggestionReview();
+                      }}>
+                        <Text style={styles.suggestionSecondaryActionText}>Snooze</Text>
+                      </Pressable>
+                      <Pressable style={[styles.suggestionActionButton, styles.suggestionDangerAction]} onPress={() => {
+                        onDismissSuggestion(suggestionReview.id);
+                        closeSuggestionReview();
+                      }}>
+                        <Text style={styles.suggestionDangerActionText}>Dismiss</Text>
+                      </Pressable>
+                    </>
+                  ) : null}
+                  <Pressable
+                    style={[
+                      styles.primaryAction,
+                      suggestionSelectedPhotoIds.length === 0 ? styles.primaryActionDisabled : null
+                    ]}
+                    onPress={createMemoryFromReviewedSuggestion}
+                    disabled={suggestionSelectedPhotoIds.length === 0}
+                  >
+                    <Text style={styles.primaryActionText}>
+                      {suggestionSelectedPhotoIds.length === 0 ? "Select Photos" : "Create"}
+                    </Text>
+                  </Pressable>
+                </View>
+              </ScrollView>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
 
       <Modal transparent animationType="slide" visible={Boolean(candidateReviewMemory)} onRequestClose={closeCandidateReview}>
         <View style={styles.modalBackdrop}>
@@ -2684,7 +3075,7 @@ export default function ProjectDetailsScreen() {
       <Modal
         transparent
         animationType="slide"
-        visible={analysisInspectorVisible}
+        visible={DEV_TOOLS_ENABLED && analysisInspectorVisible}
         onRequestClose={closeAnalysisInspector}
       >
         <View style={styles.modalBackdrop}>
@@ -3105,7 +3496,7 @@ export default function ProjectDetailsScreen() {
       </Modal>
 
       <MediaLibrarySelectionModal
-        visible={projectPhotoPickerVisible}
+        visible={DEV_TOOLS_ENABLED && projectPhotoPickerVisible}
         title="Add Project Photos"
         subtitle="Choose photos directly from Media Library so the app can preserve canonical asset ids and richer GPS/EXIF metadata."
         confirmLabel="Add to Project"
@@ -3137,7 +3528,7 @@ export default function ProjectDetailsScreen() {
       />
 
       <MediaLibrarySelectionModal
-        visible={mediaLibraryPickerVisible}
+        visible={DEV_TOOLS_ENABLED && mediaLibraryPickerVisible}
         title="Media Library Probe Import"
         subtitle="Pick one recent Media Library photo asset to import through a path that preserves the canonical asset id before opening the analysis inspector."
         selectionMode="single"
@@ -3220,7 +3611,7 @@ export default function ProjectDetailsScreen() {
                   </View>
                 ) : null}
 
-                {composerMemoryKind === "collection" ? (
+                {DEV_TOOLS_ENABLED && devToolsExpanded && composerMemoryKind === "collection" ? (
                   <View style={styles.fieldGroup}>
                     <Text style={styles.fieldLabel}>Suggested Project Photos</Text>
                     <Text style={styles.fieldHelperText}>
@@ -3319,6 +3710,24 @@ export default function ProjectDetailsScreen() {
                       </Pressable>
                     );
                   })}
+                  {composerSelectableProjectPhotos
+                    .filter((photo) => !composerExistingPhotos.some((existing) => existing.id === photo.id))
+                    .map((photo) => {
+                      const selected =
+                        composerThumbnailChoice?.kind === "existing" && composerThumbnailChoice.photoId === photo.id;
+                      return (
+                        <Pressable
+                          key={photo.id}
+                          onPress={() => setComposerThumbnailChoice({ kind: "existing", photoId: photo.id })}
+                          style={[styles.thumbnailOption, selected ? styles.thumbnailOptionSelected : null]}
+                        >
+                          <Image source={{ uri: photo.uri }} style={styles.thumbnailOptionImage} />
+                          <View style={styles.thumbTagNew}>
+                            <Text style={styles.thumbTagText}>Selected</Text>
+                          </View>
+                        </Pressable>
+                      );
+                    })}
                   {composerStagedAssets.map((asset) => {
                     const selected =
                       composerThumbnailChoice?.kind === "staged" &&
@@ -3336,7 +3745,7 @@ export default function ProjectDetailsScreen() {
                       </Pressable>
                     );
                   })}
-                  {composerExistingPhotos.length === 0 && composerStagedAssets.length === 0 ? (
+                  {composerExistingPhotos.length === 0 && composerSelectableProjectPhotos.length === 0 && composerStagedAssets.length === 0 ? (
                     <View style={[styles.thumbnailOption, styles.thumbnailOptionEmpty]}>
                       <Ionicons name="images-outline" size={28} color="#607296" />
                     </View>
@@ -3422,6 +3831,15 @@ const styles = StyleSheet.create({
     gap: 14,
     paddingTop: 10,
     paddingBottom: 18
+  },
+  devToolsSection: {
+    gap: 14,
+    padding: 14,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: "#263958",
+    borderStyle: "dashed",
+    backgroundColor: "#0e1728"
   },
   sectionHeaderRow: {
     flexDirection: "row",
@@ -3741,6 +4159,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18
   },
+  suggestionPreviewRow: {
+    gap: 10,
+    paddingRight: 12
+  },
+  suggestionPreviewThumb: {
+    width: 62,
+    height: 62,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#2d4f82",
+    backgroundColor: "#14223a"
+  },
   suggestionStatusBadge: {
     borderRadius: 999,
     paddingHorizontal: 10,
@@ -3850,6 +4280,41 @@ const styles = StyleSheet.create({
     backgroundColor: "#10192c",
     alignItems: "center",
     gap: 10
+  },
+  themeSuggestionCard: {
+    padding: 18,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: "#223456",
+    backgroundColor: "#10192c",
+    gap: 16
+  },
+  themeSuggestionHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12
+  },
+  themeSuggestionTextBlock: {
+    flex: 1,
+    gap: 6
+  },
+  themeChipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8
+  },
+  themeChip: {
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    backgroundColor: "#12233f",
+    borderWidth: 1,
+    borderColor: "#2c5aa0"
+  },
+  themeChipText: {
+    color: "#9bc2ff",
+    fontSize: 12,
+    fontWeight: "800"
   },
   memoryCardShell: {
     borderRadius: 24,
@@ -4072,6 +4537,73 @@ const styles = StyleSheet.create({
     color: "#d2def5",
     fontSize: 12,
     fontWeight: "600"
+  },
+  centerModalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(2, 6, 14, 0.78)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 22
+  },
+  actionMenuCard: {
+    width: "100%",
+    maxWidth: 420,
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: "#223456",
+    backgroundColor: "#0f182a",
+    padding: 20,
+    gap: 12
+  },
+  actionMenuButton: {
+    minHeight: 58,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#263958",
+    backgroundColor: "#111d31",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12
+  },
+  actionMenuTextBlock: {
+    flex: 1,
+    gap: 4
+  },
+  actionMenuButtonText: {
+    color: "#eef4ff",
+    fontSize: 15,
+    fontWeight: "800"
+  },
+  actionMenuHint: {
+    color: "#8ea4cf",
+    fontSize: 12,
+    lineHeight: 16
+  },
+  actionMenuDanger: {
+    backgroundColor: "#24131a",
+    borderColor: "#6d3345"
+  },
+  actionMenuDangerText: {
+    color: "#ff9aae",
+    fontSize: 15,
+    fontWeight: "800"
+  },
+  secondaryButtonLike: {
+    minHeight: 48,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#263958",
+    backgroundColor: "#0c1424",
+    paddingHorizontal: 16
+  },
+  secondaryButtonLikeText: {
+    color: "#d7e2ff",
+    fontSize: 14,
+    fontWeight: "800"
   },
   modalBackdrop: {
     flex: 1,
