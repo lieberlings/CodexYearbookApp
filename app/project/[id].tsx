@@ -24,6 +24,7 @@ import { formatPhotoLocation, normalizePhotoLocation } from "../../src/lib/photo
 import { exportProjectToPdf, sharePdf } from "../../src/services/exportService";
 import { detectPhotoFacesHeuristic } from "../../src/services/faceDetectionService";
 import { detectFacesLocally, NativeFaceDetectionResult } from "../../src/services/nativeFaceDetection";
+import { pickImagesWithAndroidPhotoPicker } from "../../src/services/androidPhotoPicker";
 import {
   generateFinalizationSuggestionsForProject,
   suggestCandidatePhotosForMemory,
@@ -73,11 +74,22 @@ type ThumbnailChoice =
   | { kind: "existing"; photoId: string }
   | { kind: "staged"; stagedKey: string };
 
+type MemoryComposerOptions = {
+  title?: string;
+  photoIds?: string[];
+  suggestionId?: string;
+  stagedAssets?: StagedAsset[];
+  collectionHooks?: string;
+  thumbnailChoice?: ThumbnailChoice;
+};
+
 type InspectorFieldValue = string | number | boolean | null | undefined;
 
 const DEV_TOOLS_ENABLED = __DEV__;
 const INLINE_PROJECT_SECTIONS_ENABLED = false;
 const SUGGESTED_THEME_PAGE_LABELS = ["Pets", "Beach", "Birthdays", "Hiking", "Funny faces"];
+const PHOTO_PICKER_SELECTION_LIMIT = 50;
+const ANDROID_PHOTO_PICKER_IMPORTS_ENABLED = true;
 type InspectorDebugReportInput = {
   projectId: string;
   photo: PhotoItem;
@@ -631,6 +643,13 @@ export default function ProjectDetailsScreen() {
   const [projectPhotoPickerVisible, setProjectPhotoPickerVisible] = useState(false);
   const [projectPhotoPickerBusy, setProjectPhotoPickerBusy] = useState(false);
   const [composerMediaLibraryVisible, setComposerMediaLibraryVisible] = useState(false);
+  const [themePickerVisible, setThemePickerVisible] = useState(false);
+  const [customThemeLabel, setCustomThemeLabel] = useState("");
+  const [themePhotoPickerVisible, setThemePhotoPickerVisible] = useState(false);
+  const [themeSelectionLabel, setThemeSelectionLabel] = useState<string | null>(null);
+  const [themeSelectionBusy, setThemeSelectionBusy] = useState(false);
+  const [themeStagedAssets, setThemeStagedAssets] = useState<StagedAsset[]>([]);
+  const [themeTargetVisible, setThemeTargetVisible] = useState(false);
   const [mediaLibraryPickerVisible, setMediaLibraryPickerVisible] = useState(false);
   const [mediaLibraryProbeBusy, setMediaLibraryProbeBusy] = useState(false);
   const [lastSuggestionScanFeedback, setLastSuggestionScanFeedback] = useState<
@@ -647,6 +666,10 @@ export default function ProjectDetailsScreen() {
 
   const project = getProjectById(projectId);
   const memories = useMemo(() => getMemoriesByProjectId(projectId), [getMemoriesByProjectId, projectId]);
+  const collectionMemories = useMemo(
+    () => memories.filter((memory) => memory.kind === "collection"),
+    [memories]
+  );
   const projectPhotos = useMemo(() => getPhotosByProjectId(projectId), [getPhotosByProjectId, projectId]);
   const unassignedProjectPhotos = useMemo(
     () => getUnassignedPhotosByProjectId(projectId),
@@ -1171,16 +1194,20 @@ export default function ProjectDetailsScreen() {
     setFinalizationReviewSuggestion(null);
   }, []);
 
-  const openCreateComposer = useCallback((kind: Memory["kind"] = "event", options?: { title?: string; photoIds?: string[]; suggestionId?: string }) => {
+  const openCreateComposer = useCallback((kind: Memory["kind"] = "event", options?: MemoryComposerOptions) => {
     setComposerMode("create");
     setComposerMemoryId(null);
     setComposerTitle(options?.title ?? "");
     setComposerMemoryKind(kind);
-    setComposerCollectionHooks("");
+    setComposerCollectionHooks(options?.collectionHooks ?? "");
     setComposerSelectedProjectPhotoIds(options?.photoIds ?? []);
     setComposerSourceSuggestionId(options?.suggestionId ?? null);
-    setComposerStagedAssets([]);
-    setComposerThumbnailChoice(options?.photoIds?.[0] ? { kind: "existing", photoId: options.photoIds[0] } : undefined);
+    setComposerStagedAssets(options?.stagedAssets ?? []);
+    setComposerThumbnailChoice(
+      options?.thumbnailChoice ??
+        (options?.photoIds?.[0] ? { kind: "existing", photoId: options.photoIds[0] } : undefined) ??
+        (options?.stagedAssets?.[0] ? { kind: "staged", stagedKey: options.stagedAssets[0].key } : undefined)
+    );
     setComposerVisible(true);
   }, []);
 
@@ -1215,6 +1242,32 @@ export default function ProjectDetailsScreen() {
     if (composerPicking) {
       return;
     }
+
+    if (Platform.OS === "android" && ANDROID_PHOTO_PICKER_IMPORTS_ENABLED) {
+      try {
+        setComposerPicking(true);
+        const result = await pickImagesWithAndroidPhotoPicker({
+          selectionLimit: PHOTO_PICKER_SELECTION_LIMIT
+        });
+        if (result.available) {
+          if (result.assets.length > 0) {
+            const nextAssets = buildStagedAssets(result.assets);
+            setComposerStagedAssets((prev) => [...prev, ...nextAssets]);
+            setComposerThumbnailChoice((prev) => {
+              if (prev) {
+                return prev;
+              }
+              const first = nextAssets[0];
+              return first ? { kind: "staged", stagedKey: first.key } : undefined;
+            });
+          }
+          return;
+        }
+      } finally {
+        setComposerPicking(false);
+      }
+    }
+
     setComposerMediaLibraryVisible(true);
   }, [composerPicking]);
 
@@ -1255,12 +1308,13 @@ export default function ProjectDetailsScreen() {
       if (composerMode === "create") {
         const createdMemoryId = await createMemory(projectId, trimmedTitle, {
           kind: composerMemoryKind,
+          themeLabel: composerMemoryKind === "collection" ? trimmedTitle : undefined,
           themeTags: composerMemoryKind === "collection" ? composerCollectionTags : undefined
         });
         if (composerSelectedProjectPhotoIds.length > 0) {
           assignPhotosToMemory(createdMemoryId, composerSelectedProjectPhotoIds);
         }
-        const createdPhotoIds = await addPhotoAssetsToMemory(createdMemoryId, composerStagedAssets);
+        const createdPhotoIds = await addPhotoAssetsToMemory(createdMemoryId, composerStagedAssets, { projectId });
         const selectedPhotoId = resolveThumbnailPhotoId(
           composerThumbnailChoice,
           composerStagedAssets,
@@ -1276,6 +1330,7 @@ export default function ProjectDetailsScreen() {
         updateMemory(composerMemoryId, {
           title: trimmedTitle,
           kind: composerMemoryKind,
+          themeLabel: composerMemoryKind === "collection" ? trimmedTitle : undefined,
           themeTags: composerMemoryKind === "collection" ? composerCollectionTags : undefined
         });
         if (composerSelectedProjectPhotoIds.length > 0) {
@@ -1424,12 +1479,114 @@ export default function ProjectDetailsScreen() {
       return;
     }
     if (intent === "collection") {
-      openCreateComposer("collection");
+      setThemePickerVisible(true);
       return;
     }
     setSuggestionsModalVisible(true);
     setSuggestionsExpanded(true);
   }, [openCreateComposer]);
+
+  const resetThemeFlow = useCallback(() => {
+    setThemePickerVisible(false);
+    setCustomThemeLabel("");
+    setThemePhotoPickerVisible(false);
+    setThemeSelectionLabel(null);
+    setThemeStagedAssets([]);
+    setThemeTargetVisible(false);
+    setThemeSelectionBusy(false);
+  }, []);
+
+  const openThemePhotoPicker = useCallback(async (label: string) => {
+    const trimmedLabel = label.trim();
+    if (!trimmedLabel) {
+      return;
+    }
+    setThemePickerVisible(false);
+    setThemeSelectionLabel(trimmedLabel);
+
+    if (Platform.OS === "android" && ANDROID_PHOTO_PICKER_IMPORTS_ENABLED) {
+      try {
+        setThemeSelectionBusy(true);
+        const result = await pickImagesWithAndroidPhotoPicker({
+          searchQuery: trimmedLabel,
+          selectionLimit: PHOTO_PICKER_SELECTION_LIMIT
+        });
+        if (result.available) {
+          if (result.assets.length > 0) {
+            setThemeStagedAssets(buildStagedAssets(result.assets));
+            setThemeTargetVisible(true);
+          } else {
+            setThemeSelectionLabel(null);
+          }
+          return;
+        }
+      } finally {
+        setThemeSelectionBusy(false);
+      }
+    }
+
+    setThemePhotoPickerVisible(true);
+  }, []);
+
+  const onImportThemePhotos = useCallback(async (assetIds: string[]) => {
+    if (!themeSelectionLabel || themeSelectionBusy) {
+      return;
+    }
+    try {
+      setThemeSelectionBusy(true);
+      const selected = await pickPhotosFromMediaLibraryByAssetIds(assetIds);
+      if (selected.length === 0) {
+        setThemePhotoPickerVisible(false);
+        return;
+      }
+      setThemeStagedAssets(buildStagedAssets(selected));
+      setThemePhotoPickerVisible(false);
+      setThemeTargetVisible(true);
+    } catch (error) {
+      Alert.alert("Unable to add theme photos", (error as Error).message);
+    } finally {
+      setThemeSelectionBusy(false);
+    }
+  }, [themeSelectionBusy, themeSelectionLabel]);
+
+  const createNewThemeCollection = useCallback(() => {
+    if (!themeSelectionLabel || themeStagedAssets.length === 0) {
+      return;
+    }
+    const stagedAssets = themeStagedAssets;
+    const first = stagedAssets[0];
+    openCreateComposer("collection", {
+      title: themeSelectionLabel,
+      collectionHooks: themeSelectionLabel,
+      stagedAssets,
+      thumbnailChoice: first ? { kind: "staged", stagedKey: first.key } : undefined
+    });
+    setThemeTargetVisible(false);
+    setThemeSelectionLabel(null);
+    setThemeStagedAssets([]);
+    setCustomThemeLabel("");
+  }, [openCreateComposer, themeSelectionLabel, themeStagedAssets]);
+
+  const addThemePhotosToCollection = useCallback(
+    async (memoryId: string) => {
+      if (themeStagedAssets.length === 0 || themeSelectionBusy) {
+        return;
+      }
+      try {
+        setThemeSelectionBusy(true);
+        const createdPhotoIds = await addPhotoAssetsToMemory(memoryId, themeStagedAssets);
+        const targetMemory = memories.find((memory) => memory.id === memoryId);
+        if (!targetMemory?.primaryPhotoId && createdPhotoIds[0]) {
+          setMemoryPrimaryPhoto(memoryId, createdPhotoIds[0]);
+        }
+        resetThemeFlow();
+      } catch (error) {
+        Alert.alert("Unable to add to collection", (error as Error).message);
+        setThemeSelectionBusy(false);
+      }
+    },
+    [addPhotoAssetsToMemory, memories, resetThemeFlow, setMemoryPrimaryPhoto, themeSelectionBusy, themeStagedAssets]
+  );
 
   const onAddProjectPhotos = useCallback(() => {
     if (!DEV_TOOLS_ENABLED || !project || projectPhotoIntakeBusy || projectPhotoPickerBusy) {
@@ -2407,25 +2564,29 @@ export default function ProjectDetailsScreen() {
 
               <View style={styles.sectionHeaderRow}>
                 <Text style={styles.sectionHeading}>Suggested Theme Pages</Text>
+                <Pressable style={styles.scanButton} onPress={() => setThemePickerVisible(true)}>
+                  <Ionicons name="search-outline" size={15} color="#eef4ff" />
+                  <Text style={styles.scanButtonText}>Pick Theme</Text>
+                </Pressable>
               </View>
               <Text style={styles.sectionSubheading}>
-                Theme pages are user-led in the MVP. Pick a theme later, then choose the exact photos before anything is imported.
+                Theme pages are user-led in the MVP. Pick a theme, choose exact photos, then create or add to a collection.
               </Text>
               <View style={styles.themeSuggestionCard}>
                 <View style={styles.themeSuggestionHeader}>
                   <Ionicons name="albums-outline" size={24} color="#7fa7ff" />
                   <View style={styles.themeSuggestionTextBlock}>
-                    <Text style={styles.emptyTitle}>Theme picker scaffold</Text>
+                    <Text style={styles.emptyTitle}>Theme picker</Text>
                     <Text style={styles.emptyText}>
-                      The next slice will connect these themes to a picker/search flow. No full-library theme import runs here.
+                      Suggested themes open a picker. Nothing is imported until you select photos and choose where to put them.
                     </Text>
                   </View>
                 </View>
                 <View style={styles.themeChipRow}>
                   {SUGGESTED_THEME_PAGE_LABELS.map((label) => (
-                    <View key={label} style={styles.themeChip}>
+                    <Pressable key={label} style={styles.themeChip} onPress={() => void openThemePhotoPicker(label)}>
                       <Text style={styles.themeChipText}>{label}</Text>
-                    </View>
+                    </Pressable>
                   ))}
                 </View>
               </View>
@@ -2734,6 +2895,106 @@ export default function ProjectDetailsScreen() {
               </View>
             </Pressable>
             <Pressable style={styles.secondaryButtonLike} onPress={() => setAddMenuVisible(false)}>
+              <Text style={styles.secondaryButtonLikeText}>Cancel</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal transparent animationType="fade" visible={themePickerVisible} onRequestClose={() => setThemePickerVisible(false)}>
+        <View style={styles.centerModalBackdrop}>
+          <View style={styles.actionMenuCard}>
+            <Text style={styles.modalTitle}>Choose Theme</Text>
+            <Text style={styles.modalSubtitle}>
+              Pick a suggested theme or enter your own. The next step lets you choose exact photos.
+            </Text>
+            <View style={styles.themeChipRow}>
+              {SUGGESTED_THEME_PAGE_LABELS.map((label) => (
+                <Pressable key={label} style={styles.themeChip} onPress={() => void openThemePhotoPicker(label)}>
+                  <Text style={styles.themeChipText}>{label}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={styles.fieldLabel}>Custom Theme</Text>
+            <TextInput
+              value={customThemeLabel}
+              onChangeText={setCustomThemeLabel}
+              placeholder="Examples: Christmas, desserts, grandparents"
+              placeholderTextColor="#6f7f9f"
+              style={styles.modalInput}
+            />
+            <Pressable
+              style={[styles.primaryAction, !customThemeLabel.trim() ? styles.primaryActionDisabled : null]}
+              onPress={() => void openThemePhotoPicker(customThemeLabel)}
+              disabled={!customThemeLabel.trim()}
+            >
+              <Text style={styles.primaryActionText}>Select Photos</Text>
+            </Pressable>
+            <Pressable
+              style={styles.secondaryButtonLike}
+              onPress={() => {
+                setThemePickerVisible(false);
+                openCreateComposer("collection");
+              }}
+            >
+              <Text style={styles.secondaryButtonLikeText}>Blank Collection</Text>
+            </Pressable>
+            <Pressable style={styles.secondaryButtonLike} onPress={() => setThemePickerVisible(false)}>
+              <Text style={styles.secondaryButtonLikeText}>Cancel</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal transparent animationType="fade" visible={themeTargetVisible} onRequestClose={resetThemeFlow}>
+        <View style={styles.centerModalBackdrop}>
+          <View style={styles.actionMenuCard}>
+            <Text style={styles.modalTitle}>{themeSelectionLabel ?? "Theme Photos"}</Text>
+            <Text style={styles.modalSubtitle}>
+              {pluralize(themeStagedAssets.length, "selected photo")} ready. Create a new collection or add them to an existing collection.
+            </Text>
+            {themeStagedAssets.length > 0 ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.thumbnailPickerRow}>
+                {themeStagedAssets.slice(0, 8).map((asset) => (
+                  <View key={asset.key} style={styles.thumbnailOption}>
+                    <Image source={{ uri: asset.uri }} style={styles.thumbnailOptionImage} />
+                  </View>
+                ))}
+              </ScrollView>
+            ) : null}
+            <Pressable
+              style={[styles.actionMenuButton, themeSelectionBusy ? styles.suggestionActionDisabled : null]}
+              onPress={createNewThemeCollection}
+              disabled={themeSelectionBusy || themeStagedAssets.length === 0}
+            >
+              <Ionicons name="albums-outline" size={20} color="#d7e2ff" />
+              <View style={styles.actionMenuTextBlock}>
+                <Text style={styles.actionMenuButtonText}>Create New Collection</Text>
+                <Text style={styles.actionMenuHint}>Name it, confirm the thumbnail, then save.</Text>
+              </View>
+            </Pressable>
+            {collectionMemories.length > 0 ? (
+              <>
+                <Text style={styles.fieldLabel}>Add to Existing</Text>
+                {collectionMemories.map((memory) => (
+                  <Pressable
+                    key={memory.id}
+                    style={[styles.actionMenuButton, themeSelectionBusy ? styles.suggestionActionDisabled : null]}
+                    onPress={() => void addThemePhotosToCollection(memory.id)}
+                    disabled={themeSelectionBusy}
+                  >
+                    <Ionicons name="add-circle-outline" size={20} color="#d7e2ff" />
+                    <View style={styles.actionMenuTextBlock}>
+                      <Text style={styles.actionMenuButtonText}>{memory.title}</Text>
+                      <Text style={styles.actionMenuHint}>
+                        {memory.themeTags && memory.themeTags.length > 0 ? memory.themeTags.join(" | ") : "Collection"}
+                      </Text>
+                    </View>
+                  </Pressable>
+                ))}
+              </>
+            ) : null}
+            <Pressable style={styles.secondaryButtonLike} onPress={resetThemeFlow} disabled={themeSelectionBusy}>
               <Text style={styles.secondaryButtonLikeText}>Cancel</Text>
             </Pressable>
           </View>
@@ -3514,7 +3775,7 @@ export default function ProjectDetailsScreen() {
       <MediaLibrarySelectionModal
         visible={composerMediaLibraryVisible}
         title="Add Memory Photos"
-        subtitle="Choose Media Library assets to stage inside this memory composer while preserving the canonical asset metadata path."
+        subtitle="Fallback selector for devices where the Android Photo Picker path is unavailable."
         confirmLabel="Add to Memory"
         selectionMode="multiple"
         confirming={composerPicking}
@@ -3525,6 +3786,22 @@ export default function ProjectDetailsScreen() {
           }
         }}
         onConfirm={onImportComposerPhotos}
+      />
+
+      <MediaLibrarySelectionModal
+        visible={themePhotoPickerVisible}
+        title={themeSelectionLabel ? `Pick ${themeSelectionLabel} Photos` : "Pick Theme Photos"}
+        subtitle="Fallback selector for devices where Photo Picker search highlighting is unavailable."
+        confirmLabel="Use Selected Photos"
+        selectionMode="multiple"
+        confirming={themeSelectionBusy}
+        bottomInset={insets.bottom}
+        onClose={() => {
+          if (!themeSelectionBusy) {
+            resetThemeFlow();
+          }
+        }}
+        onConfirm={onImportThemePhotos}
       />
 
       <MediaLibrarySelectionModal

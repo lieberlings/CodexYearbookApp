@@ -9,7 +9,8 @@ class YearbookImageLabelingPackage : ReactPackage {
   override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> =
     listOf(
       YearbookImageLabelingModule(reactContext),
-      YearbookFaceDetectionModule(reactContext)
+      YearbookFaceDetectionModule(reactContext),
+      YearbookPhotoPickerModule(reactContext)
     )
 
   override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> =

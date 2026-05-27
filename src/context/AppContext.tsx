@@ -106,7 +106,8 @@ type AppContextValue = {
   addPhotosToMemory: (memoryId: string) => Promise<number>;
   addPhotoAssetsToMemory: (
     memoryId: string,
-    assets: PickedPhotoAsset[]
+    assets: PickedPhotoAsset[],
+    options?: { projectId?: string }
   ) => Promise<string[]>;
   addPhotosToProject: (projectId: string) => Promise<number>;
   addPhotoAssetsToProject: (projectId: string, assets: PickedPhotoAsset[]) => Promise<string[]>;
@@ -647,16 +648,12 @@ export function AppProvider({ children }: PropsWithChildren) {
 
   const setMemoryPrimaryPhoto = useCallback(
     (memoryId: string, photoId: string) => {
-      const photo = photos.find((item) => item.id === photoId);
-      if (!photo || photo.memoryId !== memoryId) {
-        return;
-      }
       const now = new Date().toISOString();
       setMemories((prev) =>
         prev.map((memory) => (memory.id === memoryId ? { ...memory, primaryPhotoId: photoId, updatedAt: now } : memory))
       );
     },
-    [photos]
+    []
   );
 
   const createPageSection = useCallback((memoryId: string) => {
@@ -1017,16 +1014,17 @@ export function AppProvider({ children }: PropsWithChildren) {
   );
 
   const addPhotoAssetsToMemory = useCallback(
-    async (memoryId: string, selected: PickedPhotoAsset[]): Promise<string[]> => {
+    async (memoryId: string, selected: PickedPhotoAsset[], options?: { projectId?: string }): Promise<string[]> => {
       if (selected.length === 0) {
         return [];
       }
       const memory = memories.find((item) => item.id === memoryId);
-      if (!memory) {
+      const projectId = memory?.projectId ?? options?.projectId;
+      if (!projectId) {
         return [];
       }
       const now = new Date().toISOString();
-      const createdPhotos = await importPickedPhotos(memory.projectId, selected, memoryId);
+      const createdPhotos = await importPickedPhotos(projectId, selected, memoryId);
       const createdPhotoIds = createdPhotos.map((photo) => photo.id);
 
       setPhotos((prev) => [...createdPhotos, ...prev]);
