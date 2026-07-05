@@ -209,6 +209,21 @@ export type PromptItem = {
 export type SuggestionType = "event" | "collection";
 export type SuggestionStatus = "new" | "watching" | "snoozed" | "dismissed" | "accepted";
 
+export type SuggestionCandidatePhotoRef = {
+  id: string;
+  source: "media-library";
+  assetId: string;
+  uri: string;
+  fileName?: string;
+  width?: number;
+  height?: number;
+  capturedAt?: string;
+  location?: {
+    latitude: number;
+    longitude: number;
+  };
+};
+
 export type Suggestion = {
   id: string;
   projectId: string;
@@ -217,6 +232,7 @@ export type Suggestion = {
   title: string;
   message: string;
   candidatePhotoIds: string[];
+  candidatePhotoRefs?: SuggestionCandidatePhotoRef[];
   acceptedMemoryId?: string;
   createdAt: string;
 };

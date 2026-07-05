@@ -87,6 +87,7 @@ Focus specifically on:
 - temporary candidate photo refs
 - no project-level photo pool
 - accept/reject/snooze workflow
+- using MediaLibrary/canonical asset metadata for timestamps, GPS, and stable ids instead of Android Photo Picker imports
 
 Then inspect:
 - `src/services/photoCanonicalResolver.ts`
@@ -113,6 +114,7 @@ Requirements:
 - on accept, user selects photos and app creates a normal memory
 - on reject, candidate refs are discarded
 - preserve stable suggestion ids across repeated scans
+- prefer MediaLibrary asset ids and `getAssetInfoAsync`/canonical resolver metadata for GPS/location
 
 Constraints:
 - do not require image analysis
@@ -120,6 +122,7 @@ Constraints:
 - do not auto-import candidate photos
 - do not change memory editor behavior
 - do not reintroduce project photo pool UX
+- do not depend on Android Photo Picker results for GPS/location clustering
 
 After editing, provide:
 1. candidate/ref model introduced
@@ -183,6 +186,7 @@ Focus specifically on:
 - Android Photo Picker search highlighting where available
 - selected photos only
 - create new theme or add to existing theme
+- manual picker imports may be picker-fallback photos without GPS/canonical asset ids
 
 Then inspect:
 - current media picker/selection code
@@ -204,7 +208,8 @@ Requirements:
 - user selects photos
 - user chooses create new theme or add to existing theme
 - import selected photos at highest available quality
-- record source dimensions
+- record source dimensions and picker-available metadata
+- do not require GPS metadata from manual Photo Picker selections
 
 Constraints:
 - do not auto-import search results
@@ -212,6 +217,7 @@ Constraints:
 - do not implement automatic theme clustering
 - do not implement iOS/web yet
 - preserve memory editor behavior
+- keep GPS/location intelligence in the MediaLibrary-backed suggestion scan path
 
 After editing, provide:
 1. theme picker/search UI added

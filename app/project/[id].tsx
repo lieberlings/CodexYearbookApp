@@ -53,7 +53,8 @@ import {
   PhotoNativeImageLabelMetadata,
   PhotoMetadataResolutionKind,
   PhotoMetadataSource,
-  Suggestion
+  Suggestion,
+  SuggestionCandidatePhotoRef
 } from "../../src/types";
 
 type MemoryComposerMode = "create" | "edit";
@@ -416,6 +417,15 @@ function getSuggestionTypeLabel(type: Suggestion["type"]): string {
   return type === "collection" ? "Collection" : "Event";
 }
 
+function getSuggestionCandidateRefs(suggestion: Suggestion | null | undefined): SuggestionCandidatePhotoRef[] {
+  return suggestion?.candidatePhotoRefs ?? [];
+}
+
+function getSuggestionCandidateCount(suggestion: Suggestion): number {
+  const refs = getSuggestionCandidateRefs(suggestion);
+  return refs.length > 0 ? refs.length : suggestion.candidatePhotoIds.length;
+}
+
 function getFinalizationTypeLabel(type: FinalizationSuggestion["type"]): string {
   switch (type) {
     case "missing-moment":
@@ -511,7 +521,15 @@ function parseCollectionHooks(value: string): string[] {
     .filter(Boolean);
 }
 
-function MemoryCollagePreview({ photos }: { photos: PhotoItem[] }) {
+function MemoryCollagePreview({ photos, thumbnailUri }: { photos: PhotoItem[]; thumbnailUri?: string }) {
+  if (thumbnailUri) {
+    return (
+      <View style={styles.previewPanel}>
+        <Image source={{ uri: thumbnailUri }} style={styles.previewSingle} />
+      </View>
+    );
+  }
+
   if (photos.length === 0) {
     return (
       <View style={[styles.previewPanel, styles.previewEmpty]}>
@@ -999,14 +1017,18 @@ export default function ProjectDetailsScreen() {
     () => projectSuggestions.find((suggestion) => suggestion.id === suggestionReviewId) ?? null,
     [projectSuggestions, suggestionReviewId]
   );
+  const suggestionReviewCandidateRefs = useMemo(
+    () => getSuggestionCandidateRefs(suggestionReview),
+    [suggestionReview]
+  );
   const suggestionReviewPhotos = useMemo(
     () =>
-      suggestionReview
+      suggestionReview && suggestionReviewCandidateRefs.length === 0
         ? suggestionReview.candidatePhotoIds
             .map((photoId) => projectPhotos.find((photo) => photo.id === photoId))
             .filter((photo): photo is PhotoItem => Boolean(photo))
         : [],
-    [projectPhotos, suggestionReview]
+    [projectPhotos, suggestionReview, suggestionReviewCandidateRefs.length]
   );
 
   const suggestionStateCard = useMemo(() => {
@@ -1014,7 +1036,7 @@ export default function ProjectDetailsScreen() {
       return {
         icon: "sync-outline" as const,
         title: "Scanning suggestions",
-        message: "Checking this project's photo scope for event and collection ideas.",
+        message: "Checking on-device library metadata inside this project's date scope.",
         tone: "info" as const
       };
     }
@@ -1049,25 +1071,17 @@ export default function ProjectDetailsScreen() {
         icon: "bulb-outline" as const,
         title: "No project suggestions found",
         message:
-          "We scanned the current project scope but did not find a strong event or collection signal yet. Try closely timed photos, geotagged photos, or a wider project pool.",
-        tone: "empty" as const
-      };
-    }
-    if (projectStats.photoCount === 0) {
-      return {
-        icon: "images-outline" as const,
-        title: "Suggestions need photos",
-        message: "Add photos to the project or to memories, then run Scan Suggestions to test project-scoped event detection.",
+          "We scanned the current project scope but did not find a strong event signal yet. Try a wider date range or a library area with closely timed photos.",
         tone: "empty" as const
       };
     }
     return {
         icon: "search-outline" as const,
         title: "Suggestions ready to scan",
-        message: "Use Scan Suggestions to generate project-scoped event and collection suggestions.",
+        message: "Use Scan Suggestions to find event-like memories from on-device library metadata.",
         tone: "empty" as const
       };
-  }, [lastSuggestionScanFeedback, projectStats.photoCount, projectSuggestions.length, suggestionScanError, suggestionScanState]);
+  }, [lastSuggestionScanFeedback, projectSuggestions.length, suggestionScanError, suggestionScanState]);
 
   const projectPhotoStateCard = useMemo(() => {
     if (projectPhotoFeedback) {
@@ -1959,8 +1973,11 @@ export default function ProjectDetailsScreen() {
     if (!suggestion) {
       return;
     }
+    const candidateRefs = getSuggestionCandidateRefs(suggestion);
     setSuggestionReviewId(suggestion.id);
-    setSuggestionSelectedPhotoIds(suggestion.candidatePhotoIds);
+    setSuggestionSelectedPhotoIds(
+      candidateRefs.length > 0 ? candidateRefs.map((ref) => ref.id) : suggestion.candidatePhotoIds
+    );
   }, [projectSuggestions]);
 
   const closeSuggestionReview = useCallback(() => {
@@ -1968,11 +1985,40 @@ export default function ProjectDetailsScreen() {
     setSuggestionSelectedPhotoIds([]);
   }, []);
 
-  const createMemoryFromReviewedSuggestion = useCallback(() => {
+  const createMemoryFromReviewedSuggestion = useCallback(async () => {
     const suggestion = projectSuggestions.find((item) => item.id === suggestionReviewId);
     if (!suggestion || suggestionSelectedPhotoIds.length === 0) {
       return;
     }
+    const candidateRefs = getSuggestionCandidateRefs(suggestion);
+    const selectedCandidateRefs = candidateRefs.filter((ref) => suggestionSelectedPhotoIds.includes(ref.id));
+
+    if (selectedCandidateRefs.length > 0) {
+      try {
+        setActiveSuggestionId(suggestion.id);
+        const selected = await pickPhotosFromMediaLibraryByAssetIds(
+          selectedCandidateRefs.map((ref) => ref.assetId)
+        );
+        if (selected.length === 0) {
+          Alert.alert("Unable to import photos", "The selected library photos could not be opened.");
+          return;
+        }
+        const stagedAssets = buildStagedAssets(selected);
+        closeSuggestionReview();
+        setSuggestionsModalVisible(false);
+        openCreateComposer(suggestion.type === "collection" ? "collection" : "event", {
+          title: suggestion.title,
+          stagedAssets,
+          suggestionId: suggestion.id
+        });
+      } catch (error) {
+        Alert.alert("Unable to import photos", (error as Error).message);
+      } finally {
+        setActiveSuggestionId(null);
+      }
+      return;
+    }
+
     closeSuggestionReview();
     setSuggestionsModalVisible(false);
     openCreateComposer(suggestion.type === "collection" ? "collection" : "event", {
@@ -1986,11 +2032,13 @@ export default function ProjectDetailsScreen() {
     (suggestion: Suggestion) => {
       const statusStyles = getSuggestionStatusStyle(suggestion.status);
       const isBusy = activeSuggestionId === suggestion.id;
-      const candidateCount = suggestion.candidatePhotoIds.length;
+      const candidateRefs = getSuggestionCandidateRefs(suggestion);
+      const candidateCount = getSuggestionCandidateCount(suggestion);
       const candidatePreviewPhotos = suggestion.candidatePhotoIds
         .map((photoId) => projectPhotos.find((photo) => photo.id === photoId))
         .filter((photo): photo is PhotoItem => Boolean(photo))
         .slice(0, 4);
+      const candidatePreviewRefs = candidateRefs.slice(0, 4);
       const lifecycleNote =
         suggestion.status === "accepted"
           ? suggestion.acceptedMemoryId
@@ -2020,7 +2068,13 @@ export default function ProjectDetailsScreen() {
             {candidateCount > 0 ? `${pluralize(candidateCount, "candidate photo")}` : "No candidate photos attached"}
           </Text>
           <Text style={styles.suggestionLifecycleNote}>{lifecycleNote}</Text>
-          {candidatePreviewPhotos.length > 0 ? (
+          {candidatePreviewRefs.length > 0 ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.suggestionPreviewRow}>
+              {candidatePreviewRefs.map((ref) => (
+                <Image key={ref.id} source={{ uri: ref.uri }} style={styles.suggestionPreviewThumb} />
+              ))}
+            </ScrollView>
+          ) : candidatePreviewPhotos.length > 0 ? (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.suggestionPreviewRow}>
               {candidatePreviewPhotos.map((photo) => (
                 <Image key={photo.id} source={{ uri: photo.uri }} style={styles.suggestionPreviewThumb} />
@@ -2728,6 +2782,9 @@ export default function ProjectDetailsScreen() {
           }}
           renderItem={({ item, drag, isActive }) => {
             const memoryPhotos = prioritizePrimary(getPhotosByMemoryId(item.id), item.primaryPhotoId);
+            const memoryThumbnailUri = item.primaryPhotoId
+              ? memoryPhotos.find((photo) => photo.id === item.primaryPhotoId)?.uri
+              : undefined;
             const pageCount = getPageSectionsByMemoryId(item.id).length;
             const photoCount = memoryPhotos.length;
             const candidatePhotos = candidatePhotosByMemoryId.get(item.id) ?? [];
@@ -2745,7 +2802,7 @@ export default function ProjectDetailsScreen() {
                     }}
                     style={styles.memoryCard}
                   >
-                    <MemoryCollagePreview photos={memoryPhotos} />
+                    <MemoryCollagePreview photos={memoryPhotos} thumbnailUri={memoryThumbnailUri} />
                     <View style={styles.memoryBody}>
                       <View style={styles.memoryMetaRow}>
                         <View
@@ -3122,7 +3179,38 @@ export default function ProjectDetailsScreen() {
                   <Text style={styles.suggestionMessage}>{suggestionReview.message}</Text>
                 ) : null}
 
-                {suggestionReviewPhotos.length > 0 ? (
+                {suggestionReviewCandidateRefs.length > 0 ? (
+                  <View style={styles.candidateGrid}>
+                    {suggestionReviewCandidateRefs.map((ref) => {
+                      const selected = suggestionSelectedPhotoIds.includes(ref.id);
+                      return (
+                        <Pressable
+                          key={ref.id}
+                          style={[styles.candidateGridItem, selected ? styles.candidateGridItemSelected : null]}
+                          onPress={() =>
+                            setSuggestionSelectedPhotoIds((prev) =>
+                              prev.includes(ref.id) ? prev.filter((id) => id !== ref.id) : [...prev, ref.id]
+                            )
+                          }
+                        >
+                          <Image source={{ uri: ref.uri }} style={styles.candidateGridImage} />
+                          <View style={[styles.candidateGridCheck, selected ? styles.candidateGridCheckSelected : null]}>
+                            <Ionicons
+                              name={selected ? "checkmark" : "add"}
+                              size={16}
+                              color={selected ? "#ffffff" : "#d9e6ff"}
+                            />
+                          </View>
+                          {ref.location ? (
+                            <View style={styles.mediaLibraryProbeBadge}>
+                              <Text style={styles.mediaLibraryProbeBadgeText}>GPS</Text>
+                            </View>
+                          ) : null}
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                ) : suggestionReviewPhotos.length > 0 ? (
                   <View style={styles.candidateGrid}>
                     {suggestionReviewPhotos.map((photo) => {
                       const selected = suggestionSelectedPhotoIds.includes(photo.id);
@@ -3179,13 +3267,19 @@ export default function ProjectDetailsScreen() {
                   <Pressable
                     style={[
                       styles.primaryAction,
-                      suggestionSelectedPhotoIds.length === 0 ? styles.primaryActionDisabled : null
+                      suggestionSelectedPhotoIds.length === 0 || activeSuggestionId === suggestionReview?.id
+                        ? styles.primaryActionDisabled
+                        : null
                     ]}
                     onPress={createMemoryFromReviewedSuggestion}
-                    disabled={suggestionSelectedPhotoIds.length === 0}
+                    disabled={suggestionSelectedPhotoIds.length === 0 || activeSuggestionId === suggestionReview?.id}
                   >
                     <Text style={styles.primaryActionText}>
-                      {suggestionSelectedPhotoIds.length === 0 ? "Select Photos" : "Create"}
+                      {activeSuggestionId === suggestionReview?.id
+                        ? "Importing..."
+                        : suggestionSelectedPhotoIds.length === 0
+                          ? "Select Photos"
+                          : "Create"}
                     </Text>
                   </Pressable>
                 </View>
@@ -3825,9 +3919,19 @@ export default function ProjectDetailsScreen() {
             <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 18 }]}>
               <View style={styles.modalHeader}>
                 <View>
-                  <Text style={styles.modalTitle}>{composerMode === "create" ? "New Memory" : "Edit Memory"}</Text>
+                  <Text style={styles.modalTitle}>
+                    {composerMode === "create"
+                      ? composerMemoryKind === "collection"
+                        ? "New Collection"
+                        : "New Memory"
+                      : composerMemoryKind === "collection"
+                        ? "Edit Collection"
+                        : "Edit Memory"}
+                  </Text>
                   <Text style={styles.modalSubtitle}>
-                    Set a title, pick starting photos, and choose the memory thumbnail.
+                    {composerMemoryKind === "collection"
+                      ? "Set a title, pick starting photos, and choose the collection thumbnail."
+                      : "Set a title, pick starting photos, and choose the memory thumbnail."}
                   </Text>
                 </View>
                 <Pressable style={styles.modalCloseButton} onPress={closeComposer}>
@@ -3836,40 +3940,16 @@ export default function ProjectDetailsScreen() {
               </View>
 
               <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
-                <Text style={styles.fieldLabel}>Memory Title</Text>
+                <Text style={styles.fieldLabel}>
+                  {composerMemoryKind === "collection" ? "Collection Title" : "Memory Title"}
+                </Text>
                 <TextInput
                   value={composerTitle}
                   onChangeText={setComposerTitle}
-                  placeholder="Memory title"
+                  placeholder={composerMemoryKind === "collection" ? "Collection title" : "Memory title"}
                   placeholderTextColor="#6f7f9f"
                   style={styles.modalInput}
                 />
-
-                <View style={styles.fieldGroup}>
-                  <Text style={styles.fieldLabel}>Memory Type</Text>
-                  <View style={styles.choiceGrid}>
-                    {[
-                      { label: "Event", value: "event" as const },
-                      { label: "Collection", value: "collection" as const }
-                    ].map((option) => {
-                      const selected = composerMemoryKind === option.value;
-                      return (
-                        <Pressable
-                          key={option.value}
-                          style={[styles.choiceChip, selected ? styles.choiceChipSelected : null]}
-                          onPress={() => setComposerMemoryKind(option.value)}
-                        >
-                          <Text style={[styles.choiceChipText, selected ? styles.choiceChipTextSelected : null]}>
-                            {option.label}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                  <Text style={styles.fieldHelperText}>
-                    Collections are recurring themes that can grow over time. Events keep the current memory flow.
-                  </Text>
-                </View>
 
                 {composerMemoryKind === "collection" ? (
                   <View style={styles.fieldGroup}>

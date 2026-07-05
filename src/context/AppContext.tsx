@@ -5,7 +5,6 @@ import { loadAppData, saveAppData } from "../storage";
 import {
   applyPhotoAssignmentToMemory,
   buildMemorySeedFromSuggestion,
-  getProjectScanReferenceDate,
   getScopedProjectPhotos,
   markSuggestionAccepted,
   normalizeMemoryRecord,
@@ -37,7 +36,7 @@ import {
 } from "../services/photoService";
 import { runPhotoAnalysisOrchestrator } from "../services/photoAnalysisOrchestrator";
 import { PhotoAnalysisRunResult } from "../services/photoAnalysisTypes";
-import { generateSuggestionsForProject } from "../services/promptEngine";
+import { scanMediaLibrarySuggestionsForProject } from "../services/librarySuggestionScanner";
 
 type AppContextValue = {
   loading: boolean;
@@ -1282,27 +1281,29 @@ export function AppProvider({ children }: PropsWithChildren) {
   const scanProjectSuggestions = useCallback(
     async (projectId: string, scopeOverrides?: ProjectPhotoScopeOverrides): Promise<Suggestion[]> => {
       try {
-        const project = projects.find((item) => item.id === projectId);
+        const baseProject = projects.find((item) => item.id === projectId);
+        const project = baseProject && scopeOverrides
+          ? {
+              ...baseProject,
+              timelineMode: scopeOverrides.timelineMode ?? baseProject.timelineMode,
+              includeFutureProjectPhotos:
+                scopeOverrides.includeFutureProjectPhotos ?? baseProject.includeFutureProjectPhotos,
+              startDate: scopeOverrides.startDate ?? baseProject.startDate,
+              endDate: scopeOverrides.endDate ?? baseProject.endDate
+            }
+          : baseProject;
         if (!project) {
           return [];
         }
 
-        const projectMemories = memories.filter((memory) => memory.projectId === projectId);
-        const analysisResult = await runProjectPhotoAnalysis(projectId, { scopeOverrides });
-        if (!analysisResult) {
-          return [];
-        }
-        if (analysisResult.analyzedPhotoIds.length > 0) {
-          setPhotos(analysisResult.photos);
-        }
-
-        const scopedPhotos = analysisResult.scopedPhotos;
-        if (scopedPhotos.length === 0) {
-          return [];
-        }
-
-        const scanReferenceDate = getProjectScanReferenceDate(project, scopedPhotos, scopeOverrides);
-        const generated = generateSuggestionsForProject(projectId, projectMemories, scopedPhotos, scanReferenceDate);
+        const existingAssetIds = photos
+          .filter((photo) => photo.projectId === projectId)
+          .map((photo) => photo.importMetadata?.assetId)
+          .filter((assetId): assetId is string => Boolean(assetId));
+        const result = await scanMediaLibrarySuggestionsForProject(project, {
+          excludeAssetIds: existingAssetIds
+        });
+        const generated = result.suggestions;
 
         if (generated.length > 0) {
           upsertSuggestions(generated);
@@ -1314,7 +1315,7 @@ export function AppProvider({ children }: PropsWithChildren) {
         throw error instanceof Error ? error : new Error("Project suggestion scan failed.");
       }
     },
-    [memories, projects, runProjectPhotoAnalysis, upsertSuggestions]
+    [photos, projects, upsertSuggestions]
   );
 
   const updateSuggestionStatus = useCallback((suggestionId: string, status: Suggestion["status"]) => {

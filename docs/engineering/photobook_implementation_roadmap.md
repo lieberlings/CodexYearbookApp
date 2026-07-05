@@ -75,6 +75,8 @@ Generate suggested event memories from local media-library metadata without requ
 - dimensions
 - optional face/quality signals
 
+This phase should use the MediaLibrary/canonical asset path, not Android Photo Picker results, because GPS/location and stable asset ids are suggestion-scan inputs.
+
 ### Output
 SuggestedMemory candidates with:
 - id
@@ -149,7 +151,11 @@ Fallback:
 - no unattended cloud scanning
 - preserve source dimensions
 - preserve highest available/original-quality source
-- record source metadata
+- record source metadata available from the picker
+- do not require GPS/canonical MediaStore ids for manual Photo Picker imports
+
+### Metadata note
+Android Photo Picker imports are the preferred manual memory/theme UX because search highlighting helps users find photos. On tested Android providers, Photo Picker URIs may reject unredacted EXIF/GPS reads even when `ACCESS_MEDIA_LOCATION` is granted and `MediaStore.setRequireOriginal()` is requested. GPS-dependent features should therefore use the MediaLibrary-backed scan path in Phase 2.
 
 ### Deferred
 - iOS equivalent
@@ -197,7 +203,7 @@ These should not block the MVP.
 - keep accepted photos as memory/theme photos
 - keep scans scoped to project settings
 - preserve canonical media resolver work
-- preserve Android GPS handling
+- preserve Android GPS handling for MediaLibrary-backed scans
 
 ### Do not
 - expose project photo pool as normal UX

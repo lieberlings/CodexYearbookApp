@@ -8,6 +8,7 @@ import {
   Image,
   Keyboard,
   Modal,
+  Platform,
   TextInput,
   Pressable,
   ScrollView,
@@ -29,6 +30,7 @@ import { applySlotOverridesToPage } from "../../src/layout/overrides";
 import { clampPhotoOffset, getPhotoAspect, getPhotoRenderMetrics, getPhotoScaleBounds } from "../../src/layout/photoMetrics";
 import { listTemplatesForPhotoCount, TemplateDefinition } from "../../src/layout/templates";
 import { SlotOverride, useEditorStore } from "../../src/state/editorStore";
+import { pickImagesWithAndroidPhotoPicker } from "../../src/services/androidPhotoPicker";
 import { pickPhotosFromMediaLibraryByAssetIds } from "../../src/services/photoService";
 import { MemoryPageSection, PageTextBox, TextBoxAlignment } from "../../src/types";
 
@@ -51,6 +53,8 @@ type TextBoxGestureState = {
 const COLOR_PALETTE = ["#ffffff", "#fff7ed", "#fef3c7", "#ecfccb", "#e0f2fe", "#ede9fe", "#fce7f3", "#f1f5f9"];
 const TEXT_COLORS = ["#0f172a", "#1d4ed8", "#0f766e", "#b45309", "#be123c", "#6d28d9", "#ffffff"];
 const BORDER_COLORS = ["#e2e8f0", "#0f172a", "#334155", "#0f766e", "#c2410c", "#b91c1c"];
+const PHOTO_PICKER_SELECTION_LIMIT = 50;
+const ANDROID_PHOTO_PICKER_IMPORTS_ENABLED = true;
 const FONT_FAMILIES = [
   { id: "System", label: "Sans" },
   { id: "serif", label: "Serif" },
@@ -687,6 +691,31 @@ export default function MemoryDetailsScreen() {
     if (adding) {
       return;
     }
+
+    if (Platform.OS === "android" && ANDROID_PHOTO_PICKER_IMPORTS_ENABLED) {
+      try {
+        setAdding(true);
+        const result = await pickImagesWithAndroidPhotoPicker({
+          selectionLimit: PHOTO_PICKER_SELECTION_LIMIT
+        });
+        if (result.available) {
+          if (result.assets.length > 0) {
+            const createdPhotoIds = await addPhotoAssetsToMemory(memoryId, result.assets);
+            const count = createdPhotoIds.length;
+            if (count > 0) {
+              Alert.alert("Photos added", `${count} photo(s) added to this memory.`);
+            }
+          }
+          return;
+        }
+      } catch (error) {
+        Alert.alert("Unable to add photos", (error as Error).message);
+        return;
+      } finally {
+        setAdding(false);
+      }
+    }
+
     setMediaLibraryPickerVisible(true);
   }
 

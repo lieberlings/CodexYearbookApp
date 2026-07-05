@@ -34,29 +34,10 @@ type ProjectCardStats = {
   previewUri?: string;
 };
 
-const PRIMARY_PROJECT_TYPES: { label: string; value: ProjectType }[] = [
-  { label: "Yearbook", value: "yearbook" },
-  { label: "Vacation", value: "vacation" },
-  { label: "General", value: "general" }
-];
-
 const TIMELINE_MODE_OPTIONS: { label: string; value: ProjectTimelineMode }[] = [
   { label: "Ongoing", value: "ongoing" },
   { label: "Past", value: "past" },
   { label: "Hybrid", value: "hybrid" }
-];
-
-const ASSIST_LEVEL_OPTIONS: { label: string; value: ProjectAssistLevel }[] = [
-  { label: "Quiet", value: "quiet" },
-  { label: "Balanced", value: "balanced" },
-  { label: "Proactive", value: "proactive" }
-];
-
-const STYLE_INTENSITY_OPTIONS: { label: string; value: ProjectStyleIntensity }[] = [
-  { label: "Minimal", value: "minimal" },
-  { label: "Warm", value: "warm" },
-  { label: "Playful", value: "playful" },
-  { label: "Expressive", value: "expressive" }
 ];
 
 function normalizeDateInput(value: string): string | undefined {
@@ -69,24 +50,6 @@ function isValidSimpleDate(value: string): boolean {
     return true;
   }
   return /^\d{4}-\d{2}-\d{2}$/.test(value.trim());
-}
-
-function getProjectTypeLabel(projectType: ProjectType): string {
-  const builtIn = PRIMARY_PROJECT_TYPES.find((option) => option.value === projectType);
-  if (builtIn) {
-    return builtIn.label;
-  }
-
-  switch (projectType) {
-    case "baby-book":
-      return "Baby Book";
-    case "wedding-album":
-      return "Wedding Album";
-    case "year-in-review":
-      return "Year In Review";
-    default:
-      return "General";
-  }
 }
 
 function pluralize(count: number, singular: string, plural = `${singular}s`): string {
@@ -154,19 +117,6 @@ export default function HomeScreen() {
     }
     return stats;
   }, [getMemoriesByProjectId, getMemoryThumbnailUri, getPageSectionsByMemoryId, getPhotosByProjectId, projects]);
-
-  const visibleProjectTypeOptions = useMemo(() => {
-    if (PRIMARY_PROJECT_TYPES.some((option) => option.value === composerProjectType)) {
-      return PRIMARY_PROJECT_TYPES;
-    }
-    return [
-      ...PRIMARY_PROJECT_TYPES,
-      {
-        label: getProjectTypeLabel(composerProjectType),
-        value: composerProjectType
-      }
-    ];
-  }, [composerProjectType]);
 
   const closeComposer = useCallback(() => {
     setComposerVisible(false);
@@ -454,7 +404,7 @@ export default function HomeScreen() {
                 <View>
                   <Text style={styles.modalTitle}>{composerMode === "create" ? "New Project" : "Edit Project"}</Text>
                   <Text style={styles.modalSubtitle}>
-                    Set the title, project type, timeline, smart assist, and cover thumbnail.
+                    Set the title, timeline, and cover thumbnail.
                   </Text>
                 </View>
                 <Pressable style={styles.modalCloseButton} onPress={closeComposer}>
@@ -476,31 +426,6 @@ export default function HomeScreen() {
                   placeholderTextColor="#6f7f9f"
                   style={styles.modalInput}
                 />
-
-                <View style={styles.fieldGroup}>
-                  <Text style={styles.fieldLabel}>Project Type</Text>
-                  <View style={styles.choiceGrid}>
-                    {visibleProjectTypeOptions.map((option) => {
-                      const selected = composerProjectType === option.value;
-                      return (
-                        <Pressable
-                          key={option.value}
-                          style={[styles.choiceChip, selected ? styles.choiceChipSelected : null]}
-                          onPress={() => setComposerProjectType(option.value)}
-                        >
-                          <Text style={[styles.choiceChipText, selected ? styles.choiceChipTextSelected : null]}>
-                            {option.label}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                  {!PRIMARY_PROJECT_TYPES.some((option) => option.value === composerProjectType) ? (
-                    <Text style={styles.fieldHelperText}>
-                      This project is using a legacy type label. You can keep it, or switch to a Milestone 1 type.
-                    </Text>
-                  ) : null}
-                </View>
 
                 <View style={styles.fieldGroup}>
                   <Text style={styles.fieldLabel}>Timeline</Text>
@@ -591,46 +516,6 @@ export default function HomeScreen() {
                     </Text>
                   </View>
                 ) : null}
-
-                <View style={styles.fieldGroup}>
-                  <Text style={styles.fieldLabel}>Smart Assist</Text>
-                  <View style={styles.choiceGrid}>
-                    {ASSIST_LEVEL_OPTIONS.map((option) => {
-                      const selected = composerAssistLevel === option.value;
-                      return (
-                        <Pressable
-                          key={option.value}
-                          style={[styles.choiceChip, selected ? styles.choiceChipSelected : null]}
-                          onPress={() => setComposerAssistLevel(option.value)}
-                        >
-                          <Text style={[styles.choiceChipText, selected ? styles.choiceChipTextSelected : null]}>
-                            {option.label}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                </View>
-
-                <View style={styles.fieldGroup}>
-                  <Text style={styles.fieldLabel}>Style Intensity</Text>
-                  <View style={styles.choiceGrid}>
-                    {STYLE_INTENSITY_OPTIONS.map((option) => {
-                      const selected = composerStyleIntensity === option.value;
-                      return (
-                        <Pressable
-                          key={option.value}
-                          style={[styles.choiceChip, selected ? styles.choiceChipSelected : null]}
-                          onPress={() => setComposerStyleIntensity(option.value)}
-                        >
-                          <Text style={[styles.choiceChipText, selected ? styles.choiceChipTextSelected : null]}>
-                            {option.label}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                </View>
 
                 <Text style={styles.fieldLabel}>Thumbnail</Text>
                 <View style={styles.thumbnailPreviewCard}>

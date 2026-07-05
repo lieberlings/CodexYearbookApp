@@ -236,6 +236,15 @@ describe("appDataHelpers Milestone 2 foundations", () => {
         title: "Old title",
         message: "Old message",
         candidatePhotoIds: ["p1"],
+        candidatePhotoRefs: [
+          {
+            id: "media-library:asset-1",
+            source: "media-library",
+            assetId: "asset-1",
+            uri: "file:///asset-1.jpg",
+            capturedAt: "2024-01-01T00:00:00.000Z"
+          }
+        ],
         createdAt: "2024-01-01T00:00:00.000Z"
       },
       {
@@ -259,6 +268,22 @@ describe("appDataHelpers Milestone 2 foundations", () => {
         title: "Fresh title",
         message: "Fresh message",
         candidatePhotoIds: ["p1", "p3"],
+        candidatePhotoRefs: [
+          {
+            id: "media-library:asset-1",
+            source: "media-library",
+            assetId: "asset-1",
+            uri: "file:///asset-1.jpg",
+            capturedAt: "2024-01-01T00:00:00.000Z"
+          },
+          {
+            id: "media-library:asset-3",
+            source: "media-library",
+            assetId: "asset-3",
+            uri: "file:///asset-3.jpg",
+            capturedAt: "2024-01-03T00:00:00.000Z"
+          }
+        ],
         createdAt: "2024-01-03T00:00:00.000Z"
       },
       {
@@ -280,7 +305,10 @@ describe("appDataHelpers Milestone 2 foundations", () => {
       title: "Fresh title",
       message: "Fresh message",
       status: "snoozed",
-      candidatePhotoIds: ["p1", "p3"]
+      candidatePhotoIds: ["p1", "p3"],
+      candidatePhotoRefs: expect.arrayContaining([
+        expect.objectContaining({ assetId: "asset-3" })
+      ])
     });
     expect(merged.find((item) => item.id === "suggestion-2")).toMatchObject({
       title: "Collection refreshed",
@@ -317,6 +345,30 @@ describe("appDataHelpers Milestone 2 foundations", () => {
     const watching = updateSuggestionStatusRecords(suggestions, "collection-1", "watching");
     const stillAccepted = updateSuggestionStatusRecords(watching, "accepted-1", "dismissed");
     const markedAccepted = markSuggestionAccepted(watching, "collection-1", "memory-2");
+    const dismissed = updateSuggestionStatusRecords(
+      [
+        {
+          id: "dismissable",
+          projectId: "project-1",
+          type: "event",
+          status: "new",
+          title: "Library suggestion",
+          message: "Candidate refs should not linger after dismissal",
+          candidatePhotoIds: ["media-library:asset-1"],
+          candidatePhotoRefs: [
+            {
+              id: "media-library:asset-1",
+              source: "media-library",
+              assetId: "asset-1",
+              uri: "file:///asset-1.jpg"
+            }
+          ],
+          createdAt: "2024-01-01T00:00:00.000Z"
+        }
+      ],
+      "dismissable",
+      "dismissed"
+    );
 
     expect(watching.find((item) => item.id === "collection-1")?.status).toBe("watching");
     expect(stillAccepted.find((item) => item.id === "accepted-1")).toMatchObject({
@@ -327,6 +379,11 @@ describe("appDataHelpers Milestone 2 foundations", () => {
       status: "accepted",
       acceptedMemoryId: "memory-2"
     });
+    expect(dismissed[0]).toMatchObject({
+      status: "dismissed",
+      candidatePhotoIds: []
+    });
+    expect(dismissed[0]?.candidatePhotoRefs).toBeUndefined();
   });
 
   it("builds memory seeds from suggestions and assigns project-pool photos into memories explicitly", () => {

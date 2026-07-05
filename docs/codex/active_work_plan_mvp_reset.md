@@ -83,6 +83,8 @@ The existing memory/page editor should remain the main workflow for:
 - ordering
 - preview/export
 
+Manual memory photo selection should use Android Photo Picker where available to benefit from picker search. GPS/canonical metadata is not required for manually selected memory photos in the MVP.
+
 ### Suggested memories
 Suggested memories are event-focused.
 
@@ -142,6 +144,8 @@ If search highlighting is unavailable on a device, fall back to:
 
 Theme pages should not depend on unattended full-library cloud scanning.
 
+Theme Photo Picker selections are explicit user imports. They may be stored as picker-fallback photos without GPS or canonical MediaLibrary asset ids. This is acceptable because GPS is only needed for suggestion scanning, not manual theme creation.
+
 ### Cloud photo sources
 MVP event scanning is limited to the on-device media library.
 
@@ -152,6 +156,8 @@ Cloud photo support remains on the roadmap:
 - future web upload/import flow
 
 Cloud photos should be selected explicitly by the user.
+
+On Android, use MediaLibrary/canonical assets for metadata-rich event scanning and Photo Picker for explicit user-selected imports. Do not try to derive reliable GPS suggestion signals from manual Photo Picker imports.
 
 ### Print-quality requirement
 Imported photos should use the highest available quality/original-quality representation supported by the source.
@@ -218,6 +224,8 @@ It may contain:
 
 It should not be treated as a project photo.
 
+Candidate photo refs used for suggested memories should prefer MediaLibrary asset ids and metadata. Manual Photo Picker imports may not provide this data and should not be used as the primary source for GPS/location clustering.
+
 ### Accepted photos are memory photos
 A photo becomes part of the project when:
 - user accepts a suggested memory and selects photos
@@ -260,6 +268,8 @@ Tasks:
 - support accept/reject/snooze
 - on accept, import selected photos into a normal memory
 
+Use MediaLibrary/canonical metadata for this phase. Do not rely on Android Photo Picker imports for GPS or stable asset ids.
+
 ### Phase 3 — Ongoing/hybrid scan interval
 Goal:
 Make ongoing projects useful without heavy background infrastructure.
@@ -281,7 +291,8 @@ Tasks:
 - Android Photo Picker search highlighting where available
 - create new theme or add to existing theme
 - preserve highest available quality
-- record dimensions and source metadata
+- record dimensions and picker-available source metadata
+- allow picker-fallback imports without GPS metadata
 
 ### Phase 5 — Finalization cleanup
 Goal:

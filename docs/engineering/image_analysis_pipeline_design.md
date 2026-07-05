@@ -43,6 +43,8 @@ On Android, the app may use Photo Picker search highlighting where available to 
 
 Raw image labels should not be the primary theme-page mechanism for MVP.
 
+Manual Photo Picker selections should not be assumed to contain canonical MediaLibrary asset ids or GPS metadata. Android may expose picker-fallback assets only. GPS/location-driven intelligence should come from the on-device MediaLibrary scan path, where canonical asset metadata is available.
+
 ## Debug tools
 The following are development tools, not MVP user features:
 - single-image analysis inspector

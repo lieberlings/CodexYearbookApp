@@ -62,6 +62,8 @@ Within a memory, the user can:
 - adjust style
 - preview/export
 
+Manual memory photo adding should prioritize a good user picker experience. On Android, the app should use the Android Photo Picker for manual memory uploads where available, because picker search is useful for finding specific photos. GPS/canonical MediaLibrary metadata is not required for manually selected memory photos in the MVP.
+
 ### 4. Suggested memories
 Suggested memories are event-based.
 
@@ -117,6 +119,8 @@ The user then selects photos and chooses:
 
 The app should not automatically import all theme search results.
 
+Theme picker imports are manual user selections. They may not include GPS/location metadata from Android Photo Picker results. Location-aware suggestions should come from the separate on-device MediaLibrary scan path, not from theme picker imports.
+
 ### 6. Finalization
 Finalization helps the user finish the book.
 
@@ -139,6 +143,8 @@ The normal user workflow should not require or expose project-level photo pools.
 ### Suggestions are temporary until accepted
 Suggested memory photos and theme picker results are not project photos until the user accepts/selects them.
 
+Suggested memory candidates should be generated from MediaLibrary/canonical asset metadata where available. Manual Photo Picker imports may be picker-fallback photos and should not be treated as the source of truth for future GPS-based suggestion clustering.
+
 ### User control
 No automatic memory/page creation without review.
 
@@ -146,6 +152,8 @@ No automatic memory/page creation without review.
 On-device scans should stay scoped to project settings.
 
 Cloud photos should require explicit user selection.
+
+Android Photo Picker is appropriate for explicit user selection and search-highlight UX. MediaLibrary access is appropriate for scoped on-device suggestion scanning when timestamps, asset ids, and GPS metadata are needed.
 
 ### Print quality
 Imported photos should preserve the highest available/original-quality source available from the provider.

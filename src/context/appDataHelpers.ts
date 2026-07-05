@@ -9,7 +9,8 @@ import {
   PhotoNativeFaceMetadata,
   Project,
   ProjectTimelineMode,
-  Suggestion
+  Suggestion,
+  SuggestionCandidatePhotoRef
 } from "../types";
 
 export type ProjectPhotoScopeOverrides = {
@@ -296,6 +297,31 @@ export function normalizePhotoRecord(photo: PhotoItem, memoryProjectIds: Map<str
 }
 
 export function normalizeSuggestionRecord(suggestion: Suggestion): Suggestion {
+  const candidatePhotoRefs = Array.isArray(suggestion.candidatePhotoRefs)
+    ? suggestion.candidatePhotoRefs
+        .map((ref): SuggestionCandidatePhotoRef | undefined => {
+          const id = normalizeOptionalString(ref.id);
+          const assetId = normalizeOptionalString(ref.assetId);
+          const uri = normalizeOptionalString(ref.uri);
+          if (ref.source !== "media-library" || !id || !assetId || !uri) {
+            return undefined;
+          }
+
+          return {
+            id,
+            source: "media-library",
+            assetId,
+            uri,
+            fileName: normalizeOptionalString(ref.fileName),
+            width: normalizeOptionalNumber(ref.width),
+            height: normalizeOptionalNumber(ref.height),
+            capturedAt: normalizeOptionalString(ref.capturedAt),
+            location: normalizePhotoLocation(ref.location)
+          };
+        })
+        .filter((ref): ref is SuggestionCandidatePhotoRef => Boolean(ref))
+    : undefined;
+
   return {
     ...suggestion,
     type: suggestion.type ?? "event",
@@ -303,6 +329,7 @@ export function normalizeSuggestionRecord(suggestion: Suggestion): Suggestion {
     title: suggestion.title ?? "Untitled suggestion",
     message: suggestion.message ?? "",
     candidatePhotoIds: Array.isArray(suggestion.candidatePhotoIds) ? suggestion.candidatePhotoIds : [],
+    candidatePhotoRefs: candidatePhotoRefs && candidatePhotoRefs.length > 0 ? candidatePhotoRefs : undefined,
     acceptedMemoryId:
       typeof suggestion.acceptedMemoryId === "string" && suggestion.acceptedMemoryId.trim().length > 0
         ? suggestion.acceptedMemoryId
@@ -410,13 +437,21 @@ export function upsertSuggestionRecords(previous: Suggestion[], nextSuggestions:
   nextSuggestions.forEach((suggestion) => {
     const normalized = normalizeSuggestionRecord(suggestion);
     const existing = byId.get(normalized.id);
+    const nextStatus = existing
+      ? normalized.status === "new"
+        ? existing.status
+        : normalized.status
+      : normalized.status;
+    const keepDiscardedCandidates = existing?.status === "dismissed" && nextStatus === "dismissed";
     byId.set(
       normalized.id,
       existing
         ? {
             ...existing,
             ...normalized,
-            status: normalized.status === "new" ? existing.status : normalized.status,
+            status: nextStatus,
+            candidatePhotoIds: keepDiscardedCandidates ? existing.candidatePhotoIds : normalized.candidatePhotoIds,
+            candidatePhotoRefs: keepDiscardedCandidates ? existing.candidatePhotoRefs : normalized.candidatePhotoRefs,
             acceptedMemoryId: existing.acceptedMemoryId ?? normalized.acceptedMemoryId
           }
         : normalized
@@ -436,7 +471,9 @@ export function updateSuggestionStatusRecords(
     }
     return {
       ...suggestion,
-      status
+      status,
+      candidatePhotoIds: status === "dismissed" ? [] : suggestion.candidatePhotoIds,
+      candidatePhotoRefs: status === "dismissed" ? undefined : suggestion.candidatePhotoRefs
     };
   });
 }

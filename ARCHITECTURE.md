@@ -31,10 +31,12 @@ Theme pages are user-led.
 
 Flow:
 1. user chooses a suggested theme or custom search term
-2. app opens picker/search flow
+2. app opens a picker/search flow; on Android, manual selection should prefer Photo Picker search highlighting where available
 3. user selects photos
 4. app creates a theme page or adds to existing theme
 5. selected photos are imported as accepted photos
+
+Manual memory and theme photo selection optimizes for user search/discovery. Android Photo Picker results may be imported as picker-fallback photos without canonical MediaStore asset ids or GPS metadata.
 
 ## Important technical distinction
 
@@ -50,6 +52,8 @@ It may contain:
 - quality summary
 
 It is not a project photo.
+
+For library-backed suggested memory scans, CandidatePhotoRef should prefer canonical MediaLibrary/MediaStore asset ids and metadata because scan quality depends on timestamps and GPS/location clusters. For manual Photo Picker selections, canonical ids and GPS metadata are best-effort only and should not be required.
 
 ### PhotoItem
 A photo imported into the app because the user accepted/selected it.
@@ -69,7 +73,7 @@ The following systems may remain in the codebase but should be hidden from norma
 ## Preserved infrastructure
 The following work remains valuable:
 - canonical media resolver
-- Android Media Library GPS preservation
+- Android Media Library GPS preservation for library-backed suggestion scanning
 - photo metadata normalization
 - image analysis service boundaries
 - ML Kit experiments
@@ -89,6 +93,6 @@ For MVP, suggested memory scanning is:
 Cloud photos are roadmap/future unless explicitly user-selected through supported picker flows.
 
 Future platform-specific implementations should fit behind existing resolver/import seams:
-- Android: Media Library / Photo Picker / Embedded Photo Picker
+- Android: Media Library for metadata-rich library scans; Photo Picker / Embedded Photo Picker for explicit user selection and search-highlight UX
 - iOS: Photos picker/photo-library equivalent
 - Web: upload/browser metadata flow
