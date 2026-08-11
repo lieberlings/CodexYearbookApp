@@ -66,7 +66,7 @@ export type DragResolution =
   | { action: "move-page-photo"; sourcePageId: string; sourceSlotId: string; targetPageId: string; targetSlotId: string }
   | { action: "remove-to-gallery"; sourcePageId: string; sourceSlotId: string }
   | { action: "swap-with-gallery-photo"; sourcePageId: string; sourceSlotId: string; targetPhotoId: string }
-  | { action: "add-to-page"; targetPageId: string; photoId: string }
+  | { action: "add-to-page"; targetPageId: string; targetSlotId: string; photoId: string }
   | { action: "swap-with-page-photo"; targetPageId: string; targetSlotId: string; photoId: string }
   | { action: "reorder-page"; pageId: string; fromIndex: number; toIndex: number }
   | { action: "cancel" };

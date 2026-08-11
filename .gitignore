@@ -1,5 +1,7 @@
 node_modules
 .expo
+SamplePhotos/
+AmplePhotos/
 dist
 web-build
 npm-debug.*

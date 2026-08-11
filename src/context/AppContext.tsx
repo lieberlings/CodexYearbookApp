@@ -118,6 +118,10 @@ type AppContextValue = {
   movePhotoToPage: (photoId: string, toPageSectionId: string, toIndex?: number) => void;
   removePhotoFromPage: (photoId: string) => void;
   swapPhotos: (sourcePhotoId: string, targetPhotoId: string) => void;
+  assignPhotoToPageSlot: (pageSectionId: string, slotId: string, photoId: string) => void;
+  swapPageSlotPhotos: (sourcePageSectionId: string, sourceSlotId: string, targetPageSectionId: string, targetSlotId: string) => void;
+  movePageSlotPhoto: (sourcePageSectionId: string, sourceSlotId: string, targetPageSectionId: string, targetSlotId: string) => void;
+  removePhotoFromPageSlot: (pageSectionId: string, slotId: string, photoId?: string) => void;
   addPageTextBox: (pageSectionId: string, initial?: Partial<PageTextBox>) => string | undefined;
   updatePageTextBox: (pageSectionId: string, textBoxId: string, updates: Partial<PageTextBox>) => void;
   deletePageTextBox: (pageSectionId: string, textBoxId: string) => void;
@@ -161,6 +165,45 @@ function normalizeSectionOrder(sections: MemoryPageSection[]): MemoryPageSection
     .map((section, index) => ({ ...section, order: index }));
 }
 
+function sanitizeSlotAssignments(
+  assignments: MemoryPageSection["slotAssignments"],
+  validPhotoIds: Set<string>
+): Record<string, string> | undefined {
+  if (!assignments || typeof assignments !== "object") {
+    return undefined;
+  }
+  const usedPhotoIds = new Set<string>();
+  const next: Record<string, string> = {};
+  for (const [slotId, photoId] of Object.entries(assignments)) {
+    if (!slotId || !photoId || !validPhotoIds.has(photoId) || usedPhotoIds.has(photoId)) {
+      continue;
+    }
+    next[slotId] = photoId;
+    usedPhotoIds.add(photoId);
+  }
+  return Object.keys(next).length > 0 ? next : undefined;
+}
+
+function removePhotoIdFromSlotAssignments(
+  assignments: MemoryPageSection["slotAssignments"],
+  photoId: string
+): Record<string, string> | undefined {
+  if (!assignments) {
+    return undefined;
+  }
+  const next: Record<string, string> = {};
+  for (const [slotId, assignedPhotoId] of Object.entries(assignments)) {
+    if (assignedPhotoId && assignedPhotoId !== photoId) {
+      next[slotId] = assignedPhotoId;
+    }
+  }
+  return Object.keys(next).length > 0 ? next : undefined;
+}
+
+function uniquePhotoIds(photoIds: string[]): string[] {
+  return photoIds.filter((id, index, ids) => ids.indexOf(id) === index);
+}
+
 function reconcilePageSections(
   memories: Memory[],
   photos: PhotoItem[],
@@ -191,11 +234,15 @@ function reconcilePageSections(
     const memorySections = normalizeSectionOrder(
       (sectionsByMemory.get(memory.id) ?? []).map((section) => {
         const uniqueValidPhotoIds = section.photoIds.filter((id, idx, arr) => arr.indexOf(id) === idx && photoIdSet.has(id));
+        const slotAssignments = sanitizeSlotAssignments(section.slotAssignments, photoIdSet);
+        const assignedPhotoIds = Object.values(slotAssignments ?? {});
+        const photoIds = uniquePhotoIds([...uniqueValidPhotoIds, ...assignedPhotoIds]);
         return {
           ...section,
           textBoxes: Array.isArray(section.textBoxes) ? section.textBoxes : [],
-          photoIds: uniqueValidPhotoIds,
-          heroPhotoId: section.heroPhotoId && uniqueValidPhotoIds.includes(section.heroPhotoId) ? section.heroPhotoId : undefined
+          slotAssignments,
+          photoIds,
+          heroPhotoId: section.heroPhotoId && photoIds.includes(section.heroPhotoId) ? section.heroPhotoId : undefined
         };
       })
     );
@@ -815,6 +862,7 @@ export function AppProvider({ children }: PropsWithChildren) {
           return {
             ...section,
             photoIds: nextPhotoIds,
+            slotAssignments: removePhotoIdFromSlotAssignments(section.slotAssignments, photoId),
             heroPhotoId: section.heroPhotoId && nextPhotoIds.includes(section.heroPhotoId) ? section.heroPhotoId : undefined
           };
         });
@@ -892,11 +940,104 @@ export function AppProvider({ children }: PropsWithChildren) {
         return {
           ...section,
           photoIds: nextPhotoIds,
+          slotAssignments: removePhotoIdFromSlotAssignments(section.slotAssignments, photoId),
           heroPhotoId: section.heroPhotoId === photoId ? undefined : section.heroPhotoId
         };
       })
     );
   }, []);
+
+  const assignPhotoToPageSlot = useCallback(
+    (pageSectionId: string, slotId: string, photoId: string) => {
+      const photo = photos.find((item) => item.id === photoId);
+      if (!photo) {
+        return;
+      }
+      setPageSections((prev) => {
+        const target = prev.find((section) => section.id === pageSectionId);
+        if (!target || target.memoryId !== photo.memoryId) {
+          return prev;
+        }
+        return prev.map((section) => {
+          if (section.memoryId !== target.memoryId) {
+            return section;
+          }
+
+          const withoutPhoto = removePhotoIdFromSlotAssignments(section.slotAssignments, photoId);
+          if (section.id !== pageSectionId) {
+            const nextPhotoIds = section.photoIds.filter((id) => id !== photoId);
+            return {
+              ...section,
+              slotAssignments: withoutPhoto,
+              photoIds: nextPhotoIds,
+              heroPhotoId: section.heroPhotoId && nextPhotoIds.includes(section.heroPhotoId) ? section.heroPhotoId : undefined
+            };
+          }
+
+          const nextSlotAssignments = { ...(withoutPhoto ?? {}) };
+          nextSlotAssignments[slotId] = photoId;
+          return {
+            ...section,
+            slotAssignments: nextSlotAssignments,
+            photoIds: uniquePhotoIds([...section.photoIds, photoId]),
+            heroPhotoId: section.heroPhotoId ?? photoId
+          };
+        });
+      });
+    },
+    [photos]
+  );
+
+  const removePhotoFromPageSlot = useCallback((pageSectionId: string, slotId: string, photoId?: string) => {
+    setPageSections((prev) =>
+      prev.map((section) => {
+        if (section.id !== pageSectionId) {
+          return section;
+        }
+        const removedPhotoId = photoId ?? section.slotAssignments?.[slotId];
+        const nextSlotAssignments = { ...(section.slotAssignments ?? {}) };
+        delete nextSlotAssignments[slotId];
+        const compactSlotAssignments = Object.keys(nextSlotAssignments).length > 0 ? nextSlotAssignments : undefined;
+        const nextPhotoIds = removedPhotoId
+          ? section.photoIds.filter((id) => id !== removedPhotoId)
+          : section.photoIds;
+        return {
+          ...section,
+          slotAssignments: compactSlotAssignments,
+          photoIds: nextPhotoIds,
+          heroPhotoId: section.heroPhotoId && nextPhotoIds.includes(section.heroPhotoId) ? section.heroPhotoId : undefined
+        };
+      })
+    );
+  }, []);
+
+  const swapPageSlotPhotos = useCallback(
+    (sourcePageSectionId: string, sourceSlotId: string, targetPageSectionId: string, targetSlotId: string) => {
+      const sourceSection = pageSections.find((section) => section.id === sourcePageSectionId);
+      const targetSection = pageSections.find((section) => section.id === targetPageSectionId);
+      const sourcePhotoId = sourceSection?.slotAssignments?.[sourceSlotId];
+      const targetPhotoId = targetSection?.slotAssignments?.[targetSlotId];
+      if (!sourcePhotoId || !targetPhotoId) {
+        return;
+      }
+      assignPhotoToPageSlot(sourcePageSectionId, sourceSlotId, targetPhotoId);
+      assignPhotoToPageSlot(targetPageSectionId, targetSlotId, sourcePhotoId);
+    },
+    [assignPhotoToPageSlot, pageSections]
+  );
+
+  const movePageSlotPhoto = useCallback(
+    (sourcePageSectionId: string, sourceSlotId: string, targetPageSectionId: string, targetSlotId: string) => {
+      const sourceSection = pageSections.find((section) => section.id === sourcePageSectionId);
+      const sourcePhotoId = sourceSection?.slotAssignments?.[sourceSlotId];
+      if (!sourcePhotoId) {
+        return;
+      }
+      removePhotoFromPageSlot(sourcePageSectionId, sourceSlotId, sourcePhotoId);
+      assignPhotoToPageSlot(targetPageSectionId, targetSlotId, sourcePhotoId);
+    },
+    [assignPhotoToPageSlot, pageSections, removePhotoFromPageSlot]
+  );
 
   const addPageTextBox = useCallback((pageSectionId: string, initial?: Partial<PageTextBox>) => {
     let createdId: string | undefined;
@@ -909,6 +1050,7 @@ export function AppProvider({ children }: PropsWithChildren) {
         const textBox: PageTextBox = {
           id: createdId,
           text: initial?.text ?? "",
+          anchorSlotId: initial?.anchorSlotId,
           x: initial?.x ?? 0.18,
           y: initial?.y ?? 0.12,
           width: initial?.width ?? 0.64,
@@ -1177,9 +1319,15 @@ export function AppProvider({ children }: PropsWithChildren) {
     setPageSections((prev) =>
       prev.map((section) => {
         const nextPhotoIds = section.photoIds.filter((id) => !removed.has(id));
+        const nextSlotAssignments = section.slotAssignments
+          ? Object.fromEntries(
+              Object.entries(section.slotAssignments).filter(([, photoId]) => photoId && !removed.has(photoId))
+            )
+          : undefined;
         return {
           ...section,
           photoIds: nextPhotoIds,
+          slotAssignments: nextSlotAssignments && Object.keys(nextSlotAssignments).length > 0 ? nextSlotAssignments : undefined,
           heroPhotoId: section.heroPhotoId && nextPhotoIds.includes(section.heroPhotoId) ? section.heroPhotoId : undefined
         };
       })
@@ -1488,6 +1636,10 @@ export function AppProvider({ children }: PropsWithChildren) {
       movePhotoToPage,
       removePhotoFromPage,
       swapPhotos,
+      assignPhotoToPageSlot,
+      swapPageSlotPhotos,
+      movePageSlotPhoto,
+      removePhotoFromPageSlot,
       addPageTextBox,
       updatePageTextBox,
       deletePageTextBox,
@@ -1536,6 +1688,10 @@ export function AppProvider({ children }: PropsWithChildren) {
       movePhotoToPage,
       removePhotoFromPage,
       swapPhotos,
+      assignPhotoToPageSlot,
+      swapPageSlotPhotos,
+      movePageSlotPhoto,
+      removePhotoFromPageSlot,
       addPageTextBox,
       updatePageTextBox,
       deletePageTextBox,

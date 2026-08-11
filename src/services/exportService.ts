@@ -94,9 +94,13 @@ export async function exportProjectToPdf(
     const pageTitle = page.pageCount > 1 ? `${page.memoryTitle} (${page.pageIndex + 1}/${page.pageCount})` : page.memoryTitle;
     let slotsHtml = "";
     let textBoxesHtml = "";
+    const textAnchorSlotIds = new Set(page.textBoxes.map((textBox) => textBox.anchorSlotId).filter(Boolean));
 
     for (const slot of page.slots) {
       const photo = slot.photoId ? photosById[slot.photoId] : undefined;
+      if (!photo && textAnchorSlotIds.has(slot.id)) {
+        continue;
+      }
       const src = photo ? await getSource(photo) : undefined;
       const photoMetrics = getPhotoRenderMetrics({
         containerAspect: slot.frame.width / Math.max(0.0001, slot.frame.height),
@@ -116,7 +120,7 @@ export async function exportProjectToPdf(
             height:${(slot.frame.height * 100).toFixed(4)}%;
             border-color:${escapeAttr(page.slotBorderColor ?? "#e2e8f0")};
             border-width:${(page.slotBorderWidth ?? 1).toFixed(2)}px;
-            border-radius:${(page.slotCornerRadius ?? 10).toFixed(2)}px;
+            border-radius:${(page.slotCornerRadius ?? 0).toFixed(2)}px;
           "
         >
           ${
@@ -134,14 +138,18 @@ export async function exportProjectToPdf(
     }
 
     for (const textBox of page.textBoxes) {
+      const anchorSlot = textBox.anchorSlotId
+        ? page.slots.find((slot) => slot.id === textBox.anchorSlotId)
+        : undefined;
+      const textFrame = anchorSlot?.frame ?? textBox;
       textBoxesHtml += `
         <div
           class="text-box"
           style="
-            left:${(textBox.x * 100).toFixed(4)}%;
-            top:${(textBox.y * 100).toFixed(4)}%;
-            width:${(textBox.width * 100).toFixed(4)}%;
-            height:${(textBox.height * 100).toFixed(4)}%;
+            left:${(textFrame.x * 100).toFixed(4)}%;
+            top:${(textFrame.y * 100).toFixed(4)}%;
+            width:${(textFrame.width * 100).toFixed(4)}%;
+            height:${(textFrame.height * 100).toFixed(4)}%;
             border-width:${(textBox.borderWidth ?? 0).toFixed(2)}px;
             border-color:${escapeAttr(textBox.borderColor ?? "#0f172a")};
             background:${escapeAttr(applyColorOpacity(textBox.fillColor ?? "#ffffff", textBox.fillOpacity ?? 0))};

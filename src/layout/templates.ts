@@ -1,25 +1,20 @@
 import { PhotoItem } from "../types";
 import { LayoutSlot } from "./schemas";
+import { templatePacks } from "./templatePacks";
+import {
+  PhotoOrientation,
+  SlotOrientationPreference,
+  TemplateDefinition,
+  TemplateSlotBlueprint
+} from "./templateTypes";
 
-export type PhotoOrientation = "portrait" | "landscape" | "square";
-export type SlotOrientationPreference = PhotoOrientation | "any";
-
-export type TemplateSlotBlueprint = {
-  id: string;
-  role: "hero" | "photo";
-  frame: { x: number; y: number; width: number; height: number };
-  fitMode: "contain" | "cover";
-  priority: number;
-  preferredOrientation: SlotOrientationPreference;
-};
-
-export type TemplateDefinition = {
-  id: string;
-  label: string;
-  photoCount: number;
-  baseScore: number;
-  slots: TemplateSlotBlueprint[];
-};
+export type {
+  PhotoOrientation,
+  SlotOrientationPreference,
+  TemplateDefinition,
+  TemplatePack,
+  TemplateSlotBlueprint
+} from "./templateTypes";
 
 type TemplateEvaluation = {
   template: TemplateDefinition;
@@ -251,7 +246,7 @@ function createSingleFramedTemplate(): TemplateDefinition {
   };
 }
 
-const templates: TemplateDefinition[] = [
+const builtInTemplates: TemplateDefinition[] = [
   {
     id: "1-full",
     label: "Full",
@@ -292,8 +287,25 @@ const templates: TemplateDefinition[] = [
   createTightGridTemplate("9-tight-grid", "Tight Grid", 9, 3, 3, 17)
 ];
 
+const templates: TemplateDefinition[] = [
+  ...builtInTemplates,
+  ...templatePacks.flatMap((pack) => pack.templates)
+];
+
+const duplicateTemplateIds = templates
+  .map((template) => template.id)
+  .filter((id, index, ids) => ids.indexOf(id) !== index);
+
+if (__DEV__ && duplicateTemplateIds.length > 0) {
+  throw new Error(`Duplicate layout template ids: ${Array.from(new Set(duplicateTemplateIds)).join(", ")}`);
+}
+
 export function listTemplatesForPhotoCount(photoCount: number): TemplateDefinition[] {
   return templates.filter((template) => template.photoCount === photoCount);
+}
+
+export function listAllTemplates(): TemplateDefinition[] {
+  return templates;
 }
 
 export function getTemplateById(templateId?: string): TemplateDefinition | undefined {
@@ -347,14 +359,30 @@ function scorePhotoForSlot(
 function assignPhotosToTemplate(
   template: TemplateDefinition,
   photos: PhotoItem[],
-  heroPhotoId?: string
+  heroPhotoId?: string,
+  slotAssignments?: Record<string, string | undefined>
 ): LayoutSlot[] {
   const remaining = [...photos];
   const assigned = new Map<string, PhotoItem>();
   const slotsByPriority = [...template.slots].sort((a, b) => a.priority - b.priority);
+  const templateSlotIds = new Set(template.slots.map((slot) => slot.id));
+
+  if (slotAssignments) {
+    for (const [slotId, photoId] of Object.entries(slotAssignments)) {
+      if (!templateSlotIds.has(slotId) || !photoId) {
+        continue;
+      }
+      const photoIndex = remaining.findIndex((photo) => photo.id === photoId);
+      if (photoIndex < 0) {
+        continue;
+      }
+      assigned.set(slotId, remaining[photoIndex]);
+      remaining.splice(photoIndex, 1);
+    }
+  }
 
   const heroSlot = slotsByPriority.find((slot) => slot.role === "hero");
-  if (heroSlot && heroPhotoId) {
+  if (heroSlot && heroPhotoId && !assigned.has(heroSlot.id)) {
     const heroIndex = remaining.findIndex((photo) => photo.id === heroPhotoId);
     if (heroIndex >= 0) {
       assigned.set(heroSlot.id, remaining[heroIndex]);
@@ -419,9 +447,19 @@ function scoreTemplate(template: TemplateDefinition, photos: PhotoItem[], heroPh
 export function selectTemplate(
   photos: PhotoItem[],
   heroPhotoId?: string,
-  preferredTemplateId?: string
+  preferredTemplateId?: string,
+  slotAssignments?: Record<string, string | undefined>
 ): TemplateEvaluation | undefined {
   const count = photos.length;
+  const preferred = getTemplateById(preferredTemplateId);
+  if (preferred) {
+    return {
+      template: preferred,
+      score: scoreTemplate(preferred, photos, heroPhotoId),
+      slots: assignPhotosToTemplate(preferred, photos, heroPhotoId, slotAssignments)
+    };
+  }
+
   if (count <= 0) {
     return undefined;
   }
@@ -431,18 +469,9 @@ export function selectTemplate(
     return undefined;
   }
 
-  const preferred = getTemplateById(preferredTemplateId);
-  if (preferred && preferred.photoCount === count) {
-    return {
-      template: preferred,
-      score: scoreTemplate(preferred, photos, heroPhotoId),
-      slots: assignPhotosToTemplate(preferred, photos, heroPhotoId)
-    };
-  }
-
   let best: TemplateEvaluation | undefined;
   for (const template of candidates) {
-    const slots = assignPhotosToTemplate(template, photos, heroPhotoId);
+    const slots = assignPhotosToTemplate(template, photos, heroPhotoId, slotAssignments);
     const score = scoreTemplate(template, photos, heroPhotoId);
     if (!best || score > best.score) {
       best = { template, score, slots };

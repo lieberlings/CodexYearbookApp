@@ -59,7 +59,7 @@ export function buildLayoutPage(
 ): LayoutPage {
   const orderedPhotos = sortByAddedAt(sectionPhotos);
   const heroPhotoId = resolvePageHeroId(memory, section, orderedPhotos);
-  const selected = selectTemplate(orderedPhotos, heroPhotoId, section.templateId);
+  const selected = selectTemplate(orderedPhotos, heroPhotoId, section.templateId, section.slotAssignments);
 
   return {
     id: section.id,

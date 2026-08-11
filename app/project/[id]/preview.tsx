@@ -83,11 +83,15 @@ export default function ProjectPreviewScreen() {
 
       {renderedPages.map((entry) => {
         const page = entry.applied;
+        const textAnchorSlotIds = new Set(page.textBoxes.map((textBox) => textBox.anchorSlotId).filter(Boolean));
         return (
           <View key={page.id} style={[styles.pageCard, { width: pageWidth, minHeight: pageHeight }]}>
-            <View style={[styles.canvasArea, { width: pageInnerWidth, height: pageContentHeight, backgroundColor: page.backgroundColor ?? "#ffffff", borderRadius: 18 }]}>
+            <View style={[styles.canvasArea, { width: pageInnerWidth, height: pageContentHeight, backgroundColor: page.backgroundColor ?? "#ffffff", borderRadius: 0 }]}>
               {page.slots.map((slot) => {
                 const photo = slot.photoId ? photosById[slot.photoId] : undefined;
+                if (!photo && textAnchorSlotIds.has(slot.id)) {
+                  return null;
+                }
                 const photoMetrics = getPhotoRenderMetrics({
                   containerAspect: slot.frame.width / Math.max(0.0001, slot.frame.height),
                   imageAspect: getPhotoAspect(photo),
@@ -108,7 +112,7 @@ export default function ProjectPreviewScreen() {
                         height: `${slot.frame.height * 100}%`,
                         borderColor: page.slotBorderColor ?? "#e2e8f0",
                         borderWidth: page.slotBorderWidth ?? 1,
-                        borderRadius: page.slotCornerRadius ?? 8
+                        borderRadius: page.slotCornerRadius ?? 0
                       }
                     ]}
                   >
@@ -130,39 +134,45 @@ export default function ProjectPreviewScreen() {
                   </View>
                 );
               })}
-              {page.textBoxes.map((textBox) => (
-                <View
-                  key={textBox.id}
-                  style={[
-                    styles.textBox,
-                    {
-                      left: `${textBox.x * 100}%`,
-                      top: `${textBox.y * 100}%`,
-                      width: `${textBox.width * 100}%`,
-                      height: `${textBox.height * 100}%`,
-                      borderWidth: textBox.borderWidth ?? 0,
-                      borderColor: textBox.borderColor ?? "#0f172a",
-                      backgroundColor: applyColorOpacity(textBox.fillColor ?? "#ffffff", textBox.fillOpacity ?? 0)
-                    }
-                  ]}
-                >
-                  <Text
+              {page.textBoxes.map((textBox) => {
+                const anchorSlot = textBox.anchorSlotId
+                  ? page.slots.find((slot) => slot.id === textBox.anchorSlotId)
+                  : undefined;
+                const textFrame = anchorSlot?.frame ?? textBox;
+                return (
+                  <View
+                    key={textBox.id}
                     style={[
-                      styles.textBoxText,
+                      styles.textBox,
                       {
-                        color: textBox.textColor ?? page.textColor ?? "#0f172a",
-                        fontSize: textBox.fontSize ?? page.textSize ?? 24,
-                        fontWeight: (textBox.fontWeight as "400" | "500" | "600" | "700") ?? "700",
-                        fontStyle: (textBox.fontStyle as "normal" | "italic") ?? "normal",
-                        fontFamily: textBox.fontFamily ?? page.textFontFamily,
-                        textAlign: (textBox.textAlign ?? "center") as "left" | "center" | "right"
+                        left: `${textFrame.x * 100}%`,
+                        top: `${textFrame.y * 100}%`,
+                        width: `${textFrame.width * 100}%`,
+                        height: `${textFrame.height * 100}%`,
+                        borderWidth: textBox.borderWidth ?? 0,
+                        borderColor: textBox.borderColor ?? "#0f172a",
+                        backgroundColor: applyColorOpacity(textBox.fillColor ?? "#ffffff", textBox.fillOpacity ?? 0)
                       }
                     ]}
                   >
-                    {textBox.text}
-                  </Text>
-                </View>
-              ))}
+                    <Text
+                      style={[
+                        styles.textBoxText,
+                        {
+                          color: textBox.textColor ?? page.textColor ?? "#0f172a",
+                          fontSize: textBox.fontSize ?? page.textSize ?? 24,
+                          fontWeight: (textBox.fontWeight as "400" | "500" | "600" | "700") ?? "700",
+                          fontStyle: (textBox.fontStyle as "normal" | "italic") ?? "normal",
+                          fontFamily: textBox.fontFamily ?? page.textFontFamily,
+                          textAlign: (textBox.textAlign ?? "center") as "left" | "center" | "right"
+                        }
+                      ]}
+                    >
+                      {textBox.text}
+                    </Text>
+                  </View>
+                );
+              })}
             </View>
 
           </View>
@@ -213,7 +223,7 @@ const styles = StyleSheet.create({
   },
   slotFrame: {
     position: "absolute",
-    borderRadius: 8,
+    borderRadius: 0,
     overflow: "hidden",
     borderWidth: 1,
     borderColor: "#e2e8f0",

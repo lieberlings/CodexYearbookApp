@@ -72,13 +72,11 @@ export function resolveDropAction(payload: DragPayload, target?: DropTarget): Dr
     };
   }
 
-  if (
-    (target.targetType === "page-slot" || target.targetType === "page-canvas") &&
-    target.targetPageId
-  ) {
+  if (target.targetType === "page-slot" && target.targetPageId && target.targetSlotId) {
     return {
       action: "add-to-page",
       targetPageId: target.targetPageId,
+      targetSlotId: target.targetSlotId,
       photoId: payload.itemId
     };
   }

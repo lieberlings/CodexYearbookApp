@@ -28,8 +28,8 @@ import { DragPayload, DragResolution, DropTarget, Rect } from "../../src/editor/
 import { buildLayoutDocument } from "../../src/layout/engine";
 import { applySlotOverridesToPage } from "../../src/layout/overrides";
 import { clampPhotoOffset, getPhotoAspect, getPhotoRenderMetrics, getPhotoScaleBounds } from "../../src/layout/photoMetrics";
-import { listTemplatesForPhotoCount, TemplateDefinition } from "../../src/layout/templates";
-import { SlotOverride, useEditorStore } from "../../src/state/editorStore";
+import { listAllTemplates, TemplateDefinition } from "../../src/layout/templates";
+import { useEditorStore } from "../../src/state/editorStore";
 import { pickImagesWithAndroidPhotoPicker } from "../../src/services/androidPhotoPicker";
 import { pickPhotosFromMediaLibraryByAssetIds } from "../../src/services/photoService";
 import { MemoryPageSection, PageTextBox, TextBoxAlignment } from "../../src/types";
@@ -193,8 +193,8 @@ export default function MemoryDetailsScreen() {
     deletePageSection,
     deletePhotos,
     reorderPageSection,
-    movePhotoToPage,
-    removePhotoFromPage,
+    assignPhotoToPageSlot,
+    removePhotoFromPageSlot,
     addPageTextBox,
     updatePageTextBox,
     deletePageTextBox,
@@ -230,7 +230,6 @@ export default function MemoryDetailsScreen() {
   const pageCanvasRef = useRef<View | null>(null);
   const removePhotoTileRef = useRef<View | null>(null);
   const stagingRectRef = useRef<Rect | undefined>(undefined);
-  const pageCanvasRectRef = useRef<Rect | undefined>(undefined);
   const removePhotoTileRectRef = useRef<Rect | undefined>(undefined);
   const suppressNextPressPhotoIdRef = useRef<string | undefined>(undefined);
   const dragTargetRegistryRef = useRef(new DragTargetRegistry());
@@ -282,13 +281,6 @@ export default function MemoryDetailsScreen() {
     () => Object.fromEntries(renderedPages.map((entry) => [entry.applied.id, entry.applied] as const)),
     [renderedPages]
   );
-  const baseSlotById = useMemo(
-    () =>
-      Object.fromEntries(
-        renderedPages.flatMap((entry) => entry.base.slots.map((slot) => [`${entry.base.id}:${slot.id}`, slot] as const))
-      ),
-    [renderedPages]
-  );
   const appliedSlotById = useMemo(
     () =>
       Object.fromEntries(
@@ -315,6 +307,15 @@ export default function MemoryDetailsScreen() {
   );
   const activeTextBoxes = useMemo(() => activeSection?.textBoxes ?? [], [activeSection]);
   const activeRenderedPage = activePageId ? renderedPageById[activePageId] : undefined;
+  const activeSlotTextBoxBySlotId = useMemo(
+    () =>
+      Object.fromEntries(
+        activeTextBoxes
+          .filter((textBox) => Boolean(textBox.anchorSlotId))
+          .map((textBox) => [textBox.anchorSlotId, textBox] as const)
+      ),
+    [activeTextBoxes]
+  );
   const selectedPage = useMemo(
     () => renderedPages.find((entry) => entry.applied.id === selectedPageId)?.applied,
     [renderedPages, selectedPageId]
@@ -466,24 +467,30 @@ export default function MemoryDetailsScreen() {
     ]);
   }
 
-  function handleAddTextBox() {
+  function handleAddTextBox(slot?: { id: string; frame: { x: number; y: number; width: number; height: number } }) {
     if (!activeSection) {
       return;
     }
     const sectionStyle = getSectionStyle(activeSection.id);
     const defaultFontSize = Math.max(18, sectionStyle.textSize);
     const defaultSize = estimateTextBoxSize("", defaultFontSize, canvasSize);
+    const width = slot ? slot.frame.width : defaultSize.width;
+    const height = slot ? slot.frame.height : defaultSize.height;
     const createdId = addPageTextBox(activeSection.id, {
+      anchorSlotId: slot?.id,
       textColor: sectionStyle.textColor,
       fontFamily: sectionStyle.textFontFamily,
       fontWeight: sectionStyle.textWeight,
       fontSize: defaultFontSize,
       fontStyle: "normal",
       fillColor: "#ffffff",
-      fillOpacity: 0,
-      width: defaultSize.width,
-      height: defaultSize.height,
-      autoSize: true
+      fillOpacity: slot ? 0.92 : 0,
+      textAlign: "center",
+      x: slot ? slot.frame.x : undefined,
+      y: slot ? slot.frame.y : undefined,
+      width,
+      height,
+      autoSize: !slot
     });
     if (!createdId) {
       return;
@@ -491,6 +498,33 @@ export default function MemoryDetailsScreen() {
     setSelectedTextBoxId(createdId);
     setEditingTextBoxId(createdId);
     setOpenInspector({ pageId: activeSection.id, kind: "text" });
+  }
+
+  function openEmptySlotActions(pageId: string, slotId: string) {
+    const slot = renderedPageById[pageId]?.slots.find((item) => item.id === slotId);
+    const slotTextBox = activeSlotTextBoxBySlotId[slotId];
+    setSelection(pageId, slotId);
+    if (slotTextBox) {
+      selectTextBoxForEditing(slotTextBox.id);
+      return;
+    }
+    Alert.alert("Empty slot", "Choose what to put here.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Add Text",
+        onPress: () => {
+          if (slot) {
+            handleAddTextBox(slot);
+          } else {
+            handleAddTextBox();
+          }
+        }
+      },
+      {
+        text: "Select Slot",
+        onPress: () => setOpenInspector(undefined)
+      }
+    ]);
   }
 
   function buildTextBoxUpdates(textBox: PageTextBox, updates: Partial<PageTextBox>): Partial<PageTextBox> {
@@ -521,6 +555,14 @@ export default function MemoryDetailsScreen() {
       return;
     }
     updateTextBox(selectedTextBox, updates);
+  }
+
+  function selectTextBoxForEditing(textBoxId: string) {
+    setSelectedTextBoxId(textBoxId);
+    setEditingTextBoxId(textBoxId);
+    if (activeSection) {
+      setOpenInspector({ pageId: activeSection.id, kind: "text" });
+    }
   }
 
   function clearTextBoxSelection() {
@@ -785,44 +827,17 @@ export default function MemoryDetailsScreen() {
     slotRectsRef.current = nextSlotRects;
     galleryPhotoRectsRef.current = nextGalleryPhotoRects;
     stagingRectRef.current = await measureNode(stagingRef.current);
-    pageCanvasRectRef.current = await measureNode(pageCanvasRef.current);
     removePhotoTileRectRef.current = await measureNode(removePhotoTileRef.current);
-  }
-
-  function setSlotPhotoAssignment(pageId: string, slotId: string, nextPhotoId: string | null) {
-    const slotKey = `${pageId}:${slotId}`;
-    const basePhotoId = baseSlotById[slotKey]?.photoId ?? null;
-    const existing = slotOverridesByPage[pageId]?.[slotId];
-    const { photoId: _ignored, ...rest } = (existing ?? {}) as SlotOverride;
-
-    if (nextPhotoId === basePhotoId) {
-      clearSlotOverride(pageId, slotId);
-      if (Object.keys(rest).length > 0) {
-        setSlotOverride(pageId, slotId, rest);
-      }
-      return;
-    }
-
-    setSlotOverride(pageId, slotId, { photoId: nextPhotoId });
   }
 
   function buildDropTargets() {
     const targets: DropTarget[] = [];
 
     if (activeRenderedPage) {
-      const pageCanvasRect = pageCanvasRectRef.current;
-      if (pageCanvasRect) {
-        targets.push({
-          id: `page-canvas:${activeRenderedPage.id}`,
-          targetType: "page-canvas" as const,
-          rect: pageCanvasRect,
-          priority: 2,
-          targetPageId: activeRenderedPage.id,
-          hitSlop: 12,
-          stickySlop: 20
-        });
-      }
       activeRenderedPage.slots.forEach((slot) => {
+        if (activeSlotTextBoxBySlotId[slot.id]) {
+          return;
+        }
         const slotKey = `${activeRenderedPage.id}:${slot.id}`;
         const rect = slotRectsRef.current[slotKey];
         if (!rect) {
@@ -907,8 +922,10 @@ export default function MemoryDetailsScreen() {
       if (!sourceSlot?.photoId || !targetSlot?.photoId) {
         return;
       }
-      setSlotPhotoAssignment(resolution.sourcePageId, resolution.sourceSlotId, targetSlot.photoId);
-      setSlotPhotoAssignment(resolution.targetPageId, resolution.targetSlotId, sourceSlot.photoId);
+      clearSlotOverride(resolution.sourcePageId, resolution.sourceSlotId);
+      clearSlotOverride(resolution.targetPageId, resolution.targetSlotId);
+      assignPhotoToPageSlot(resolution.sourcePageId, resolution.sourceSlotId, targetSlot.photoId);
+      assignPhotoToPageSlot(resolution.targetPageId, resolution.targetSlotId, sourceSlot.photoId);
       return;
     }
     if (resolution.action === "move-page-photo") {
@@ -917,8 +934,10 @@ export default function MemoryDetailsScreen() {
       if (!sourceSlot?.photoId || targetSlot?.photoId) {
         return;
       }
-      setSlotPhotoAssignment(resolution.sourcePageId, resolution.sourceSlotId, null);
-      setSlotPhotoAssignment(resolution.targetPageId, resolution.targetSlotId, sourceSlot.photoId);
+      clearSlotOverride(resolution.sourcePageId, resolution.sourceSlotId);
+      clearSlotOverride(resolution.targetPageId, resolution.targetSlotId);
+      removePhotoFromPageSlot(resolution.sourcePageId, resolution.sourceSlotId, sourceSlot.photoId);
+      assignPhotoToPageSlot(resolution.targetPageId, resolution.targetSlotId, sourceSlot.photoId);
       return;
     }
     if (resolution.action === "remove-to-gallery") {
@@ -926,21 +945,31 @@ export default function MemoryDetailsScreen() {
       if (!sourceSlot?.photoId) {
         return;
       }
-      clearPageOverrides(resolution.sourcePageId);
-      removePhotoFromPage(sourceSlot.photoId);
+      clearSlotOverride(resolution.sourcePageId, resolution.sourceSlotId);
+      removePhotoFromPageSlot(resolution.sourcePageId, resolution.sourceSlotId, sourceSlot.photoId);
       return;
     }
     if (resolution.action === "swap-with-gallery-photo") {
-      setSlotPhotoAssignment(resolution.sourcePageId, resolution.sourceSlotId, resolution.targetPhotoId);
+      const sourceSlot = appliedSlotById[`${resolution.sourcePageId}:${resolution.sourceSlotId}`];
+      clearSlotOverride(resolution.sourcePageId, resolution.sourceSlotId);
+      if (sourceSlot?.photoId) {
+        removePhotoFromPageSlot(resolution.sourcePageId, resolution.sourceSlotId, sourceSlot.photoId);
+      }
+      assignPhotoToPageSlot(resolution.sourcePageId, resolution.sourceSlotId, resolution.targetPhotoId);
       return;
     }
     if (resolution.action === "add-to-page") {
-      clearPageOverrides(resolution.targetPageId);
-      movePhotoToPage(resolution.photoId, resolution.targetPageId);
+      clearSlotOverride(resolution.targetPageId, resolution.targetSlotId);
+      assignPhotoToPageSlot(resolution.targetPageId, resolution.targetSlotId, resolution.photoId);
       return;
     }
     if (resolution.action === "swap-with-page-photo") {
-      setSlotPhotoAssignment(resolution.targetPageId, resolution.targetSlotId, resolution.photoId);
+      const targetSlot = appliedSlotById[`${resolution.targetPageId}:${resolution.targetSlotId}`];
+      clearSlotOverride(resolution.targetPageId, resolution.targetSlotId);
+      if (targetSlot?.photoId) {
+        removePhotoFromPageSlot(resolution.targetPageId, resolution.targetSlotId, targetSlot.photoId);
+      }
+      assignPhotoToPageSlot(resolution.targetPageId, resolution.targetSlotId, resolution.photoId);
       return;
     }
     if (resolution.action === "reorder-page") {
@@ -1088,17 +1117,13 @@ export default function MemoryDetailsScreen() {
           const pageStyle = getSectionStyle(section.id);
           const inspectorOpen = openInspector?.pageId === section.id ? openInspector.kind : undefined;
           const textModeActive = inspectorOpen === "text";
-          const templates = listTemplatesForPhotoCount(section.photoIds.length);
+          const templates = listAllTemplates();
           return (
             <View
               style={[
                 styles.pageCard,
                 styles.activePageCard,
-                { width: pageCardWidth },
-                hoveredTarget?.targetPageId === section.id &&
-                (hoveredTarget.targetType === "page-slot" || hoveredTarget.targetType === "page-canvas")
-                  ? styles.pageCardDropTarget
-                  : null
+                { width: pageCardWidth }
               ]}
             >
               {!selectedTextBox ? (
@@ -1127,6 +1152,7 @@ export default function MemoryDetailsScreen() {
               >
                 {renderedPage.slots.map((slot) => {
                   const photo = slot.photoId ? photosById[slot.photoId] : undefined;
+                  const slotTextBox = activeSlotTextBoxBySlotId[slot.id];
                   const isSelected = selectedPageId === renderedPage.id && selectedSlotId === slot.id;
                   const photoMetrics = getPhotoRenderMetrics({
                     containerAspect: slot.frame.width / Math.max(0.0001, slot.frame.height),
@@ -1151,9 +1177,13 @@ export default function MemoryDetailsScreen() {
                     : undefined;
                   const slotPressHandlers = !textModeActive && photo
                     ? slotPanHandlers
+                    : !textModeActive && slotTextBox
+                    ? {
+                        onPress: () => selectTextBoxForEditing(slotTextBox.id)
+                      }
                     : !textModeActive
                     ? {
-                        onPress: () => openSlotEditor(renderedPage.id, slot.id)
+                        onPress: () => openEmptySlotActions(renderedPage.id, slot.id)
                       }
                     : undefined;
                   return (
@@ -1177,6 +1207,7 @@ export default function MemoryDetailsScreen() {
                         {...(slotPressHandlers ?? {})}
                         style={[
                           styles.slotFrame,
+                          slotTextBox && !photo ? styles.slotFrameTextOccupied : null,
                           isSelected ? styles.slotSelected : null,
                           hoveredTarget?.targetPageId === renderedPage.id && hoveredTarget.targetSlotId === slot.id ? styles.slotDropTarget : null,
                           drag.session.payload?.dragType === "page-photo" && drag.session.payload.itemId === photo?.id ? styles.slotDragging : null,
@@ -1209,24 +1240,34 @@ export default function MemoryDetailsScreen() {
                 {activeTextBoxes.map((textBox) => {
                   const isSelectedTextBox = textBox.id === selectedTextBoxId;
                   const isEditingTextBox = textBox.id === editingTextBoxId;
+                  const anchorSlot = textBox.anchorSlotId
+                    ? renderedPage.slots.find((slot) => slot.id === textBox.anchorSlotId)
+                    : undefined;
+                  const textFrame = anchorSlot?.frame ?? {
+                    x: textBox.x,
+                    y: textBox.y,
+                    width: textBox.width,
+                    height: textBox.height
+                  };
+                  const isAnchoredTextBox = Boolean(anchorSlot);
                   return (
                     <View
                       key={textBox.id}
                       style={[
                         styles.textBoxWrap,
                         {
-                          left: `${textBox.x * 100}%`,
-                          top: `${textBox.y * 100}%`,
-                          width: `${textBox.width * 100}%`,
-                          height: `${textBox.height * 100}%`
+                          left: `${textFrame.x * 100}%`,
+                          top: `${textFrame.y * 100}%`,
+                          width: `${textFrame.width * 100}%`,
+                          height: `${textFrame.height * 100}%`
                         }
                       ]}
-                      pointerEvents={textModeActive ? "box-none" : "none"}
+                      pointerEvents="box-none"
                     >
                       <Pressable
-                        disabled={!textModeActive}
                         style={[
                           styles.textBoxFrame,
+                          isAnchoredTextBox ? styles.textBoxFrameAnchored : null,
                           isSelectedTextBox ? styles.textBoxFrameSelected : null,
                           {
                             borderWidth: textBox.borderWidth ?? 0,
@@ -1235,14 +1276,13 @@ export default function MemoryDetailsScreen() {
                           }
                         ]}
                         onPress={() => {
-                          if (!textModeActive || textBoxGestureRef.current.mode) {
+                          if (textBoxGestureRef.current.mode) {
                             return;
                           }
-                          setSelectedTextBoxId(textBox.id);
-                          setOpenInspector({ pageId: section.id, kind: "text" });
+                          selectTextBoxForEditing(textBox.id);
                         }}
                         onLongPress={(event) => {
-                          if (!textModeActive || keyboardVisible) {
+                          if (isAnchoredTextBox || keyboardVisible) {
                             return;
                           }
                           setSelectedTextBoxId(textBox.id);
@@ -1251,7 +1291,7 @@ export default function MemoryDetailsScreen() {
                         }}
                         delayLongPress={180}
                         onTouchMove={(event) => {
-                          if (!textModeActive || keyboardVisible || textBoxGestureRef.current.mode !== "move") {
+                          if (isAnchoredTextBox || keyboardVisible || textBoxGestureRef.current.mode !== "move") {
                             return;
                           }
                           const touch = event.nativeEvent.touches[0];
@@ -1309,20 +1349,36 @@ export default function MemoryDetailsScreen() {
                         )}
                         {isSelectedTextBox && !isEditingTextBox ? (
                           <>
-                            <View style={styles.textBoxHandle} />
-                            <Pressable
-                              style={styles.textBoxResizeHandle}
-                              hitSlop={16}
-                              onTouchStart={(event) => beginTextBoxGesture("resize", textBox, event.nativeEvent.pageX, event.nativeEvent.pageY)}
-                              onTouchMove={(event) => {
-                                const touch = event.nativeEvent.touches[0];
-                                if (touch) {
-                                  updateTextBoxGesture(touch.pageX, touch.pageY);
-                                }
-                              }}
-                              onTouchEnd={endTextBoxGesture}
-                              onTouchCancel={endTextBoxGesture}
-                            />
+                            {!isAnchoredTextBox ? (
+                              <Pressable
+                                style={styles.textBoxHandle}
+                                hitSlop={16}
+                                onTouchStart={(event) => beginTextBoxGesture("move", textBox, event.nativeEvent.pageX, event.nativeEvent.pageY)}
+                                onTouchMove={(event) => {
+                                  const touch = event.nativeEvent.touches[0];
+                                  if (touch) {
+                                    updateTextBoxGesture(touch.pageX, touch.pageY);
+                                  }
+                                }}
+                                onTouchEnd={endTextBoxGesture}
+                                onTouchCancel={endTextBoxGesture}
+                              />
+                            ) : null}
+                            {!isAnchoredTextBox ? (
+                              <Pressable
+                                style={styles.textBoxResizeHandle}
+                                hitSlop={16}
+                                onTouchStart={(event) => beginTextBoxGesture("resize", textBox, event.nativeEvent.pageX, event.nativeEvent.pageY)}
+                                onTouchMove={(event) => {
+                                  const touch = event.nativeEvent.touches[0];
+                                  if (touch) {
+                                    updateTextBoxGesture(touch.pageX, touch.pageY);
+                                  }
+                                }}
+                                onTouchEnd={endTextBoxGesture}
+                                onTouchCancel={endTextBoxGesture}
+                              />
+                            ) : null}
                           </>
                         ) : null}
                       </Pressable>
@@ -1591,7 +1647,7 @@ export default function MemoryDetailsScreen() {
 
                   {inspectorOpen === "text" && !selectedTextBox ? (
                     <View style={styles.textInspector}>
-                      <Pressable style={styles.addTextButton} onPress={handleAddTextBox}>
+                      <Pressable style={styles.addTextButton} onPress={() => handleAddTextBox()}>
                         <Text style={styles.addTextButtonText}>Add Text</Text>
                       </Pressable>
                       <Text style={styles.textInspectorHelp}>Add a text box or tap one on the page to edit it.</Text>
@@ -2533,6 +2589,10 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     backgroundColor: "#16233b"
   },
+  slotFrameTextOccupied: {
+    backgroundColor: "transparent",
+    borderColor: "transparent"
+  },
   textBoxWrap: {
     position: "absolute",
     zIndex: 20
@@ -2544,6 +2604,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 8,
     justifyContent: "center"
+  },
+  textBoxFrameAnchored: {
+    borderRadius: 0
   },
   textBoxFrameSelected: {
     borderColor: "#2563eb",

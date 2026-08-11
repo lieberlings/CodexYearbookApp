@@ -25,6 +25,7 @@ export const LayoutSlotSchema = z.object({
 export const PageTextBoxSchema = z.object({
   id: z.string(),
   text: z.string(),
+  anchorSlotId: z.string().optional(),
   x: z.number().min(0).max(1),
   y: z.number().min(0).max(1),
   width: z.number().min(0.05).max(1),

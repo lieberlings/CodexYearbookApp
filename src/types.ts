@@ -51,6 +51,7 @@ export type TextBoxAlignment = "left" | "center" | "right";
 export type PageTextBox = {
   id: string;
   text: string;
+  anchorSlotId?: string;
   x: number;
   y: number;
   width: number;
@@ -74,6 +75,7 @@ export type MemoryPageSection = {
   order: number;
   heroPhotoId?: string;
   templateId?: string;
+  slotAssignments?: Record<string, string | undefined>;
   backgroundColor?: string;
   slotBorderColor?: string;
   slotBorderWidth?: number;
