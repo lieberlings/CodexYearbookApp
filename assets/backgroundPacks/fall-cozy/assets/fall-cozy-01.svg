@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2400 2400" width="2400" height="2400">
+
+  <defs>
+    <linearGradient id="fallAir" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F6F3EE"/>
+      <stop offset="0.46" stop-color="#9FB8B6" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#3F6B52" stop-opacity="0.24"/>
+    </linearGradient>
+  </defs>
+  <rect width="2400" height="2400" fill="url(#fallAir)"/>
+<circle cx="360" cy="420" r="260" fill="#7A2E3A" opacity="0.08"/>
+<circle cx="2040" cy="560" r="360" fill="#C06E3A" opacity="0.08"/>
+<circle cx="520" cy="2020" r="420" fill="#3F6B52" opacity="0.08"/>
+<circle cx="1900" cy="1900" r="320" fill="#9FB8B6" opacity="0.08"/>
+</svg>

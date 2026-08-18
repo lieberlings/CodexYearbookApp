@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2400 2400" width="2400" height="2400">
+<rect width="2400" height="2400" fill="#FFF8EC"/>
+<circle cx="180" cy="420" r="360" fill="none" stroke="#7ECBEA" stroke-width="34" opacity="0.16"/>
+<circle cx="180" cy="420" r="430" fill="none" stroke="#26343D" stroke-width="8" opacity="0.04"/>
+<circle cx="2260" cy="500" r="420" fill="none" stroke="#F06D8D" stroke-width="37" opacity="0.16"/>
+<circle cx="2260" cy="500" r="490" fill="none" stroke="#26343D" stroke-width="8" opacity="0.04"/>
+<circle cx="520" cy="2180" r="470" fill="none" stroke="#F6D365" stroke-width="40" opacity="0.16"/>
+<circle cx="520" cy="2180" r="540" fill="none" stroke="#26343D" stroke-width="8" opacity="0.04"/>
+<circle cx="2100" cy="2020" r="350" fill="none" stroke="#8BD7B5" stroke-width="43" opacity="0.16"/>
+<circle cx="2100" cy="2020" r="420" fill="none" stroke="#26343D" stroke-width="8" opacity="0.04"/>
+<circle cx="1180" cy="1150" r="520" fill="none" stroke="#7ECBEA" stroke-width="46" opacity="0.16"/>
+<circle cx="1180" cy="1150" r="590" fill="none" stroke="#26343D" stroke-width="8" opacity="0.04"/>
+</svg>

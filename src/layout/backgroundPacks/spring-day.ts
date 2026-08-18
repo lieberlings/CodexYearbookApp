@@ -1,0 +1,264 @@
+import { BackgroundPack } from "../backgroundTypes";
+
+export const springDayBackgroundPack: BackgroundPack = {
+  "id": "spring-day",
+  "label": "Spring Day",
+  "backgrounds": [
+    {
+      "number": 1,
+      "id": "spring-day-01",
+      "label": "Blue Sky Wash",
+      "theme": "spring day",
+      "kind": "gradient",
+      "backgroundColor": "#F7FCFF",
+      "assetUri": "assets/spring-day-01.svg",
+      "palette": [
+        "#B9DDF2",
+        "#8ED3F4",
+        "#D6ECBC",
+        "#F7FCFF",
+        "#315C45",
+        "#F48C8C"
+      ],
+      "tags": [
+        "spring-day",
+        "sky",
+        "wash",
+        "blue-base",
+        "layout-agnostic"
+      ],
+      "textColor": "#315C45",
+      "slotBorderColor": "#ffffff",
+      "safeArea": {
+        "x": 0.08,
+        "y": 0.08,
+        "width": 0.84,
+        "height": 0.84
+      }
+    },
+    {
+      "number": 2,
+      "id": "spring-day-02",
+      "label": "Blush Tulip Meadow",
+      "theme": "spring day",
+      "kind": "illustration",
+      "backgroundColor": "#FFF3F4",
+      "assetUri": "assets/spring-day-02.svg",
+      "palette": [
+        "#B7D978",
+        "#8ED3F4",
+        "#F48C8C",
+        "#FFF3F4",
+        "#315C45",
+        "#6FAE75"
+      ],
+      "tags": [
+        "spring-day",
+        "tulips",
+        "meadow",
+        "blush-base",
+        "layout-agnostic"
+      ],
+      "textColor": "#315C45",
+      "slotBorderColor": "#ffffff",
+      "safeArea": {
+        "x": 0.08,
+        "y": 0.08,
+        "width": 0.84,
+        "height": 0.84
+      }
+    },
+    {
+      "number": 3,
+      "id": "spring-day-03",
+      "label": "Leaf Scatter",
+      "theme": "spring day",
+      "kind": "pattern",
+      "backgroundColor": "#EEF7EA",
+      "assetUri": "assets/spring-day-03.svg",
+      "palette": [
+        "#8CBC78",
+        "#D9EBC9",
+        "#8ED3F4",
+        "#EEF7EA",
+        "#315C45",
+        "#6FAE75"
+      ],
+      "tags": [
+        "spring-day",
+        "leaves",
+        "scatter",
+        "green-base",
+        "layout-agnostic"
+      ],
+      "textColor": "#315C45",
+      "slotBorderColor": "#ffffff",
+      "safeArea": {
+        "x": 0.08,
+        "y": 0.08,
+        "width": 0.84,
+        "height": 0.84
+      }
+    },
+    {
+      "number": 4,
+      "id": "spring-day-04",
+      "label": "Picnic Check",
+      "theme": "spring day",
+      "kind": "pattern",
+      "backgroundColor": "#FFFFFF",
+      "assetUri": "assets/spring-day-04.svg",
+      "palette": [
+        "#B7D978",
+        "#8ED3F4",
+        "#F48C8C",
+        "#FFFFFF",
+        "#315C45",
+        "#F8D96B"
+      ],
+      "tags": [
+        "spring-day",
+        "picnic",
+        "check",
+        "white-blue-base",
+        "layout-agnostic"
+      ],
+      "textColor": "#315C45",
+      "slotBorderColor": "#ffffff",
+      "safeArea": {
+        "x": 0.08,
+        "y": 0.08,
+        "width": 0.84,
+        "height": 0.84
+      }
+    },
+    {
+      "number": 5,
+      "id": "spring-day-05",
+      "label": "Cloud Drift",
+      "theme": "spring day",
+      "kind": "illustration",
+      "backgroundColor": "#EAF6FC",
+      "assetUri": "assets/spring-day-05.svg",
+      "palette": [
+        "#C8E1EF",
+        "#8ED3F4",
+        "#F7FBFF",
+        "#EAF6FC",
+        "#315C45",
+        "#D7E8EE"
+      ],
+      "tags": [
+        "spring-day",
+        "clouds",
+        "soft",
+        "cool-blue-base",
+        "layout-agnostic"
+      ],
+      "textColor": "#315C45",
+      "slotBorderColor": "#ffffff",
+      "safeArea": {
+        "x": 0.08,
+        "y": 0.08,
+        "width": 0.84,
+        "height": 0.84
+      }
+    },
+    {
+      "number": 6,
+      "id": "spring-day-06",
+      "label": "Rain Speckle Paper",
+      "theme": "spring day",
+      "kind": "pattern",
+      "backgroundColor": "#F2F6F7",
+      "assetUri": "assets/spring-day-06.svg",
+      "palette": [
+        "#B7D978",
+        "#6EB6D6",
+        "#B9C6CC",
+        "#F2F6F7",
+        "#315C45",
+        "#8ED3F4"
+      ],
+      "tags": [
+        "spring-day",
+        "rain",
+        "speckles",
+        "cool-grey-base",
+        "layout-agnostic"
+      ],
+      "textColor": "#315C45",
+      "slotBorderColor": "#ffffff",
+      "safeArea": {
+        "x": 0.08,
+        "y": 0.08,
+        "width": 0.84,
+        "height": 0.84
+      }
+    },
+    {
+      "number": 7,
+      "id": "spring-day-07",
+      "label": "Blossom Arc Paper",
+      "theme": "spring day",
+      "kind": "illustration",
+      "backgroundColor": "#FFF6F0",
+      "assetUri": "assets/spring-day-07.svg",
+      "palette": [
+        "#B7D978",
+        "#F48C8C",
+        "#F8D96B",
+        "#FFF6F0",
+        "#315C45",
+        "#8ED3F4"
+      ],
+      "tags": [
+        "spring-day",
+        "blossom",
+        "arcs",
+        "peach-base",
+        "layout-agnostic"
+      ],
+      "textColor": "#315C45",
+      "slotBorderColor": "#ffffff",
+      "safeArea": {
+        "x": 0.08,
+        "y": 0.08,
+        "width": 0.84,
+        "height": 0.84
+      }
+    },
+    {
+      "number": 8,
+      "id": "spring-day-08",
+      "label": "Meadow Dot Paper",
+      "theme": "spring day",
+      "kind": "pattern",
+      "backgroundColor": "#E9F6E8",
+      "assetUri": "assets/spring-day-08.svg",
+      "palette": [
+        "#7FBF88",
+        "#B7D978",
+        "#F48C8C",
+        "#E9F6E8",
+        "#315C45",
+        "#8ED3F4"
+      ],
+      "tags": [
+        "spring-day",
+        "meadow",
+        "dots",
+        "mint-base",
+        "layout-agnostic"
+      ],
+      "textColor": "#315C45",
+      "slotBorderColor": "#ffffff",
+      "safeArea": {
+        "x": 0.08,
+        "y": 0.08,
+        "width": 0.84,
+        "height": 0.84
+      }
+    }
+  ]
+};

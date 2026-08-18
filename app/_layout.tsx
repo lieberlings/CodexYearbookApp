@@ -1,6 +1,9 @@
 import { Stack } from "expo-router";
+import { LogBox } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AppProvider } from "../src/context/AppContext";
+
+LogBox.ignoreLogs(["Looks like you have configured linking in multiple places"]);
 
 export default function RootLayout() {
   return (

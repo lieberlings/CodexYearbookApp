@@ -1,0 +1,62 @@
+{
+  "theme": "everyday clean",
+  "palette": ["#E7EDF0", "#D8E0D6", "#DCCFBF", "#FBFAF7", "#2F3A40", "#AFC8D5"],
+  "backgrounds": [
+    {
+      "number": 1,
+      "label": "Warm Paper Wash",
+      "kind": "gradient",
+      "recipe": "warm-paper-wash",
+      "tags": ["everyday-clean", "paper", "warm", "layout-agnostic"]
+    },
+    {
+      "number": 2,
+      "label": "Linen Weave",
+      "kind": "photo-texture",
+      "recipe": "linen-weave",
+      "tags": ["everyday-clean", "linen", "texture", "layout-agnostic"]
+    },
+    {
+      "number": 3,
+      "label": "Micro Dot Paper",
+      "kind": "pattern",
+      "recipe": "micro-dot-paper",
+      "tags": ["everyday-clean", "dots", "small-scale", "layout-agnostic"]
+    },
+    {
+      "number": 4,
+      "label": "Faint Grid",
+      "kind": "pattern",
+      "recipe": "faint-grid",
+      "tags": ["everyday-clean", "grid", "structured", "layout-agnostic"]
+    },
+    {
+      "number": 5,
+      "label": "Vellum Bands",
+      "kind": "gradient",
+      "recipe": "vellum-bands",
+      "tags": ["everyday-clean", "vellum", "bands", "layout-agnostic"]
+    },
+    {
+      "number": 6,
+      "label": "Soft Diagonal Wash",
+      "kind": "gradient",
+      "recipe": "soft-diagonal-wash",
+      "tags": ["everyday-clean", "wash", "diagonal", "layout-agnostic"]
+    },
+    {
+      "number": 7,
+      "label": "Tiny Terrazzo",
+      "kind": "pattern",
+      "recipe": "tiny-terrazzo",
+      "tags": ["everyday-clean", "terrazzo", "flecks", "layout-agnostic"]
+    },
+    {
+      "number": 8,
+      "label": "Calm Full Gradient",
+      "kind": "gradient",
+      "recipe": "calm-full-gradient",
+      "tags": ["everyday-clean", "gradient", "neutral", "layout-agnostic"]
+    }
+  ]
+}

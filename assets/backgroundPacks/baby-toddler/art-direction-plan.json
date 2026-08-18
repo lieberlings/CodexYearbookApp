@@ -1,0 +1,62 @@
+{
+  "theme": "baby toddler",
+  "palette": ["#9CC7F2", "#F8D85E", "#EF7A72", "#F8F4EA", "#4B5A72", "#9ED9B4"],
+  "backgrounds": [
+    {
+      "number": 1,
+      "label": "Nursery Wash",
+      "kind": "gradient",
+      "recipe": "nursery-wash",
+      "tags": ["baby-toddler", "nursery", "wash", "layout-agnostic"]
+    },
+    {
+      "number": 2,
+      "label": "Toy Block Scatter",
+      "kind": "pattern",
+      "recipe": "toy-block-scatter",
+      "tags": ["baby-toddler", "blocks", "toys", "layout-agnostic"]
+    },
+    {
+      "number": 3,
+      "label": "Rattle Dot Paper",
+      "kind": "pattern",
+      "recipe": "rattle-dot-paper",
+      "tags": ["baby-toddler", "rattle", "dots", "layout-agnostic"]
+    },
+    {
+      "number": 4,
+      "label": "Stacking Ring Arcs",
+      "kind": "pattern",
+      "recipe": "stacking-ring-arcs",
+      "tags": ["baby-toddler", "rings", "arcs", "layout-agnostic"]
+    },
+    {
+      "number": 5,
+      "label": "Plush Star Field",
+      "kind": "pattern",
+      "recipe": "plush-star-field",
+      "tags": ["baby-toddler", "stars", "plush", "layout-agnostic"]
+    },
+    {
+      "number": 6,
+      "label": "Soft Blanket Check",
+      "kind": "photo-texture",
+      "recipe": "soft-blanket-check",
+      "tags": ["baby-toddler", "blanket", "check", "layout-agnostic"]
+    },
+    {
+      "number": 7,
+      "label": "Moon Cloud Paper",
+      "kind": "illustration",
+      "recipe": "moon-cloud-paper",
+      "tags": ["baby-toddler", "moon", "cloud", "layout-agnostic"]
+    },
+    {
+      "number": 8,
+      "label": "Little Wheel Marks",
+      "kind": "pattern",
+      "recipe": "little-wheel-marks",
+      "tags": ["baby-toddler", "toy-car", "wheels", "layout-agnostic"]
+    }
+  ]
+}

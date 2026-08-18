@@ -1,0 +1,70 @@
+{
+  "theme": "spring day",
+  "palette": ["#B7D978", "#8ED3F4", "#F8D96B", "#FFFDF4", "#315C45", "#F48C8C"],
+  "backgrounds": [
+    {
+      "number": 1,
+      "label": "Blue Sky Wash",
+      "kind": "gradient",
+      "recipe": "spring-sky-wash",
+      "palette": ["#B9DDF2", "#8ED3F4", "#D6ECBC", "#F7FCFF", "#315C45", "#F48C8C"],
+      "tags": ["spring-day", "sky", "wash", "blue-base", "layout-agnostic"]
+    },
+    {
+      "number": 2,
+      "label": "Blush Tulip Meadow",
+      "kind": "illustration",
+      "recipe": "tulip-meadow",
+      "palette": ["#B7D978", "#8ED3F4", "#F48C8C", "#FFF3F4", "#315C45", "#6FAE75"],
+      "tags": ["spring-day", "tulips", "meadow", "blush-base", "layout-agnostic"]
+    },
+    {
+      "number": 3,
+      "label": "Leaf Scatter",
+      "kind": "pattern",
+      "recipe": "leaf-scatter",
+      "palette": ["#8CBC78", "#D9EBC9", "#8ED3F4", "#EEF7EA", "#315C45", "#6FAE75"],
+      "tags": ["spring-day", "leaves", "scatter", "green-base", "layout-agnostic"]
+    },
+    {
+      "number": 4,
+      "label": "Picnic Check",
+      "kind": "pattern",
+      "recipe": "picnic-check",
+      "palette": ["#B7D978", "#8ED3F4", "#F48C8C", "#FFFFFF", "#315C45", "#F8D96B"],
+      "tags": ["spring-day", "picnic", "check", "white-blue-base", "layout-agnostic"]
+    },
+    {
+      "number": 5,
+      "label": "Cloud Drift",
+      "kind": "illustration",
+      "recipe": "cloud-drift",
+      "palette": ["#C8E1EF", "#8ED3F4", "#F7FBFF", "#EAF6FC", "#315C45", "#D7E8EE"],
+      "tags": ["spring-day", "clouds", "soft", "cool-blue-base", "layout-agnostic"]
+    },
+    {
+      "number": 6,
+      "label": "Rain Speckle Paper",
+      "kind": "pattern",
+      "recipe": "rain-speckle-paper",
+      "palette": ["#B7D978", "#6EB6D6", "#B9C6CC", "#F2F6F7", "#315C45", "#8ED3F4"],
+      "tags": ["spring-day", "rain", "speckles", "cool-grey-base", "layout-agnostic"]
+    },
+    {
+      "number": 7,
+      "label": "Blossom Arc Paper",
+      "kind": "illustration",
+      "recipe": "blossom-arc-paper",
+      "palette": ["#B7D978", "#F48C8C", "#F8D96B", "#FFF6F0", "#315C45", "#8ED3F4"],
+      "tags": ["spring-day", "blossom", "arcs", "peach-base", "layout-agnostic"]
+    },
+    {
+      "number": 8,
+      "label": "Meadow Dot Paper",
+      "kind": "pattern",
+      "recipe": "meadow-dot-paper",
+      "palette": ["#7FBF88", "#B7D978", "#F48C8C", "#E9F6E8", "#315C45", "#8ED3F4"],
+      "tags": ["spring-day", "meadow", "dots", "mint-base", "layout-agnostic"]
+    }
+  ]
+}

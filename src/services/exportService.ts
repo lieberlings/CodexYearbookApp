@@ -3,6 +3,7 @@ import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { applySlotOverridesToPage } from "../layout/overrides";
 import { buildLayoutDocument } from "../layout/engine";
+import { getBackgroundAssetSourceUri } from "../layout/backgroundAssets";
 import { getPhotoAspect, getPhotoRenderMetrics } from "../layout/photoMetrics";
 import { SlotOverride } from "../state/editorStore";
 import { Memory, MemoryPageSection, PhotoItem, Project } from "../types";
@@ -92,6 +93,7 @@ export async function exportProjectToPdf(
   let pageHtml = "";
   for (const page of pages) {
     const pageTitle = page.pageCount > 1 ? `${page.memoryTitle} (${page.pageIndex + 1}/${page.pageCount})` : page.memoryTitle;
+    const backgroundSource = getBackgroundAssetSourceUri(page.backgroundAssetId);
     let slotsHtml = "";
     let textBoxesHtml = "";
     const textAnchorSlotIds = new Set(page.textBoxes.map((textBox) => textBox.anchorSlotId).filter(Boolean));
@@ -152,7 +154,7 @@ export async function exportProjectToPdf(
             height:${(textFrame.height * 100).toFixed(4)}%;
             border-width:${(textBox.borderWidth ?? 0).toFixed(2)}px;
             border-color:${escapeAttr(textBox.borderColor ?? "#0f172a")};
-            background:${escapeAttr(applyColorOpacity(textBox.fillColor ?? "#ffffff", textBox.fillOpacity ?? 0))};
+            background:${escapeAttr(anchorSlot ? "transparent" : applyColorOpacity(textBox.fillColor ?? "#ffffff", textBox.fillOpacity ?? 0))};
             color:${escapeAttr(textBox.textColor ?? page.textColor ?? "#0f172a")};
             font-size:${(textBox.fontSize ?? page.textSize ?? 24).toFixed(0)}px;
             font-weight:${escapeAttr(textBox.fontWeight ?? "700")};
@@ -173,7 +175,8 @@ export async function exportProjectToPdf(
           font-family:${escapeAttr(page.textFontFamily ?? "Arial, sans-serif")};
         ">${escapeHtml(pageTitle)}</div>
         ${page.themeLabel ? `<div class="page-theme" style="color:${escapeAttr(page.textColor ?? "#64748b")};">${escapeHtml(page.themeLabel)}</div>` : ""}
-        <div class="canvas" style="background:${escapeAttr(page.backgroundColor ?? "#ffffff")}; border-radius:18px;">
+        <div class="canvas" style="background:${escapeAttr(page.backgroundColor ?? "#ffffff")}; border-radius:0;">
+          ${backgroundSource ? `<img class="background-image" src="${escapeAttr(backgroundSource)}" />` : ""}
           ${slotsHtml || '<div class="empty">No photos on this page.</div>'}
           ${textBoxesHtml}
         </div>
@@ -243,14 +246,24 @@ export async function exportProjectToPdf(
             width: 16.4cm;
             height: 16.4cm;
             margin-top: 0.3cm;
+            overflow: hidden;
+          }
+          .background-image {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            z-index: 0;
           }
           .slot {
             position: absolute;
-            border-radius: 10px;
+            border-radius: 0;
             overflow: hidden;
             border: 1px solid #e2e8f0;
             background: #f8fafc;
             box-sizing: border-box;
+            z-index: 2;
           }
           img {
             display: block;

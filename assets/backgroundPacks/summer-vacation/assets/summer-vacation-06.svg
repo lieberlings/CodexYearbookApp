@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2400 2400" width="2400" height="2400">
+<rect width="2400" height="2400" fill="#FFF7E6"/>
+<path d="M0 0 C 600 80, 1200 -80, 2400 30" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.055"/>
+<path d="M0 120 C 600 200, 1200 40, 2400 150" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.035"/>
+<path d="M0 240 C 600 320, 1200 160, 2400 270" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.055"/>
+<path d="M0 360 C 600 440, 1200 280, 2400 390" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.035"/>
+<path d="M0 480 C 600 560, 1200 400, 2400 510" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.055"/>
+<path d="M0 600 C 600 680, 1200 520, 2400 630" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.035"/>
+<path d="M0 720 C 600 800, 1200 640, 2400 750" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.055"/>
+<path d="M0 840 C 600 920, 1200 760, 2400 870" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.035"/>
+<path d="M0 960 C 600 1040, 1200 880, 2400 990" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.055"/>
+<path d="M0 1080 C 600 1160, 1200 1000, 2400 1110" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.035"/>
+<path d="M0 1200 C 600 1280, 1200 1120, 2400 1230" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.055"/>
+<path d="M0 1320 C 600 1400, 1200 1240, 2400 1350" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.035"/>
+<path d="M0 1440 C 600 1520, 1200 1360, 2400 1470" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.055"/>
+<path d="M0 1560 C 600 1640, 1200 1480, 2400 1590" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.035"/>
+<path d="M0 1680 C 600 1760, 1200 1600, 2400 1710" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.055"/>
+<path d="M0 1800 C 600 1880, 1200 1720, 2400 1830" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.035"/>
+<path d="M0 1920 C 600 2000, 1200 1840, 2400 1950" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.055"/>
+<path d="M0 2040 C 600 2120, 1200 1960, 2400 2070" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.035"/>
+<path d="M0 2160 C 600 2240, 1200 2080, 2400 2190" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.055"/>
+<path d="M0 2280 C 600 2360, 1200 2200, 2400 2310" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.035"/>
+</svg>

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2400 2400" width="2400" height="2400">
+
+  <defs>
+    <radialGradient id="nursery" cx="48%" cy="44%" r="86%">
+      <stop offset="0" stop-color="#F8F4EA"/>
+      <stop offset="0.62" stop-color="#9CC7F2" stop-opacity="0.24"/>
+      <stop offset="1" stop-color="#9ED9B4" stop-opacity="0.22"/>
+    </radialGradient>
+  </defs>
+  <rect width="2400" height="2400" fill="url(#nursery)"/>
+<circle cx="360" cy="390" r="190" fill="#EF7A72" opacity="0.10"/>
+<circle cx="2040" cy="520" r="220" fill="#F8D85E" opacity="0.10"/>
+<circle cx="520" cy="2040" r="250" fill="#9ED9B4" opacity="0.10"/>
+<circle cx="1990" cy="2000" r="190" fill="#9CC7F2" opacity="0.10"/>
+</svg>

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2400 2400" width="2400" height="2400">
+
+  <defs>
+    <pattern id="acornDots" width="260" height="260" patternUnits="userSpaceOnUse">
+      <rect width="260" height="260" fill="#F9F7F2"/>
+      <circle cx="74" cy="76" r="18" fill="#B97948" opacity="0.18"/>
+      <path d="M155 82 C 126 102, 130 148, 160 166 C 192 146, 194 104, 155 82 Z" fill="#7A2E3A" opacity="0.18"/>
+      <path d="M132 100 C 146 76, 174 74, 192 98" fill="none" stroke="#3A2D25" stroke-width="9" stroke-linecap="round" opacity="0.12"/>
+      <ellipse cx="204" cy="188" rx="18" ry="34" fill="#8FA7A3" opacity="0.15" transform="rotate(-28 204 188)"/>
+    </pattern>
+  </defs>
+  <rect width="2400" height="2400" fill="url(#acornDots)"/>
+</svg>

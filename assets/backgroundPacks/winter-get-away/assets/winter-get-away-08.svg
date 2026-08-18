@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2400 2400" width="2400" height="2400">
+<rect width="2400" height="2400" fill="#F7FBFC"/>
+<path d="M120 -80 C -60 380, 300 780, 120 1240 S -20 2000, 200 2480" fill="none" stroke="#213241" stroke-width="16" stroke-dasharray="70 54" opacity="0.12"/>
+<path d="M202 -80 C 22 380, 382 780, 202 1240 S 62 2000, 282 2480" fill="none" stroke="#DCECF5" stroke-width="13" stroke-dasharray="70 54" opacity="0.11"/>
+<path d="M520 -80 C 340 380, 700 780, 520 1240 S 380 2000, 600 2480" fill="none" stroke="#213241" stroke-width="16" stroke-dasharray="70 54" opacity="0.12"/>
+<path d="M602 -80 C 422 380, 782 780, 602 1240 S 462 2000, 682 2480" fill="none" stroke="#DCECF5" stroke-width="13" stroke-dasharray="70 54" opacity="0.11"/>
+<path d="M920 -80 C 740 380, 1100 780, 920 1240 S 780 2000, 1000 2480" fill="none" stroke="#213241" stroke-width="16" stroke-dasharray="70 54" opacity="0.12"/>
+<path d="M1002 -80 C 822 380, 1182 780, 1002 1240 S 862 2000, 1082 2480" fill="none" stroke="#DCECF5" stroke-width="13" stroke-dasharray="70 54" opacity="0.11"/>
+<path d="M1320 -80 C 1140 380, 1500 780, 1320 1240 S 1180 2000, 1400 2480" fill="none" stroke="#213241" stroke-width="16" stroke-dasharray="70 54" opacity="0.12"/>
+<path d="M1402 -80 C 1222 380, 1582 780, 1402 1240 S 1262 2000, 1482 2480" fill="none" stroke="#DCECF5" stroke-width="13" stroke-dasharray="70 54" opacity="0.11"/>
+<path d="M1720 -80 C 1540 380, 1900 780, 1720 1240 S 1580 2000, 1800 2480" fill="none" stroke="#213241" stroke-width="16" stroke-dasharray="70 54" opacity="0.12"/>
+<path d="M1802 -80 C 1622 380, 1982 780, 1802 1240 S 1662 2000, 1882 2480" fill="none" stroke="#DCECF5" stroke-width="13" stroke-dasharray="70 54" opacity="0.11"/>
+<path d="M2120 -80 C 1940 380, 2300 780, 2120 1240 S 1980 2000, 2200 2480" fill="none" stroke="#213241" stroke-width="16" stroke-dasharray="70 54" opacity="0.12"/>
+<path d="M2202 -80 C 2022 380, 2382 780, 2202 1240 S 2062 2000, 2282 2480" fill="none" stroke="#DCECF5" stroke-width="13" stroke-dasharray="70 54" opacity="0.11"/>
+</svg>

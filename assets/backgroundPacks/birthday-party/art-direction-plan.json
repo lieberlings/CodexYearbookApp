@@ -1,0 +1,62 @@
+{
+  "theme": "birthday party",
+  "palette": ["#7ECBEA", "#F06D8D", "#F6D365", "#FFF8EC", "#26343D", "#8BD7B5"],
+  "backgrounds": [
+    {
+      "number": 1,
+      "label": "Soft Party Glow",
+      "kind": "gradient",
+      "recipe": "soft-party-gradient",
+      "tags": ["birthday-party", "glow", "gradient", "layout-agnostic"]
+    },
+    {
+      "number": 2,
+      "label": "Confetti Toss",
+      "kind": "pattern",
+      "recipe": "birthday-confetti",
+      "tags": ["birthday-party", "confetti", "playful", "layout-agnostic"]
+    },
+    {
+      "number": 3,
+      "label": "Streamer Ribbons",
+      "kind": "illustration",
+      "recipe": "streamer-ribbons",
+      "tags": ["birthday-party", "streamers", "ribbons", "layout-agnostic"]
+    },
+    {
+      "number": 4,
+      "label": "Balloon Dot Field",
+      "kind": "pattern",
+      "recipe": "balloon-dot-field",
+      "tags": ["birthday-party", "balloons", "dots", "layout-agnostic"]
+    },
+    {
+      "number": 5,
+      "label": "Candle Stripe Paper",
+      "kind": "pattern",
+      "recipe": "candle-stripes",
+      "tags": ["birthday-party", "candles", "stripes", "layout-agnostic"]
+    },
+    {
+      "number": 6,
+      "label": "Cake Sprinkle Paper",
+      "kind": "pattern",
+      "recipe": "cake-sprinkle-paper",
+      "tags": ["birthday-party", "sprinkles", "cake", "layout-agnostic"]
+    },
+    {
+      "number": 7,
+      "label": "Ribbon Arc Paper",
+      "kind": "illustration",
+      "recipe": "ribbon-arc-paper",
+      "tags": ["birthday-party", "ribbon", "arcs", "layout-agnostic"]
+    },
+    {
+      "number": 8,
+      "label": "Tiny Pennant Pattern",
+      "kind": "pattern",
+      "recipe": "pennant-mini-pattern",
+      "tags": ["birthday-party", "pennants", "party", "layout-agnostic"]
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2400 2400" width="2400" height="2400">
+<rect width="2400" height="2400" fill="#FFF8EC"/>
+<path d="M-120 160 C 280 -30, 640 350, 1040 160 S 1740 -30, 2520 200" fill="none" stroke="#7ECBEA" stroke-width="28" opacity="0.20"/>
+<path d="M-120 230 C 280 40, 640 420, 1040 230 S 1740 40, 2520 270" fill="none" stroke="#26343D" stroke-width="8" opacity="0.055"/>
+<path d="M-120 440 C 280 250, 640 630, 1040 440 S 1740 250, 2520 480" fill="none" stroke="#F06D8D" stroke-width="36" opacity="0.20"/>
+<path d="M-120 510 C 280 320, 640 700, 1040 510 S 1740 320, 2520 550" fill="none" stroke="#26343D" stroke-width="8" opacity="0.055"/>
+<path d="M-120 720 C 280 530, 640 910, 1040 720 S 1740 530, 2520 760" fill="none" stroke="#F6D365" stroke-width="44" opacity="0.20"/>
+<path d="M-120 790 C 280 600, 640 980, 1040 790 S 1740 600, 2520 830" fill="none" stroke="#26343D" stroke-width="8" opacity="0.055"/>
+<path d="M-120 1000 C 280 810, 640 1190, 1040 1000 S 1740 810, 2520 1040" fill="none" stroke="#8BD7B5" stroke-width="28" opacity="0.20"/>
+<path d="M-120 1070 C 280 880, 640 1260, 1040 1070 S 1740 880, 2520 1110" fill="none" stroke="#26343D" stroke-width="8" opacity="0.055"/>
+<path d="M-120 1280 C 280 1090, 640 1470, 1040 1280 S 1740 1090, 2520 1320" fill="none" stroke="#7ECBEA" stroke-width="36" opacity="0.20"/>
+<path d="M-120 1350 C 280 1160, 640 1540, 1040 1350 S 1740 1160, 2520 1390" fill="none" stroke="#26343D" stroke-width="8" opacity="0.055"/>
+<path d="M-120 1560 C 280 1370, 640 1750, 1040 1560 S 1740 1370, 2520 1600" fill="none" stroke="#F06D8D" stroke-width="44" opacity="0.20"/>
+<path d="M-120 1630 C 280 1440, 640 1820, 1040 1630 S 1740 1440, 2520 1670" fill="none" stroke="#26343D" stroke-width="8" opacity="0.055"/>
+<path d="M-120 1840 C 280 1650, 640 2030, 1040 1840 S 1740 1650, 2520 1880" fill="none" stroke="#F6D365" stroke-width="28" opacity="0.20"/>
+<path d="M-120 1910 C 280 1720, 640 2100, 1040 1910 S 1740 1720, 2520 1950" fill="none" stroke="#26343D" stroke-width="8" opacity="0.055"/>
+<path d="M-120 2120 C 280 1930, 640 2310, 1040 2120 S 1740 1930, 2520 2160" fill="none" stroke="#8BD7B5" stroke-width="36" opacity="0.20"/>
+<path d="M-120 2190 C 280 2000, 640 2380, 1040 2190 S 1740 2000, 2520 2230" fill="none" stroke="#26343D" stroke-width="8" opacity="0.055"/>
+<path d="M-120 2400 C 280 2210, 640 2590, 1040 2400 S 1740 2210, 2520 2440" fill="none" stroke="#7ECBEA" stroke-width="44" opacity="0.20"/>
+<path d="M-120 2470 C 280 2280, 640 2660, 1040 2470 S 1740 2280, 2520 2510" fill="none" stroke="#26343D" stroke-width="8" opacity="0.055"/>
+</svg>

@@ -20,12 +20,14 @@ import {
 import DraggableFlatList from "react-native-draggable-flatlist";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MediaLibrarySelectionModal } from "../../src/components/MediaLibrarySelectionModal";
+import { PageBackground } from "../../src/components/PageBackground";
 import { useAppData } from "../../src/context/AppContext";
 import { DragOverlay } from "../../src/editor/drag/DragOverlay";
 import { DragTargetRegistry } from "../../src/editor/drag/dragTargets";
 import { useDragInteraction } from "../../src/editor/drag/useDragInteraction";
 import { DragPayload, DragResolution, DropTarget, Rect } from "../../src/editor/drag/types";
 import { buildLayoutDocument } from "../../src/layout/engine";
+import { backgroundPacks } from "../../src/layout/backgroundPacks";
 import { applySlotOverridesToPage } from "../../src/layout/overrides";
 import { clampPhotoOffset, getPhotoAspect, getPhotoRenderMetrics, getPhotoScaleBounds } from "../../src/layout/photoMetrics";
 import { listAllTemplates, TemplateDefinition } from "../../src/layout/templates";
@@ -174,6 +176,36 @@ function IconOrb({
         ) : null}
       </View>
       <Text style={[styles.iconOrbLabel, active ? styles.iconOrbLabelActive : null]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function BackgroundThumbnail({
+  assetId,
+  backgroundColor,
+  active,
+  label,
+  onPress
+}: {
+  assetId?: string;
+  backgroundColor?: string;
+  active: boolean;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      style={styles.backgroundChoice}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      <View style={[styles.backgroundChoicePreview, active ? styles.backgroundChoicePreviewActive : null]}>
+        <PageBackground backgroundAssetId={assetId} backgroundColor={backgroundColor} />
+      </View>
+      <Text numberOfLines={1} style={[styles.backgroundChoiceLabel, active ? styles.backgroundChoiceLabelActive : null]}>
+        {label}
+      </Text>
     </Pressable>
   );
 }
@@ -484,7 +516,7 @@ export default function MemoryDetailsScreen() {
       fontSize: defaultFontSize,
       fontStyle: "normal",
       fillColor: "#ffffff",
-      fillOpacity: slot ? 0.92 : 0,
+      fillOpacity: 0,
       textAlign: "center",
       x: slot ? slot.frame.x : undefined,
       y: slot ? slot.frame.y : undefined,
@@ -586,6 +618,17 @@ export default function MemoryDetailsScreen() {
     exitTextMode();
   }
 
+  function revertSelectedTextSlotToPhotoSlot() {
+    if (!activeSection || !selectedTextBox?.anchorSlotId) {
+      return;
+    }
+    deletePageTextBox(activeSection.id, selectedTextBox.id);
+    setSelectedTextBoxId(undefined);
+    setEditingTextBoxId(undefined);
+    setSelection(activeSection.id, selectedTextBox.anchorSlotId);
+    setOpenInspector(undefined);
+  }
+
   function updateTextBoxFromContentSize(textBox: PageTextBox, widthPx: number, heightPx: number) {
     if (!activeSection || !textBox.autoSize) {
       return;
@@ -649,9 +692,10 @@ export default function MemoryDetailsScreen() {
     const section = pageSections.find((item) => item.id === pageSectionId);
     return {
       backgroundColor: section?.backgroundColor ?? "#ffffff",
+      backgroundAssetId: section?.backgroundAssetId,
       slotBorderColor: section?.slotBorderColor ?? "#e2e8f0",
       slotBorderWidth: section?.slotBorderWidth ?? 1,
-      slotCornerRadius: section?.slotCornerRadius ?? 10,
+      slotCornerRadius: section?.slotCornerRadius ?? 0,
       textColor: section?.textColor ?? "#0f172a",
       textSize: section?.textSize ?? 18,
       textWeight: section?.textWeight ?? "700",
@@ -1140,7 +1184,7 @@ export default function MemoryDetailsScreen() {
               <View
                 ref={pageCanvasRef}
                 collapsable={false}
-                style={[styles.canvasWrap, styles.primaryCanvasWrap, { width: canvasSize, height: canvasSize, backgroundColor: pageStyle.backgroundColor }]}
+                style={[styles.canvasWrap, styles.primaryCanvasWrap, { width: canvasSize, height: canvasSize }]}
                 onStartShouldSetResponder={() => Boolean(textModeActive && selectedTextBoxId)}
                 onResponderRelease={() => {
                   if (textModeActive && selectedTextBoxId) {
@@ -1150,6 +1194,7 @@ export default function MemoryDetailsScreen() {
                   }
                 }}
               >
+                <PageBackground backgroundAssetId={pageStyle.backgroundAssetId} backgroundColor={pageStyle.backgroundColor} />
                 {renderedPage.slots.map((slot) => {
                   const photo = slot.photoId ? photosById[slot.photoId] : undefined;
                   const slotTextBox = activeSlotTextBoxBySlotId[slot.id];
@@ -1209,13 +1254,13 @@ export default function MemoryDetailsScreen() {
                           styles.slotFrame,
                           slotTextBox && !photo ? styles.slotFrameTextOccupied : null,
                           isSelected ? styles.slotSelected : null,
-                          hoveredTarget?.targetPageId === renderedPage.id && hoveredTarget.targetSlotId === slot.id ? styles.slotDropTarget : null,
                           drag.session.payload?.dragType === "page-photo" && drag.session.payload.itemId === photo?.id ? styles.slotDragging : null,
                           {
                             borderColor: pageStyle.slotBorderColor,
                             borderWidth: pageStyle.slotBorderWidth,
                             borderRadius: pageStyle.slotCornerRadius
-                          }
+                          },
+                          hoveredTarget?.targetPageId === renderedPage.id && hoveredTarget.targetSlotId === slot.id ? styles.slotDropTarget : null
                         ]}
                       >
                         {photo ? (
@@ -1272,7 +1317,9 @@ export default function MemoryDetailsScreen() {
                           {
                             borderWidth: textBox.borderWidth ?? 0,
                             borderColor: textBox.borderColor ?? "#0f172a",
-                            backgroundColor: applyColorOpacity(textBox.fillColor ?? "#ffffff", textBox.fillOpacity ?? 0)
+                            backgroundColor: isAnchoredTextBox
+                              ? "transparent"
+                              : applyColorOpacity(textBox.fillColor ?? "#ffffff", textBox.fillOpacity ?? 0)
                           }
                         ]}
                         onPress={() => {
@@ -1500,6 +1547,7 @@ export default function MemoryDetailsScreen() {
                     </View>
                   </View>
 
+                  {!selectedTextBox.anchorSlotId ? (
                   <View style={styles.controlGroup}>
                     <Text style={styles.controlGroupLabel}>Fill</Text>
                     <View style={styles.paletteRow}>
@@ -1527,6 +1575,7 @@ export default function MemoryDetailsScreen() {
                       </Pressable>
                     </View>
                   </View>
+                  ) : null}
 
                     <View style={styles.controlRow}>
                       <Pressable style={styles.stepperButton} onPress={() => setEditingTextBoxId(selectedTextBox.id)}>
@@ -1535,6 +1584,11 @@ export default function MemoryDetailsScreen() {
                       <Pressable style={[styles.stepperButton, styles.stepperButtonActive]} onPress={saveTextEditing}>
                         <Text style={[styles.stepperButtonText, styles.stepperButtonTextActive]}>Save Text</Text>
                       </Pressable>
+                      {selectedTextBox.anchorSlotId ? (
+                        <Pressable style={styles.stepperButton} onPress={revertSelectedTextSlotToPhotoSlot}>
+                          <Text style={styles.stepperButtonText}>Photo Slot</Text>
+                        </Pressable>
+                      ) : null}
                       <Pressable
                         style={styles.tinyButtonDanger}
                         onPress={() => {
@@ -1585,7 +1639,7 @@ export default function MemoryDetailsScreen() {
               )}
 
               {inspectorOpen ? (
-                <View style={styles.inspectorArea}>
+                <View style={[styles.inspectorArea, inspectorOpen === "background" ? styles.backgroundInspectorArea : null]}>
                   {inspectorOpen === "layout" ? (
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.templateRow}>
                     <Pressable
@@ -1610,15 +1664,51 @@ export default function MemoryDetailsScreen() {
                   ) : null}
 
                   {inspectorOpen === "background" ? (
-                    <View style={styles.paletteRow}>
-                      {COLOR_PALETTE.map((color) => (
-                        <Pressable
-                          key={color}
-                          style={[styles.colorSwatch, { backgroundColor: color }, section.backgroundColor === color ? styles.colorSwatchActive : null]}
-                          onPress={() => updatePageSectionStyle(section.id, { backgroundColor: color })}
-                        />
+                    <ScrollView
+                      style={styles.backgroundPickerScroll}
+                      showsVerticalScrollIndicator
+                      nestedScrollEnabled
+                      contentContainerStyle={styles.backgroundPicker}
+                    >
+                      <View style={styles.controlGroup}>
+                        <Text style={styles.controlGroupLabel}>Colors</Text>
+                        <View style={styles.paletteRow}>
+                          {COLOR_PALETTE.map((color) => (
+                            <Pressable
+                              key={color}
+                              style={[
+                                styles.colorSwatch,
+                                { backgroundColor: color },
+                                !section.backgroundAssetId && section.backgroundColor === color ? styles.colorSwatchActive : null
+                              ]}
+                              onPress={() => updatePageSectionStyle(section.id, { backgroundColor: color, backgroundAssetId: undefined })}
+                            />
+                          ))}
+                        </View>
+                      </View>
+                      {backgroundPacks.map((pack) => (
+                        <View key={pack.id} style={styles.controlGroup}>
+                          <Text style={styles.controlGroupLabel}>{pack.label}</Text>
+                          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.backgroundPackRow}>
+                            {pack.backgrounds.map((background) => (
+                              <BackgroundThumbnail
+                                key={background.id}
+                                assetId={background.id}
+                                backgroundColor={background.backgroundColor}
+                                active={section.backgroundAssetId === background.id}
+                                label={`${background.number}`}
+                                onPress={() =>
+                                  updatePageSectionStyle(section.id, {
+                                    backgroundColor: background.backgroundColor,
+                                    backgroundAssetId: background.id
+                                  })
+                                }
+                              />
+                            ))}
+                          </ScrollView>
+                        </View>
                       ))}
-                    </View>
+                    </ScrollView>
                   ) : null}
 
                   {inspectorOpen === "border" ? (
@@ -1636,10 +1726,10 @@ export default function MemoryDetailsScreen() {
                       <Pressable style={styles.stepperButton} onPress={() => updatePageSectionStyle(section.id, { slotBorderWidth: clamp((section.slotBorderWidth ?? 1) + 1, 0, 12) })}>
                         <Text style={styles.stepperButtonText}>+ Border</Text>
                       </Pressable>
-                      <Pressable style={styles.stepperButton} onPress={() => updatePageSectionStyle(section.id, { slotCornerRadius: clamp((section.slotCornerRadius ?? 10) - 2, 0, 28) })}>
+                      <Pressable style={styles.stepperButton} onPress={() => updatePageSectionStyle(section.id, { slotCornerRadius: clamp((section.slotCornerRadius ?? 0) - 2, 0, 28) })}>
                         <Text style={styles.stepperButtonText}>- Corner</Text>
                       </Pressable>
-                      <Pressable style={styles.stepperButton} onPress={() => updatePageSectionStyle(section.id, { slotCornerRadius: clamp((section.slotCornerRadius ?? 10) + 2, 0, 28) })}>
+                      <Pressable style={styles.stepperButton} onPress={() => updatePageSectionStyle(section.id, { slotCornerRadius: clamp((section.slotCornerRadius ?? 0) + 2, 0, 28) })}>
                         <Text style={styles.stepperButtonText}>+ Corner</Text>
                       </Pressable>
                     </View>
@@ -1768,7 +1858,12 @@ export default function MemoryDetailsScreen() {
                       styles.pageRailPlaceholderPreview,
                       { backgroundColor: getSectionStyle(item.id).backgroundColor }
                     ]}
-                  />
+                  >
+                    <PageBackground
+                      backgroundAssetId={getSectionStyle(item.id).backgroundAssetId}
+                      backgroundColor={getSectionStyle(item.id).backgroundColor}
+                    />
+                  </View>
                   <Text style={[styles.pageRailLabel, styles.pageRailLabelPlaceholder]}>Page</Text>
                 </View>
               </View>
@@ -1800,6 +1895,10 @@ export default function MemoryDetailsScreen() {
                         { backgroundColor: getSectionStyle(item.id).backgroundColor }
                       ]}
                     >
+                      <PageBackground
+                        backgroundAssetId={getSectionStyle(item.id).backgroundAssetId}
+                        backgroundColor={getSectionStyle(item.id).backgroundColor}
+                      />
                       {renderedPage?.slots.slice(0, 4).map((slot) => (
                         <View
                           key={slot.id}
@@ -1917,7 +2016,7 @@ export default function MemoryDetailsScreen() {
             </View>
             {selectedPage && selectedSlot && selectedSlotPhoto ? (
               <View
-                style={[styles.modalCanvas, { width: editorSize, height: editorSize, backgroundColor: getSectionStyle(selectedPage.id).backgroundColor }]}
+                style={[styles.modalCanvas, { width: editorSize, height: editorSize }]}
                 onTouchStart={(event) => beginEditorGesture(event.nativeEvent.touches)}
                 onTouchMove={(event) => updateEditorGesture(event.nativeEvent.touches)}
                 onTouchEnd={() => {
@@ -1927,6 +2026,10 @@ export default function MemoryDetailsScreen() {
                   editorGestureRef.current.mode = undefined;
                 }}
               >
+                <PageBackground
+                  backgroundAssetId={getSectionStyle(selectedPage.id).backgroundAssetId}
+                  backgroundColor={getSectionStyle(selectedPage.id).backgroundColor}
+                />
                 {(() => {
                   const photoMetrics = getPhotoRenderMetrics({
                     containerAspect: selectedSlot.frame.width / Math.max(0.0001, selectedSlot.frame.height),
@@ -2456,6 +2559,9 @@ const styles = StyleSheet.create({
     backgroundColor: "#10192c",
     padding: 14
   },
+  backgroundInspectorArea: {
+    maxHeight: 238
+  },
   templateRow: {
     gap: 10,
     paddingRight: 10
@@ -2480,7 +2586,7 @@ const styles = StyleSheet.create({
   templateMiniCard: {
     width: 72,
     height: 72,
-    borderRadius: 12,
+    borderRadius: 0,
     backgroundColor: "#0f182a",
     position: "relative",
     overflow: "hidden"
@@ -2490,7 +2596,7 @@ const styles = StyleSheet.create({
   },
   templateMiniBlock: {
     position: "absolute",
-    borderRadius: 4,
+    borderRadius: 0,
     backgroundColor: "rgba(191, 205, 228, 0.78)"
   },
   templateMiniHero: {
@@ -2536,6 +2642,44 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 10
   },
+  backgroundPicker: {
+    gap: 14,
+    paddingBottom: 4
+  },
+  backgroundPickerScroll: {
+    maxHeight: 210
+  },
+  backgroundPackRow: {
+    gap: 10,
+    paddingRight: 10
+  },
+  backgroundChoice: {
+    width: 76,
+    gap: 6,
+    alignItems: "center"
+  },
+  backgroundChoicePreview: {
+    width: 76,
+    height: 76,
+    borderRadius: 0,
+    overflow: "hidden",
+    borderWidth: 2,
+    borderColor: "#243452",
+    backgroundColor: "#ffffff"
+  },
+  backgroundChoicePreviewActive: {
+    borderColor: "#2f80ff"
+  },
+  backgroundChoiceLabel: {
+    width: "100%",
+    textAlign: "center",
+    color: "#8fa4cd",
+    fontWeight: "700",
+    fontSize: 12
+  },
+  backgroundChoiceLabelActive: {
+    color: "#ffffff"
+  },
   colorSwatch: {
     width: 28,
     height: 28,
@@ -2573,7 +2717,7 @@ const styles = StyleSheet.create({
   canvasWrap: {
     alignSelf: "center",
     position: "relative",
-    borderRadius: 22,
+    borderRadius: 0,
     overflow: "hidden",
     marginBottom: 14
   },
@@ -2872,7 +3016,7 @@ const styles = StyleSheet.create({
   pageRailPreview: {
     width: 92,
     height: 72,
-    borderRadius: 12,
+    borderRadius: 0,
     position: "relative",
     overflow: "hidden",
     borderWidth: 2,
@@ -2895,7 +3039,7 @@ const styles = StyleSheet.create({
   pageRailPreviewBlock: {
     position: "absolute",
     backgroundColor: "rgba(191, 205, 228, 0.4)",
-    borderRadius: 4
+    borderRadius: 0
   },
   pageRailAddText: {
     fontSize: 28,

@@ -49,6 +49,7 @@ export const LayoutPageSchema = z.object({
   memoryTitle: z.string(),
   themeLabel: z.string().optional(),
   backgroundColor: z.string().optional(),
+  backgroundAssetId: z.string().optional(),
   slotBorderColor: z.string().optional(),
   slotBorderWidth: z.number().min(0).max(24).optional(),
   slotCornerRadius: z.number().min(0).max(48).optional(),

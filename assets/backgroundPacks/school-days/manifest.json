@@ -1,0 +1,267 @@
+{
+  "id": "school-days",
+  "label": "School Days",
+  "pageFormat": "8x8",
+  "assetSize": {
+    "width": 2400,
+    "height": 2400
+  },
+  "backgrounds": [
+    {
+      "number": 1,
+      "id": "school-days-01",
+      "label": "Notebook Line Paper",
+      "theme": "school days",
+      "kind": "pattern",
+      "backgroundColor": "#F8FAFC",
+      "asset": "assets/school-days-01.svg",
+      "palette": [
+        "#A9C7E8",
+        "#6FA8DC",
+        "#E36A6A",
+        "#F8FAFC",
+        "#1F2937",
+        "#3B8A5B"
+      ],
+      "tags": [
+        "school-days",
+        "notebook",
+        "lines",
+        "white-base",
+        "layout-agnostic"
+      ],
+      "textColor": "#1F2937",
+      "slotBorderColor": "#ffffff",
+      "safeArea": {
+        "x": 0.08,
+        "y": 0.08,
+        "width": 0.84,
+        "height": 0.84
+      }
+    },
+    {
+      "number": 2,
+      "id": "school-days-02",
+      "label": "Chalkboard Dust",
+      "theme": "school days",
+      "kind": "gradient",
+      "backgroundColor": "#3E715B",
+      "asset": "assets/school-days-02.svg",
+      "palette": [
+        "#315E4B",
+        "#4D8067",
+        "#CFE0D7",
+        "#3E715B",
+        "#1E3B32",
+        "#AFC6BC"
+      ],
+      "tags": [
+        "school-days",
+        "chalkboard",
+        "chalk-dust",
+        "green-base",
+        "layout-agnostic"
+      ],
+      "textColor": "#1E3B32",
+      "slotBorderColor": "#ffffff",
+      "safeArea": {
+        "x": 0.08,
+        "y": 0.08,
+        "width": 0.84,
+        "height": 0.84
+      }
+    },
+    {
+      "number": 3,
+      "id": "school-days-03",
+      "label": "Primary Block Grid",
+      "theme": "school days",
+      "kind": "pattern",
+      "backgroundColor": "#F7F9FC",
+      "asset": "assets/school-days-03.svg",
+      "palette": [
+        "#2D6CDF",
+        "#E23D3D",
+        "#F4C542",
+        "#F7F9FC",
+        "#1F2937",
+        "#3B8A5B"
+      ],
+      "tags": [
+        "school-days",
+        "blocks",
+        "primary",
+        "white-base",
+        "layout-agnostic"
+      ],
+      "textColor": "#1F2937",
+      "slotBorderColor": "#ffffff",
+      "safeArea": {
+        "x": 0.08,
+        "y": 0.08,
+        "width": 0.84,
+        "height": 0.84
+      }
+    },
+    {
+      "number": 4,
+      "id": "school-days-04",
+      "label": "Pencil Stripe Paper",
+      "theme": "school days",
+      "kind": "pattern",
+      "backgroundColor": "#FFF8D8",
+      "asset": "assets/school-days-04.svg",
+      "palette": [
+        "#B8D6E8",
+        "#5D8CC9",
+        "#F4C542",
+        "#FFF8D8",
+        "#403A2B",
+        "#E98062"
+      ],
+      "tags": [
+        "school-days",
+        "pencil",
+        "stripes",
+        "yellow-base",
+        "layout-agnostic"
+      ],
+      "textColor": "#403A2B",
+      "slotBorderColor": "#ffffff",
+      "safeArea": {
+        "x": 0.08,
+        "y": 0.08,
+        "width": 0.84,
+        "height": 0.84
+      }
+    },
+    {
+      "number": 5,
+      "id": "school-days-05",
+      "label": "Ruler Tick Paper",
+      "theme": "school days",
+      "kind": "illustration",
+      "backgroundColor": "#F8FAFC",
+      "asset": "assets/school-days-05.svg",
+      "palette": [
+        "#E5EEF7",
+        "#2D6CDF",
+        "#F4C542",
+        "#F8FAFC",
+        "#1F2937",
+        "#E23D3D"
+      ],
+      "tags": [
+        "school-days",
+        "ruler",
+        "ticks",
+        "white-blue-base",
+        "layout-agnostic"
+      ],
+      "textColor": "#1F2937",
+      "slotBorderColor": "#ffffff",
+      "safeArea": {
+        "x": 0.08,
+        "y": 0.08,
+        "width": 0.84,
+        "height": 0.84
+      }
+    },
+    {
+      "number": 6,
+      "id": "school-days-06",
+      "label": "Sticker Star Field",
+      "theme": "school days",
+      "kind": "pattern",
+      "backgroundColor": "#EEF6FF",
+      "asset": "assets/school-days-06.svg",
+      "palette": [
+        "#2D6CDF",
+        "#E23D3D",
+        "#F4C542",
+        "#EEF6FF",
+        "#1F2937",
+        "#3B8A5B"
+      ],
+      "tags": [
+        "school-days",
+        "stickers",
+        "stars",
+        "blue-base",
+        "layout-agnostic"
+      ],
+      "textColor": "#1F2937",
+      "slotBorderColor": "#ffffff",
+      "safeArea": {
+        "x": 0.08,
+        "y": 0.08,
+        "width": 0.84,
+        "height": 0.84
+      }
+    },
+    {
+      "number": 7,
+      "id": "school-days-07",
+      "label": "Binder Grid Paper",
+      "theme": "school days",
+      "kind": "pattern",
+      "backgroundColor": "#F5F7FA",
+      "asset": "assets/school-days-07.svg",
+      "palette": [
+        "#DDE5EF",
+        "#9BB7D4",
+        "#E23D3D",
+        "#F5F7FA",
+        "#1F2937",
+        "#3B8A5B"
+      ],
+      "tags": [
+        "school-days",
+        "binder",
+        "grid",
+        "cool-grey-base",
+        "layout-agnostic"
+      ],
+      "textColor": "#1F2937",
+      "slotBorderColor": "#ffffff",
+      "safeArea": {
+        "x": 0.08,
+        "y": 0.08,
+        "width": 0.84,
+        "height": 0.84
+      }
+    },
+    {
+      "number": 8,
+      "id": "school-days-08",
+      "label": "Crayon Mark Paper",
+      "theme": "school days",
+      "kind": "illustration",
+      "backgroundColor": "#FCF4F7",
+      "asset": "assets/school-days-08.svg",
+      "palette": [
+        "#2D6CDF",
+        "#E23D3D",
+        "#F4C542",
+        "#FCF4F7",
+        "#1F2937",
+        "#3B8A5B"
+      ],
+      "tags": [
+        "school-days",
+        "crayon",
+        "marks",
+        "blush-base",
+        "layout-agnostic"
+      ],
+      "textColor": "#1F2937",
+      "slotBorderColor": "#ffffff",
+      "safeArea": {
+        "x": 0.08,
+        "y": 0.08,
+        "width": 0.84,
+        "height": 0.84
+      }
+    }
+  ]
+}

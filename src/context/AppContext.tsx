@@ -133,6 +133,7 @@ type AppContextValue = {
       Pick<
         MemoryPageSection,
         | "backgroundColor"
+        | "backgroundAssetId"
         | "slotBorderColor"
         | "slotBorderWidth"
         | "slotCornerRadius"
@@ -256,6 +257,7 @@ function reconcilePageSections(
             order: 0,
             templateId: undefined,
             backgroundColor: undefined,
+            backgroundAssetId: undefined,
             slotBorderColor: undefined,
             slotBorderWidth: undefined,
             slotCornerRadius: undefined,
@@ -553,6 +555,7 @@ export function AppProvider({ children }: PropsWithChildren) {
           order: 0,
           templateId: undefined,
           backgroundColor: undefined,
+          backgroundAssetId: undefined,
           slotBorderColor: undefined,
           slotBorderWidth: undefined,
           slotCornerRadius: undefined,
@@ -761,6 +764,7 @@ export function AppProvider({ children }: PropsWithChildren) {
             heroPhotoId: replacementHeroPhotoId,
             templateId: photoMode === "merge" ? target.templateId : undefined,
             backgroundColor: photoMode === "merge" ? target.backgroundColor : undefined,
+            backgroundAssetId: photoMode === "merge" ? target.backgroundAssetId : undefined,
             slotBorderColor: photoMode === "merge" ? target.slotBorderColor : undefined,
             slotBorderWidth: photoMode === "merge" ? target.slotBorderWidth : undefined,
             slotCornerRadius: photoMode === "merge" ? target.slotCornerRadius : undefined,
@@ -1137,6 +1141,7 @@ export function AppProvider({ children }: PropsWithChildren) {
         Pick<
           MemoryPageSection,
           | "backgroundColor"
+          | "backgroundAssetId"
           | "slotBorderColor"
           | "slotBorderWidth"
           | "slotCornerRadius"
@@ -1182,6 +1187,7 @@ export function AppProvider({ children }: PropsWithChildren) {
                 order: 0,
                 templateId: undefined,
                 backgroundColor: undefined,
+                backgroundAssetId: undefined,
                 slotBorderColor: undefined,
                 slotBorderWidth: undefined,
                 slotCornerRadius: undefined,

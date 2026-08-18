@@ -1,0 +1,70 @@
+{
+  "theme": "fall cozy",
+  "palette": ["#8FA7A3", "#7A2E3A", "#C06E3A", "#F6F3EE", "#27323A", "#3F6B52"],
+  "backgrounds": [
+    {
+      "number": 1,
+      "label": "Crisp Air Wash",
+      "kind": "gradient",
+      "recipe": "fall-air-wash",
+      "palette": ["#9FB8B6", "#7A2E3A", "#C06E3A", "#F6F3EE", "#27323A", "#3F6B52"],
+      "tags": ["fall-cozy", "mist", "wash", "ivory-base", "layout-agnostic"]
+    },
+    {
+      "number": 2,
+      "label": "Pressed Leaf Scatter",
+      "kind": "illustration",
+      "recipe": "pressed-leaf-scatter",
+      "palette": ["#3F6B52", "#7A2E3A", "#C06E3A", "#F7F4F0", "#27323A", "#8FA7A3"],
+      "tags": ["fall-cozy", "leaves", "scatter", "white-base", "layout-agnostic"]
+    },
+    {
+      "number": 3,
+      "label": "Rain Window Paper",
+      "kind": "pattern",
+      "recipe": "rain-window-paper",
+      "palette": ["#8FA7A3", "#6F8D93", "#DCE5E2", "#EEF4F4", "#27323A", "#7A2E3A"],
+      "tags": ["fall-cozy", "rain", "window", "blue-grey-base", "layout-agnostic"]
+    },
+    {
+      "number": 4,
+      "label": "Cranberry Flannel",
+      "kind": "pattern",
+      "recipe": "fall-flannel-weave",
+      "palette": ["#7A2E3A", "#C06E3A", "#D7A45C", "#F3ECE5", "#27323A", "#3F6B52"],
+      "tags": ["fall-cozy", "flannel", "plaid", "warm-light-base", "layout-agnostic"]
+    },
+    {
+      "number": 5,
+      "label": "Acorn Dot Paper",
+      "kind": "pattern",
+      "recipe": "acorn-dot-paper",
+      "palette": ["#3F6B52", "#7A2E3A", "#B97948", "#F9F7F2", "#3A2D25", "#8FA7A3"],
+      "tags": ["fall-cozy", "acorns", "dots", "white-base", "layout-agnostic"]
+    },
+    {
+      "number": 6,
+      "label": "Slate Mist Paper",
+      "kind": "gradient",
+      "recipe": "slate-mist-paper",
+      "palette": ["#5C6F76", "#8FA7A3", "#C06E3A", "#3C4A50", "#27323A", "#F6F3EE"],
+      "tags": ["fall-cozy", "slate", "mist", "dark-base", "layout-agnostic"]
+    },
+    {
+      "number": 7,
+      "label": "Apple Orchard Dots",
+      "kind": "illustration",
+      "recipe": "apple-orchard-dots",
+      "palette": ["#3F6B52", "#7A2E3A", "#D7A45C", "#F4F8F1", "#27323A", "#C06E3A"],
+      "tags": ["fall-cozy", "apple", "orchard", "green-white-base", "layout-agnostic"]
+    },
+    {
+      "number": 8,
+      "label": "Copper Contour Lines",
+      "kind": "pattern",
+      "recipe": "copper-contour-lines",
+      "palette": ["#8FA7A3", "#7A2E3A", "#C06E3A", "#F2F5F3", "#27323A", "#3F6B52"],
+      "tags": ["fall-cozy", "contour", "copper", "cool-base", "layout-agnostic"]
+    }
+  ]
+}

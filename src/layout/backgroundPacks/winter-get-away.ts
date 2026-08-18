@@ -1,0 +1,256 @@
+import { BackgroundPack } from "../backgroundTypes";
+
+export const winterGetAwayBackgroundPack: BackgroundPack = {
+  "id": "winter-get-away",
+  "label": "Winter Get Away",
+  "backgrounds": [
+    {
+      "number": 1,
+      "id": "winter-get-away-01",
+      "label": "Frosted Window Wash",
+      "theme": "winter get away",
+      "kind": "gradient",
+      "backgroundColor": "#F7FBFC",
+      "assetUri": "assets/winter-get-away-01.svg",
+      "palette": [
+        "#9FCBE3",
+        "#DCECF5",
+        "#B7434A",
+        "#F7FBFC",
+        "#213241",
+        "#3F6B52"
+      ],
+      "tags": [
+        "winter-get-away",
+        "frost",
+        "gradient",
+        "layout-agnostic"
+      ],
+      "textColor": "#213241",
+      "slotBorderColor": "#ffffff",
+      "safeArea": {
+        "x": 0.08,
+        "y": 0.08,
+        "width": 0.84,
+        "height": 0.84
+      }
+    },
+    {
+      "number": 2,
+      "id": "winter-get-away-02",
+      "label": "Cabin Blanket Plaid",
+      "theme": "winter get away",
+      "kind": "pattern",
+      "backgroundColor": "#F7FBFC",
+      "assetUri": "assets/winter-get-away-02.svg",
+      "palette": [
+        "#9FCBE3",
+        "#DCECF5",
+        "#B7434A",
+        "#F7FBFC",
+        "#213241",
+        "#3F6B52"
+      ],
+      "tags": [
+        "winter-get-away",
+        "cabin",
+        "plaid",
+        "layout-agnostic"
+      ],
+      "textColor": "#213241",
+      "slotBorderColor": "#ffffff",
+      "safeArea": {
+        "x": 0.08,
+        "y": 0.08,
+        "width": 0.84,
+        "height": 0.84
+      }
+    },
+    {
+      "number": 3,
+      "id": "winter-get-away-03",
+      "label": "Soft Snowfall",
+      "theme": "winter get away",
+      "kind": "pattern",
+      "backgroundColor": "#F7FBFC",
+      "assetUri": "assets/winter-get-away-03.svg",
+      "palette": [
+        "#9FCBE3",
+        "#DCECF5",
+        "#B7434A",
+        "#F7FBFC",
+        "#213241",
+        "#3F6B52"
+      ],
+      "tags": [
+        "winter-get-away",
+        "snowfall",
+        "dots",
+        "layout-agnostic"
+      ],
+      "textColor": "#213241",
+      "slotBorderColor": "#ffffff",
+      "safeArea": {
+        "x": 0.08,
+        "y": 0.08,
+        "width": 0.84,
+        "height": 0.84
+      }
+    },
+    {
+      "number": 4,
+      "id": "winter-get-away-04",
+      "label": "Mountain Contour Lines",
+      "theme": "winter get away",
+      "kind": "illustration",
+      "backgroundColor": "#F7FBFC",
+      "assetUri": "assets/winter-get-away-04.svg",
+      "palette": [
+        "#9FCBE3",
+        "#DCECF5",
+        "#B7434A",
+        "#F7FBFC",
+        "#213241",
+        "#3F6B52"
+      ],
+      "tags": [
+        "winter-get-away",
+        "mountain",
+        "contour",
+        "layout-agnostic"
+      ],
+      "textColor": "#213241",
+      "slotBorderColor": "#ffffff",
+      "safeArea": {
+        "x": 0.08,
+        "y": 0.08,
+        "width": 0.84,
+        "height": 0.84
+      }
+    },
+    {
+      "number": 5,
+      "id": "winter-get-away-05",
+      "label": "Evergreen Sprigs",
+      "theme": "winter get away",
+      "kind": "illustration",
+      "backgroundColor": "#F7FBFC",
+      "assetUri": "assets/winter-get-away-05.svg",
+      "palette": [
+        "#9FCBE3",
+        "#DCECF5",
+        "#B7434A",
+        "#F7FBFC",
+        "#213241",
+        "#3F6B52"
+      ],
+      "tags": [
+        "winter-get-away",
+        "evergreen",
+        "sprigs",
+        "layout-agnostic"
+      ],
+      "textColor": "#213241",
+      "slotBorderColor": "#ffffff",
+      "safeArea": {
+        "x": 0.08,
+        "y": 0.08,
+        "width": 0.84,
+        "height": 0.84
+      }
+    },
+    {
+      "number": 6,
+      "id": "winter-get-away-06",
+      "label": "Wool Knit Texture",
+      "theme": "winter get away",
+      "kind": "photo-texture",
+      "backgroundColor": "#F7FBFC",
+      "assetUri": "assets/winter-get-away-06.svg",
+      "palette": [
+        "#9FCBE3",
+        "#DCECF5",
+        "#B7434A",
+        "#F7FBFC",
+        "#213241",
+        "#3F6B52"
+      ],
+      "tags": [
+        "winter-get-away",
+        "knit",
+        "texture",
+        "layout-agnostic"
+      ],
+      "textColor": "#213241",
+      "slotBorderColor": "#ffffff",
+      "safeArea": {
+        "x": 0.08,
+        "y": 0.08,
+        "width": 0.84,
+        "height": 0.84
+      }
+    },
+    {
+      "number": 7,
+      "id": "winter-get-away-07",
+      "label": "Aurora Snowfield Wash",
+      "theme": "winter get away",
+      "kind": "gradient",
+      "backgroundColor": "#F7FBFC",
+      "assetUri": "assets/winter-get-away-07.svg",
+      "palette": [
+        "#9FCBE3",
+        "#DCECF5",
+        "#B7434A",
+        "#F7FBFC",
+        "#213241",
+        "#3F6B52"
+      ],
+      "tags": [
+        "winter-get-away",
+        "aurora",
+        "snowfield",
+        "layout-agnostic"
+      ],
+      "textColor": "#213241",
+      "slotBorderColor": "#ffffff",
+      "safeArea": {
+        "x": 0.08,
+        "y": 0.08,
+        "width": 0.84,
+        "height": 0.84
+      }
+    },
+    {
+      "number": 8,
+      "id": "winter-get-away-08",
+      "label": "Ski Track Lines",
+      "theme": "winter get away",
+      "kind": "pattern",
+      "backgroundColor": "#F7FBFC",
+      "assetUri": "assets/winter-get-away-08.svg",
+      "palette": [
+        "#9FCBE3",
+        "#DCECF5",
+        "#B7434A",
+        "#F7FBFC",
+        "#213241",
+        "#3F6B52"
+      ],
+      "tags": [
+        "winter-get-away",
+        "ski",
+        "tracks",
+        "layout-agnostic"
+      ],
+      "textColor": "#213241",
+      "slotBorderColor": "#ffffff",
+      "safeArea": {
+        "x": 0.08,
+        "y": 0.08,
+        "width": 0.84,
+        "height": 0.84
+      }
+    }
+  ]
+};

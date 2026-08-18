@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2400 2400" width="2400" height="2400">
+
+  <defs>
+    <linearGradient id="springSky" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F7FCFF"/>
+      <stop offset="0.48" stop-color="#8ED3F4" stop-opacity="0.24"/>
+      <stop offset="1" stop-color="#B9DDF2" stop-opacity="0.22"/>
+    </linearGradient>
+  </defs>
+  <rect width="2400" height="2400" fill="url(#springSky)"/>
+<circle cx="360" cy="470" r="180" fill="#D6ECBC" opacity="0.10"/>
+<circle cx="1970" cy="420" r="240" fill="#F48C8C" opacity="0.10"/>
+<circle cx="540" cy="1980" r="260" fill="#B9DDF2" opacity="0.10"/>
+<circle cx="2030" cy="2040" r="200" fill="#8ED3F4" opacity="0.10"/>
+</svg>

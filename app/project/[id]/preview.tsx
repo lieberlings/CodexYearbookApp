@@ -2,6 +2,7 @@ import { useLocalSearchParams } from "expo-router";
 import { useMemo } from "react";
 import { Image, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { useAppData } from "../../../src/context/AppContext";
+import { PageBackground } from "../../../src/components/PageBackground";
 import { buildLayoutDocument } from "../../../src/layout/engine";
 import { applySlotOverridesToPage } from "../../../src/layout/overrides";
 import { getPhotoAspect, getPhotoRenderMetrics } from "../../../src/layout/photoMetrics";
@@ -86,7 +87,8 @@ export default function ProjectPreviewScreen() {
         const textAnchorSlotIds = new Set(page.textBoxes.map((textBox) => textBox.anchorSlotId).filter(Boolean));
         return (
           <View key={page.id} style={[styles.pageCard, { width: pageWidth, minHeight: pageHeight }]}>
-            <View style={[styles.canvasArea, { width: pageInnerWidth, height: pageContentHeight, backgroundColor: page.backgroundColor ?? "#ffffff", borderRadius: 0 }]}>
+            <View style={[styles.canvasArea, { width: pageInnerWidth, height: pageContentHeight, borderRadius: 0 }]}>
+              <PageBackground backgroundAssetId={page.backgroundAssetId} backgroundColor={page.backgroundColor} />
               {page.slots.map((slot) => {
                 const photo = slot.photoId ? photosById[slot.photoId] : undefined;
                 if (!photo && textAnchorSlotIds.has(slot.id)) {
@@ -151,7 +153,9 @@ export default function ProjectPreviewScreen() {
                         height: `${textFrame.height * 100}%`,
                         borderWidth: textBox.borderWidth ?? 0,
                         borderColor: textBox.borderColor ?? "#0f172a",
-                        backgroundColor: applyColorOpacity(textBox.fillColor ?? "#ffffff", textBox.fillOpacity ?? 0)
+                        backgroundColor: anchorSlot
+                          ? "transparent"
+                          : applyColorOpacity(textBox.fillColor ?? "#ffffff", textBox.fillOpacity ?? 0)
                       }
                     ]}
                   >
@@ -213,7 +217,7 @@ const styles = StyleSheet.create({
   },
   pageCard: {
     backgroundColor: "#ffffff",
-    borderRadius: 12,
+    borderRadius: 0,
     borderWidth: 1,
     borderColor: "#e2e8f0",
     padding: 10

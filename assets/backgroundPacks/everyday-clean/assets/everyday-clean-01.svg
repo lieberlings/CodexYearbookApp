@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2400 2400" width="2400" height="2400">
+
+  <defs>
+    <radialGradient id="paper" cx="48%" cy="44%" r="88%">
+      <stop offset="0" stop-color="#FBFAF7"/>
+      <stop offset="0.72" stop-color="#E7EDF0" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#D8E0D6" stop-opacity="0.14"/>
+    </radialGradient>
+  </defs>
+  <rect width="2400" height="2400" fill="url(#paper)"/>
+<path d="M0 0 C 620 20, 1180 -18, 2400 10" fill="none" stroke="#2F3A40" stroke-width="5" opacity="0.018"/>
+<path d="M0 96 C 620 116, 1180 78, 2400 106" fill="none" stroke="#2F3A40" stroke-width="5" opacity="0.018"/>
+<path d="M0 192 C 620 212, 1180 174, 2400 202" fill="none" stroke="#2F3A40" stroke-width="5" opacity="0.018"/>
+<path d="M0 288 C 620 308, 1180 270, 2400 298" fill="none" stroke="#2F3A40" stroke-width="5" opacity="0.018"/>
+<path d="M0 384 C 620 404, 1180 366, 2400 394" fill="none" stroke="#2F3A40" stroke-width="5" opacity="0.018"/>
+<path d="M0 480 C 620 500, 1180 462, 2400 490" fill="none" stroke="#2F3A40" stroke-width="5" opacity="0.018"/>
+<path d="M0 576 C 620 596, 1180 558, 2400 586" fill="none" stroke="#2F3A40" stroke-width="5" opacity="0.018"/>
+<path d="M0 672 C 620 692, 1180 654, 2400 682" fill="none" stroke="#2F3A40" stroke-width="5" opacity="0.018"/>
+<path d="M0 768 C 620 788, 1180 750, 2400 778" fill="none" stroke="#2F3A40" stroke-width="5" opacity="0.018"/>
+<path d="M0 864 C 620 884, 1180 846, 2400 874" fill="none" stroke="#2F3A40" stroke-width="5" opacity="0.018"/>
+<path d="M0 960 C 620 980, 1180 942, 2400 970" fill="none" stroke="#2F3A40" stroke-width="5" opacity="0.018"/>
+<path d="M0 1056 C 620 1076, 1180 1038, 2400 1066" fill="none" stroke="#2F3A40" stroke-width="5" opacity="0.018"/>
+<path d="M0 1152 C 620 1172, 1180 1134, 2400 1162" fill="none" stroke="#2F3A40" stroke-width="5" opacity="0.018"/>
+<path d="M0 1248 C 620 1268, 1180 1230, 2400 1258" fill="none" stroke="#2F3A40" stroke-width="5" opacity="0.018"/>
+<path d="M0 1344 C 620 1364, 1180 1326, 2400 1354" fill="none" stroke="#2F3A40" stroke-width="5" opacity="0.018"/>
+<path d="M0 1440 C 620 1460, 1180 1422, 2400 1450" fill="none" stroke="#2F3A40" stroke-width="5" opacity="0.018"/>
+<path d="M0 1536 C 620 1556, 1180 1518, 2400 1546" fill="none" stroke="#2F3A40" stroke-width="5" opacity="0.018"/>
+<path d="M0 1632 C 620 1652, 1180 1614, 2400 1642" fill="none" stroke="#2F3A40" stroke-width="5" opacity="0.018"/>
+<path d="M0 1728 C 620 1748, 1180 1710, 2400 1738" fill="none" stroke="#2F3A40" stroke-width="5" opacity="0.018"/>
+<path d="M0 1824 C 620 1844, 1180 1806, 2400 1834" fill="none" stroke="#2F3A40" stroke-width="5" opacity="0.018"/>
+<path d="M0 1920 C 620 1940, 1180 1902, 2400 1930" fill="none" stroke="#2F3A40" stroke-width="5" opacity="0.018"/>
+<path d="M0 2016 C 620 2036, 1180 1998, 2400 2026" fill="none" stroke="#2F3A40" stroke-width="5" opacity="0.018"/>
+<path d="M0 2112 C 620 2132, 1180 2094, 2400 2122" fill="none" stroke="#2F3A40" stroke-width="5" opacity="0.018"/>
+<path d="M0 2208 C 620 2228, 1180 2190, 2400 2218" fill="none" stroke="#2F3A40" stroke-width="5" opacity="0.018"/>
+<path d="M0 2304 C 620 2324, 1180 2286, 2400 2314" fill="none" stroke="#2F3A40" stroke-width="5" opacity="0.018"/>
+</svg>

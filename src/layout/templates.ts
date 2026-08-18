@@ -3,7 +3,6 @@ import { LayoutSlot } from "./schemas";
 import { templatePacks } from "./templatePacks";
 import {
   PhotoOrientation,
-  SlotOrientationPreference,
   TemplateDefinition,
   TemplateSlotBlueprint
 } from "./templateTypes";
@@ -22,273 +21,7 @@ type TemplateEvaluation = {
   slots: LayoutSlot[];
 };
 
-const GAP = 0.03;
-const OUTER = 0.06;
-
-function makeSlot(
-  id: string,
-  role: "hero" | "photo",
-  frame: { x: number; y: number; width: number; height: number },
-  priority: number,
-  preferredOrientation: SlotOrientationPreference,
-  fitMode: "contain" | "cover" = "cover"
-): TemplateSlotBlueprint {
-  return {
-    id,
-    role,
-    frame,
-    fitMode,
-    priority,
-    preferredOrientation
-  };
-}
-
-function photoAspect(photo: PhotoItem): number {
-  if (photo.width && photo.height && photo.height > 0) {
-    return photo.width / photo.height;
-  }
-  return 1;
-}
-
-export function getPhotoOrientation(photo: PhotoItem): PhotoOrientation {
-  const aspect = photoAspect(photo);
-  if (aspect > 1.08) {
-    return "landscape";
-  }
-  if (aspect < 0.92) {
-    return "portrait";
-  }
-  return "square";
-}
-
-function slotAspect(slot: TemplateSlotBlueprint): number {
-  return slot.frame.width / Math.max(0.0001, slot.frame.height);
-}
-
-function insetFrame(
-  x: number,
-  y: number,
-  width: number,
-  height: number
-): { x: number; y: number; width: number; height: number } {
-  return {
-    x,
-    y,
-    width,
-    height
-  };
-}
-
-function buildGridFrames(
-  count: number,
-  columns: number,
-  rows: number,
-  options?: { x?: number; y?: number; width?: number; height?: number; centeredLastRow?: boolean }
-): { x: number; y: number; width: number; height: number }[] {
-  const areaX = options?.x ?? OUTER;
-  const areaY = options?.y ?? OUTER;
-  const areaWidth = options?.width ?? 1 - OUTER * 2;
-  const areaHeight = options?.height ?? 1 - OUTER * 2;
-  const cellWidth = (areaWidth - GAP * (columns - 1)) / columns;
-  const cellHeight = (areaHeight - GAP * (rows - 1)) / rows;
-  const frames: { x: number; y: number; width: number; height: number }[] = [];
-
-  for (let index = 0; index < count; index += 1) {
-    const row = Math.floor(index / columns);
-    const col = index % columns;
-    const isLastRow = row === rows - 1;
-    const itemsInLastRow = count - columns * (rows - 1);
-    const useCenteredLastRow = Boolean(options?.centeredLastRow) && isLastRow && itemsInLastRow < columns;
-    const rowStartX = useCenteredLastRow
-      ? areaX + (areaWidth - (itemsInLastRow * cellWidth + GAP * Math.max(0, itemsInLastRow - 1))) / 2
-      : areaX;
-    frames.push({
-      x: rowStartX + col * (cellWidth + GAP),
-      y: areaY + row * (cellHeight + GAP),
-      width: cellWidth,
-      height: cellHeight
-    });
-  }
-
-  return frames;
-}
-
-function createGridTemplate(
-  id: string,
-  label: string,
-  photoCount: number,
-  columns: number,
-  rows: number,
-  baseScore: number,
-  preferredOrientation: SlotOrientationPreference = "any"
-): TemplateDefinition {
-  const frames = buildGridFrames(photoCount, columns, rows, { centeredLastRow: true });
-  return {
-    id,
-    label,
-    photoCount,
-    baseScore,
-    slots: frames.map((frame, index) =>
-      makeSlot(`slot-${index + 1}`, "photo", frame, index + 1, preferredOrientation, "cover")
-    )
-  };
-}
-
-function createHeroTopTemplate(
-  id: string,
-  label: string,
-  photoCount: number,
-  heroHeight: number,
-  bottomColumns: number,
-  baseScore: number
-): TemplateDefinition {
-  const remaining = Math.max(0, photoCount - 1);
-  const heroFrame = insetFrame(OUTER, OUTER, 1 - OUTER * 2, heroHeight);
-  const slots: TemplateSlotBlueprint[] = [
-    makeSlot("slot-1", "hero", heroFrame, 1, "landscape", "contain")
-  ];
-
-  if (remaining > 0) {
-    const bottomY = OUTER + heroHeight + GAP;
-    const bottomHeight = 1 - OUTER - bottomY;
-    const bottomRows = Math.ceil(remaining / bottomColumns);
-    const frames = buildGridFrames(remaining, bottomColumns, bottomRows, {
-      x: OUTER,
-      y: bottomY,
-      width: 1 - OUTER * 2,
-      height: bottomHeight,
-      centeredLastRow: true
-    });
-    frames.forEach((frame, index) => {
-      slots.push(makeSlot(`slot-${index + 2}`, "photo", frame, index + 2, "any"));
-    });
-  }
-
-  return { id, label, photoCount, baseScore, slots };
-}
-
-function createHeroLeftTemplate(
-  id: string,
-  label: string,
-  photoCount: number,
-  heroWidth: number,
-  rightColumns: number,
-  baseScore: number
-): TemplateDefinition {
-  const remaining = Math.max(0, photoCount - 1);
-  const heroFrame = insetFrame(OUTER, OUTER, heroWidth, 1 - OUTER * 2);
-  const slots: TemplateSlotBlueprint[] = [
-    makeSlot("slot-1", "hero", heroFrame, 1, "portrait", "contain")
-  ];
-
-  if (remaining > 0) {
-    const rightX = OUTER + heroWidth + GAP;
-    const rightWidth = 1 - OUTER - rightX;
-    const rightRows = Math.ceil(remaining / rightColumns);
-    const frames = buildGridFrames(remaining, rightColumns, rightRows, {
-      x: rightX,
-      y: OUTER,
-      width: rightWidth,
-      height: 1 - OUTER * 2,
-      centeredLastRow: false
-    });
-    frames.forEach((frame, index) => {
-      slots.push(makeSlot(`slot-${index + 2}`, "photo", frame, index + 2, "any"));
-    });
-  }
-
-  return { id, label, photoCount, baseScore, slots };
-}
-
-function createTightGridTemplate(
-  id: string,
-  label: string,
-  photoCount: number,
-  columns: number,
-  rows: number,
-  baseScore: number
-): TemplateDefinition {
-  const tightOuter = 0.04;
-  const tightGap = 0.02;
-  const areaWidth = 1 - tightOuter * 2;
-  const areaHeight = 1 - tightOuter * 2;
-  const cellWidth = (areaWidth - tightGap * (columns - 1)) / columns;
-  const cellHeight = (areaHeight - tightGap * (rows - 1)) / rows;
-  const slots: TemplateSlotBlueprint[] = [];
-  for (let index = 0; index < photoCount; index += 1) {
-    const row = Math.floor(index / columns);
-    const col = index % columns;
-    slots.push(
-      makeSlot(
-        `slot-${index + 1}`,
-        "photo",
-        {
-          x: tightOuter + col * (cellWidth + tightGap),
-          y: tightOuter + row * (cellHeight + tightGap),
-          width: cellWidth,
-          height: cellHeight
-        },
-        index + 1,
-        "any"
-      )
-    );
-  }
-  return { id, label, photoCount, baseScore, slots };
-}
-
-function createSingleFramedTemplate(): TemplateDefinition {
-  return {
-    id: "1-framed",
-    label: "Framed",
-    photoCount: 1,
-    baseScore: 16,
-    slots: [makeSlot("slot-1", "hero", insetFrame(0.15, 0.15, 0.7, 0.7), 1, "any", "contain")]
-  };
-}
-
-const builtInTemplates: TemplateDefinition[] = [
-  {
-    id: "1-full",
-    label: "Full",
-    photoCount: 1,
-    baseScore: 20,
-    slots: [makeSlot("slot-1", "hero", insetFrame(OUTER, OUTER, 1 - OUTER * 2, 1 - OUTER * 2), 1, "any", "contain")]
-  },
-  createSingleFramedTemplate(),
-  createGridTemplate("2-grid", "Grid", 2, 2, 1, 18, "portrait"),
-  createHeroTopTemplate("2-hero-top", "Hero Top", 2, 0.38, 1, 20),
-  createGridTemplate("3-grid", "Grid", 3, 2, 2, 17),
-  createHeroTopTemplate("3-hero-top", "Hero Top", 3, 0.28, 2, 21),
-  createHeroLeftTemplate("3-hero-left", "Hero Left", 3, 0.42, 2, 21),
-  createTightGridTemplate("3-tight-grid", "Tight Grid", 3, 2, 2, 16),
-  createGridTemplate("4-grid", "Grid", 4, 2, 2, 18),
-  createHeroTopTemplate("4-hero-top", "Hero Top", 4, 0.26, 3, 22),
-  createHeroLeftTemplate("4-hero-left", "Hero Left", 4, 0.42, 2, 22),
-  createTightGridTemplate("4-tight-grid", "Tight Grid", 4, 2, 2, 17),
-  createGridTemplate("5-grid", "Grid", 5, 2, 3, 17),
-  createHeroTopTemplate("5-hero-top", "Hero Top", 5, 0.24, 3, 23),
-  createHeroLeftTemplate("5-hero-left", "Hero Left", 5, 0.42, 2, 23),
-  createTightGridTemplate("5-tight-grid", "Tight Grid", 5, 2, 3, 17),
-  createGridTemplate("6-grid", "Grid", 6, 2, 3, 18),
-  createHeroTopTemplate("6-hero-top", "Hero Top", 6, 0.24, 3, 23),
-  createHeroLeftTemplate("6-hero-left", "Hero Left", 6, 0.42, 2, 23),
-  createTightGridTemplate("6-tight-grid", "Tight Grid", 6, 2, 3, 17),
-  createGridTemplate("7-grid", "Grid", 7, 3, 3, 18),
-  createHeroTopTemplate("7-hero-top", "Hero Top", 7, 0.23, 3, 23),
-  createHeroLeftTemplate("7-hero-left", "Hero Left", 7, 0.42, 2, 23),
-  createTightGridTemplate("7-tight-grid", "Tight Grid", 7, 3, 3, 17),
-  createGridTemplate("8-grid", "Grid", 8, 3, 3, 18),
-  createHeroTopTemplate("8-hero-top", "Hero Top", 8, 0.22, 3, 23),
-  createHeroLeftTemplate("8-hero-left", "Hero Left", 8, 0.42, 2, 23),
-  createTightGridTemplate("8-tight-grid", "Tight Grid", 8, 3, 3, 17),
-  createGridTemplate("9-grid", "Grid", 9, 3, 3, 18),
-  createHeroTopTemplate("9-hero-top", "Hero Top", 9, 0.2, 3, 22),
-  createHeroLeftTemplate("9-hero-left", "Hero Left", 9, 0.42, 2, 22),
-  createTightGridTemplate("9-tight-grid", "Tight Grid", 9, 3, 3, 17)
-];
-
 const templates: TemplateDefinition[] = [
-  ...builtInTemplates,
   ...templatePacks.flatMap((pack) => pack.templates)
 ];
 
@@ -313,6 +46,28 @@ export function getTemplateById(templateId?: string): TemplateDefinition | undef
     return undefined;
   }
   return templates.find((template) => template.id === templateId);
+}
+
+function photoAspect(photo: PhotoItem): number {
+  if (photo.width && photo.height && photo.height > 0) {
+    return photo.width / photo.height;
+  }
+  return 1;
+}
+
+export function getPhotoOrientation(photo: PhotoItem): PhotoOrientation {
+  const aspect = photoAspect(photo);
+  if (aspect > 1.08) {
+    return "landscape";
+  }
+  if (aspect < 0.92) {
+    return "portrait";
+  }
+  return "square";
+}
+
+function slotAspect(slot: TemplateSlotBlueprint): number {
+  return slot.frame.width / Math.max(0.0001, slot.frame.height);
 }
 
 function scoreOrientationMatch(

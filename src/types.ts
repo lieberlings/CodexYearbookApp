@@ -77,6 +77,7 @@ export type MemoryPageSection = {
   templateId?: string;
   slotAssignments?: Record<string, string | undefined>;
   backgroundColor?: string;
+  backgroundAssetId?: string;
   slotBorderColor?: string;
   slotBorderWidth?: number;
   slotCornerRadius?: number;

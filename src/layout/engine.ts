@@ -67,6 +67,7 @@ export function buildLayoutPage(
     memoryTitle: memory.title,
     themeLabel: memory.themeLabel,
     backgroundColor: section.backgroundColor,
+    backgroundAssetId: section.backgroundAssetId,
     slotBorderColor: section.slotBorderColor,
     slotBorderWidth: section.slotBorderWidth,
     slotCornerRadius: section.slotCornerRadius,

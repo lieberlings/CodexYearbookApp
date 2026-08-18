@@ -1,0 +1,256 @@
+import { BackgroundPack } from "../backgroundTypes";
+
+export const birthdayPartyBackgroundPack: BackgroundPack = {
+  "id": "birthday-party",
+  "label": "Birthday Party",
+  "backgrounds": [
+    {
+      "number": 1,
+      "id": "birthday-party-01",
+      "label": "Soft Party Glow",
+      "theme": "birthday party",
+      "kind": "gradient",
+      "backgroundColor": "#FFF8EC",
+      "assetUri": "assets/birthday-party-01.svg",
+      "palette": [
+        "#7ECBEA",
+        "#F06D8D",
+        "#F6D365",
+        "#FFF8EC",
+        "#26343D",
+        "#8BD7B5"
+      ],
+      "tags": [
+        "birthday-party",
+        "glow",
+        "gradient",
+        "layout-agnostic"
+      ],
+      "textColor": "#26343D",
+      "slotBorderColor": "#ffffff",
+      "safeArea": {
+        "x": 0.08,
+        "y": 0.08,
+        "width": 0.84,
+        "height": 0.84
+      }
+    },
+    {
+      "number": 2,
+      "id": "birthday-party-02",
+      "label": "Confetti Toss",
+      "theme": "birthday party",
+      "kind": "pattern",
+      "backgroundColor": "#FFF8EC",
+      "assetUri": "assets/birthday-party-02.svg",
+      "palette": [
+        "#7ECBEA",
+        "#F06D8D",
+        "#F6D365",
+        "#FFF8EC",
+        "#26343D",
+        "#8BD7B5"
+      ],
+      "tags": [
+        "birthday-party",
+        "confetti",
+        "playful",
+        "layout-agnostic"
+      ],
+      "textColor": "#26343D",
+      "slotBorderColor": "#ffffff",
+      "safeArea": {
+        "x": 0.08,
+        "y": 0.08,
+        "width": 0.84,
+        "height": 0.84
+      }
+    },
+    {
+      "number": 3,
+      "id": "birthday-party-03",
+      "label": "Streamer Ribbons",
+      "theme": "birthday party",
+      "kind": "illustration",
+      "backgroundColor": "#FFF8EC",
+      "assetUri": "assets/birthday-party-03.svg",
+      "palette": [
+        "#7ECBEA",
+        "#F06D8D",
+        "#F6D365",
+        "#FFF8EC",
+        "#26343D",
+        "#8BD7B5"
+      ],
+      "tags": [
+        "birthday-party",
+        "streamers",
+        "ribbons",
+        "layout-agnostic"
+      ],
+      "textColor": "#26343D",
+      "slotBorderColor": "#ffffff",
+      "safeArea": {
+        "x": 0.08,
+        "y": 0.08,
+        "width": 0.84,
+        "height": 0.84
+      }
+    },
+    {
+      "number": 4,
+      "id": "birthday-party-04",
+      "label": "Balloon Dot Field",
+      "theme": "birthday party",
+      "kind": "pattern",
+      "backgroundColor": "#FFF8EC",
+      "assetUri": "assets/birthday-party-04.svg",
+      "palette": [
+        "#7ECBEA",
+        "#F06D8D",
+        "#F6D365",
+        "#FFF8EC",
+        "#26343D",
+        "#8BD7B5"
+      ],
+      "tags": [
+        "birthday-party",
+        "balloons",
+        "dots",
+        "layout-agnostic"
+      ],
+      "textColor": "#26343D",
+      "slotBorderColor": "#ffffff",
+      "safeArea": {
+        "x": 0.08,
+        "y": 0.08,
+        "width": 0.84,
+        "height": 0.84
+      }
+    },
+    {
+      "number": 5,
+      "id": "birthday-party-05",
+      "label": "Candle Stripe Paper",
+      "theme": "birthday party",
+      "kind": "pattern",
+      "backgroundColor": "#FFF8EC",
+      "assetUri": "assets/birthday-party-05.svg",
+      "palette": [
+        "#7ECBEA",
+        "#F06D8D",
+        "#F6D365",
+        "#FFF8EC",
+        "#26343D",
+        "#8BD7B5"
+      ],
+      "tags": [
+        "birthday-party",
+        "candles",
+        "stripes",
+        "layout-agnostic"
+      ],
+      "textColor": "#26343D",
+      "slotBorderColor": "#ffffff",
+      "safeArea": {
+        "x": 0.08,
+        "y": 0.08,
+        "width": 0.84,
+        "height": 0.84
+      }
+    },
+    {
+      "number": 6,
+      "id": "birthday-party-06",
+      "label": "Cake Sprinkle Paper",
+      "theme": "birthday party",
+      "kind": "pattern",
+      "backgroundColor": "#FFF8EC",
+      "assetUri": "assets/birthday-party-06.svg",
+      "palette": [
+        "#7ECBEA",
+        "#F06D8D",
+        "#F6D365",
+        "#FFF8EC",
+        "#26343D",
+        "#8BD7B5"
+      ],
+      "tags": [
+        "birthday-party",
+        "sprinkles",
+        "cake",
+        "layout-agnostic"
+      ],
+      "textColor": "#26343D",
+      "slotBorderColor": "#ffffff",
+      "safeArea": {
+        "x": 0.08,
+        "y": 0.08,
+        "width": 0.84,
+        "height": 0.84
+      }
+    },
+    {
+      "number": 7,
+      "id": "birthday-party-07",
+      "label": "Ribbon Arc Paper",
+      "theme": "birthday party",
+      "kind": "illustration",
+      "backgroundColor": "#FFF8EC",
+      "assetUri": "assets/birthday-party-07.svg",
+      "palette": [
+        "#7ECBEA",
+        "#F06D8D",
+        "#F6D365",
+        "#FFF8EC",
+        "#26343D",
+        "#8BD7B5"
+      ],
+      "tags": [
+        "birthday-party",
+        "ribbon",
+        "arcs",
+        "layout-agnostic"
+      ],
+      "textColor": "#26343D",
+      "slotBorderColor": "#ffffff",
+      "safeArea": {
+        "x": 0.08,
+        "y": 0.08,
+        "width": 0.84,
+        "height": 0.84
+      }
+    },
+    {
+      "number": 8,
+      "id": "birthday-party-08",
+      "label": "Tiny Pennant Pattern",
+      "theme": "birthday party",
+      "kind": "pattern",
+      "backgroundColor": "#FFF8EC",
+      "assetUri": "assets/birthday-party-08.svg",
+      "palette": [
+        "#7ECBEA",
+        "#F06D8D",
+        "#F6D365",
+        "#FFF8EC",
+        "#26343D",
+        "#8BD7B5"
+      ],
+      "tags": [
+        "birthday-party",
+        "pennants",
+        "party",
+        "layout-agnostic"
+      ],
+      "textColor": "#26343D",
+      "slotBorderColor": "#ffffff",
+      "safeArea": {
+        "x": 0.08,
+        "y": 0.08,
+        "width": 0.84,
+        "height": 0.84
+      }
+    }
+  ]
+};

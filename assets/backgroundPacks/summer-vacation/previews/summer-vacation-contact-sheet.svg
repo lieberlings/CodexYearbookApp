@@ -1,0 +1,124 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 828" width="1440" height="828">
+<rect width="100%" height="100%" fill="#f8fafc"/>
+<rect x="28" y="28" width="328" height="328" rx="10" fill="#d7dee8"/>
+<svg x="32" y="32" width="320" height="320" viewBox="0 0 2400 2400"><defs>
+    <radialGradient id="g1" cx="50%" cy="45%" r="78%">
+      <stop offset="0" stop-color="#FFF7E6"/>
+      <stop offset="0.55" stop-color="#F9D66E" stop-opacity="0.26"/>
+      <stop offset="1" stop-color="#58C4D8" stop-opacity="0.38"/>
+    </radialGradient>
+  </defs>
+  <rect width="2400" height="2400" fill="url(#g1)"/></svg>
+<circle cx="62" cy="62" r="22" fill="#0f172a" opacity="0.86"/>
+<text x="62" y="70" text-anchor="middle" font-size="24" font-family="Arial" fill="#ffffff">1</text>
+<text x="32" y="382" font-size="18" font-family="Arial" fill="#334155">Summer Vacation 01</text>
+<rect x="380" y="28" width="328" height="328" rx="10" fill="#d7dee8"/>
+<svg x="384" y="32" width="320" height="320" viewBox="0 0 2400 2400"><defs>
+    <linearGradient id="g2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFF7E6"/>
+      <stop offset="0.45" stop-color="#F9D66E" stop-opacity="0.34"/>
+      <stop offset="1" stop-color="#58C4D8" stop-opacity="0.30"/>
+    </linearGradient>
+  </defs>
+  <rect width="2400" height="2400" fill="url(#g2)"/>
+  <circle cx="300" cy="340" r="210" fill="#FF8A6A" opacity="0.18"/>
+  <circle cx="2100" cy="2050" r="280" fill="#4AA36F" opacity="0.16"/></svg>
+<circle cx="414" cy="62" r="22" fill="#0f172a" opacity="0.86"/>
+<text x="414" y="70" text-anchor="middle" font-size="24" font-family="Arial" fill="#ffffff">2</text>
+<text x="384" y="382" font-size="18" font-family="Arial" fill="#334155">Summer Vacation 02</text>
+<rect x="732" y="28" width="328" height="328" rx="10" fill="#d7dee8"/>
+<svg x="736" y="32" width="320" height="320" viewBox="0 0 2400 2400"><defs>
+    <pattern id="p3" width="240" height="240" patternUnits="userSpaceOnUse">
+      <circle cx="70" cy="70" r="18" fill="#58C4D8" opacity="0.36"/>
+      <circle cx="180" cy="165" r="12" fill="#FF8A6A" opacity="0.28"/>
+    </pattern>
+  </defs>
+<rect width="2400" height="2400" fill="url(#p3)"/></svg>
+<circle cx="766" cy="62" r="22" fill="#0f172a" opacity="0.86"/>
+<text x="766" y="70" text-anchor="middle" font-size="24" font-family="Arial" fill="#ffffff">3</text>
+<text x="736" y="382" font-size="18" font-family="Arial" fill="#334155">Summer Vacation 03</text>
+<rect x="1084" y="28" width="328" height="328" rx="10" fill="#d7dee8"/>
+<svg x="1088" y="32" width="320" height="320" viewBox="0 0 2400 2400"><defs>
+    <pattern id="p4" width="260" height="260" patternUnits="userSpaceOnUse" patternTransform="rotate(-18)">
+      <rect width="260" height="260" fill="#FFF7E6"/>
+      <rect width="70" height="260" fill="#58C4D8" opacity="0.16"/>
+    </pattern>
+  </defs>
+<rect width="2400" height="2400" fill="url(#p4)"/></svg>
+<circle cx="1118" cy="62" r="22" fill="#0f172a" opacity="0.86"/>
+<text x="1118" y="70" text-anchor="middle" font-size="24" font-family="Arial" fill="#ffffff">4</text>
+<text x="1088" y="382" font-size="18" font-family="Arial" fill="#334155">Summer Vacation 04</text>
+<rect x="28" y="426" width="328" height="328" rx="10" fill="#d7dee8"/>
+<svg x="32" y="430" width="320" height="320" viewBox="0 0 2400 2400"><rect width="2400" height="2400" fill="#FFF7E6"/>
+<circle cx="210" cy="210" r="70" fill="#58C4D8" opacity="0.24"/>
+<path d="M140 280 C 190 140, 280 170, 294 270" fill="none" stroke="#17324A" stroke-width="16" opacity="0.16"/>
+<circle cx="2060" cy="260" r="84" fill="#FF8A6A" opacity="0.24"/>
+<path d="M1990 330 C 2040 190, 2130 220, 2144 320" fill="none" stroke="#17324A" stroke-width="16" opacity="0.16"/>
+<circle cx="260" cy="2100" r="98" fill="#4AA36F" opacity="0.24"/>
+<path d="M190 2170 C 240 2030, 330 2060, 344 2160" fill="none" stroke="#17324A" stroke-width="16" opacity="0.16"/>
+<circle cx="2050" cy="2050" r="112" fill="#58C4D8" opacity="0.24"/>
+<path d="M1980 2120 C 2030 1980, 2120 2010, 2134 2110" fill="none" stroke="#17324A" stroke-width="16" opacity="0.16"/>
+<circle cx="1200" cy="190" r="126" fill="#FF8A6A" opacity="0.24"/>
+<path d="M1130 260 C 1180 120, 1270 150, 1284 250" fill="none" stroke="#17324A" stroke-width="16" opacity="0.16"/>
+<circle cx="860" cy="820" r="70" fill="#4AA36F" opacity="0.24"/>
+<path d="M790 890 C 840 750, 930 780, 944 880" fill="none" stroke="#17324A" stroke-width="16" opacity="0.16"/>
+<circle cx="1540" cy="960" r="84" fill="#58C4D8" opacity="0.24"/>
+<path d="M1470 1030 C 1520 890, 1610 920, 1624 1020" fill="none" stroke="#17324A" stroke-width="16" opacity="0.16"/>
+<circle cx="1180" cy="1460" r="98" fill="#FF8A6A" opacity="0.24"/>
+<path d="M1110 1530 C 1160 1390, 1250 1420, 1264 1520" fill="none" stroke="#17324A" stroke-width="16" opacity="0.16"/></svg>
+<circle cx="62" cy="460" r="22" fill="#0f172a" opacity="0.86"/>
+<text x="62" y="468" text-anchor="middle" font-size="24" font-family="Arial" fill="#ffffff">5</text>
+<text x="32" y="780" font-size="18" font-family="Arial" fill="#334155">Summer Vacation 05</text>
+<rect x="380" y="426" width="328" height="328" rx="10" fill="#d7dee8"/>
+<svg x="384" y="430" width="320" height="320" viewBox="0 0 2400 2400"><rect width="2400" height="2400" fill="#FFF7E6"/>
+<path d="M0 0 C 600 80, 1200 -80, 2400 30" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.055"/>
+<path d="M0 120 C 600 200, 1200 40, 2400 150" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.035"/>
+<path d="M0 240 C 600 320, 1200 160, 2400 270" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.055"/>
+<path d="M0 360 C 600 440, 1200 280, 2400 390" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.035"/>
+<path d="M0 480 C 600 560, 1200 400, 2400 510" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.055"/>
+<path d="M0 600 C 600 680, 1200 520, 2400 630" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.035"/>
+<path d="M0 720 C 600 800, 1200 640, 2400 750" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.055"/>
+<path d="M0 840 C 600 920, 1200 760, 2400 870" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.035"/>
+<path d="M0 960 C 600 1040, 1200 880, 2400 990" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.055"/>
+<path d="M0 1080 C 600 1160, 1200 1000, 2400 1110" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.035"/>
+<path d="M0 1200 C 600 1280, 1200 1120, 2400 1230" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.055"/>
+<path d="M0 1320 C 600 1400, 1200 1240, 2400 1350" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.035"/>
+<path d="M0 1440 C 600 1520, 1200 1360, 2400 1470" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.055"/>
+<path d="M0 1560 C 600 1640, 1200 1480, 2400 1590" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.035"/>
+<path d="M0 1680 C 600 1760, 1200 1600, 2400 1710" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.055"/>
+<path d="M0 1800 C 600 1880, 1200 1720, 2400 1830" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.035"/>
+<path d="M0 1920 C 600 2000, 1200 1840, 2400 1950" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.055"/>
+<path d="M0 2040 C 600 2120, 1200 1960, 2400 2070" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.035"/>
+<path d="M0 2160 C 600 2240, 1200 2080, 2400 2190" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.055"/>
+<path d="M0 2280 C 600 2360, 1200 2200, 2400 2310" fill="none" stroke="#58C4D8" stroke-width="24" opacity="0.035"/></svg>
+<circle cx="414" cy="460" r="22" fill="#0f172a" opacity="0.86"/>
+<text x="414" y="468" text-anchor="middle" font-size="24" font-family="Arial" fill="#ffffff">6</text>
+<text x="384" y="780" font-size="18" font-family="Arial" fill="#334155">Summer Vacation 06</text>
+<rect x="732" y="426" width="328" height="328" rx="10" fill="#d7dee8"/>
+<svg x="736" y="430" width="320" height="320" viewBox="0 0 2400 2400"><defs>
+    <linearGradient id="g7" x1="1" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#58C4D8" stop-opacity="0.30"/>
+      <stop offset="0.48" stop-color="#FFF7E6"/>
+      <stop offset="1" stop-color="#FF8A6A" stop-opacity="0.28"/>
+    </linearGradient>
+  </defs>
+  <rect width="2400" height="2400" fill="url(#g7)"/>
+  <path d="M0 440 C 520 320, 860 560, 1320 440 S 2080 320, 2400 460" fill="none" stroke="#58C4D8" stroke-width="48" opacity="0.12"/>
+  <path d="M0 1180 C 520 1060, 860 1300, 1320 1180 S 2080 1060, 2400 1200" fill="none" stroke="#F9D66E" stroke-width="54" opacity="0.10"/>
+  <path d="M0 1960 C 520 1840, 860 2080, 1320 1960 S 2080 1840, 2400 1980" fill="none" stroke="#17324A" stroke-width="18" opacity="0.08"/></svg>
+<circle cx="766" cy="460" r="22" fill="#0f172a" opacity="0.86"/>
+<text x="766" y="468" text-anchor="middle" font-size="24" font-family="Arial" fill="#ffffff">7</text>
+<text x="736" y="780" font-size="18" font-family="Arial" fill="#334155">Summer Vacation 07</text>
+<rect x="1084" y="426" width="328" height="328" rx="10" fill="#d7dee8"/>
+<svg x="1088" y="430" width="320" height="320" viewBox="0 0 2400 2400"><defs>
+    <pattern id="p8" width="360" height="240" patternUnits="userSpaceOnUse">
+      <rect width="360" height="240" fill="#FFF7E6"/>
+      <path d="M-20 120 C 70 40, 150 200, 240 120 S 410 120, 500 120" fill="none" stroke="#58C4D8" stroke-width="28" opacity="0.20"/>
+      <path d="M-20 185 C 70 105, 150 265, 240 185 S 410 185, 500 185" fill="none" stroke="#FF8A6A" stroke-width="18" opacity="0.16"/>
+    </pattern>
+  </defs>
+<rect width="2400" height="2400" fill="url(#p8)"/></svg>
+<circle cx="1118" cy="460" r="22" fill="#0f172a" opacity="0.86"/>
+<text x="1118" y="468" text-anchor="middle" font-size="24" font-family="Arial" fill="#ffffff">8</text>
+<text x="1088" y="780" font-size="18" font-family="Arial" fill="#334155">Summer Vacation 08</text>
+</svg>

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2400 2400" width="2400" height="2400">
+
+  <defs>
+    <linearGradient id="diag" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FBFAF7"/>
+      <stop offset="0.50" stop-color="#E7EDF0" stop-opacity="0.20"/>
+      <stop offset="1" stop-color="#DCCFBF" stop-opacity="0.16"/>
+    </linearGradient>
+  </defs>
+  <rect width="2400" height="2400" fill="url(#diag)"/>
+<path d="M-800 2520 L160 -120" stroke="#ffffff" stroke-width="92" opacity="0.16"/>
+<path d="M-380 2520 L580 -120" stroke="#ffffff" stroke-width="92" opacity="0.16"/>
+<path d="M40 2520 L1000 -120" stroke="#ffffff" stroke-width="92" opacity="0.16"/>
+<path d="M460 2520 L1420 -120" stroke="#ffffff" stroke-width="92" opacity="0.16"/>
+<path d="M880 2520 L1840 -120" stroke="#ffffff" stroke-width="92" opacity="0.16"/>
+<path d="M1300 2520 L2260 -120" stroke="#ffffff" stroke-width="92" opacity="0.16"/>
+<path d="M1720 2520 L2680 -120" stroke="#ffffff" stroke-width="92" opacity="0.16"/>
+<path d="M2140 2520 L3100 -120" stroke="#ffffff" stroke-width="92" opacity="0.16"/>
+<path d="M2560 2520 L3520 -120" stroke="#ffffff" stroke-width="92" opacity="0.16"/>
+<path d="M2980 2520 L3940 -120" stroke="#ffffff" stroke-width="92" opacity="0.16"/>
+</svg>

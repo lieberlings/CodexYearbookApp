@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2400 2400" width="2400" height="2400">
+
+  <defs>
+    <pattern id="micro" width="150" height="150" patternUnits="userSpaceOnUse">
+      <rect width="150" height="150" fill="#FBFAF7"/>
+      <circle cx="38" cy="42" r="12" fill="#E7EDF0" opacity="0.34"/>
+      <circle cx="112" cy="104" r="9" fill="#D8E0D6" opacity="0.28"/>
+      <circle cx="114" cy="36" r="5" fill="#2F3A40" opacity="0.13"/>
+    </pattern>
+  </defs>
+  <rect width="2400" height="2400" fill="url(#micro)"/>
+</svg>

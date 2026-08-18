@@ -1,0 +1,70 @@
+{
+  "theme": "school days",
+  "palette": ["#F8FAFC", "#2D6CDF", "#E23D3D", "#F4C542", "#1F2937", "#3B8A5B"],
+  "backgrounds": [
+    {
+      "number": 1,
+      "label": "Notebook Line Paper",
+      "kind": "pattern",
+      "recipe": "notebook-line-paper",
+      "palette": ["#A9C7E8", "#6FA8DC", "#E36A6A", "#F8FAFC", "#1F2937", "#3B8A5B"],
+      "tags": ["school-days", "notebook", "lines", "white-base", "layout-agnostic"]
+    },
+    {
+      "number": 2,
+      "label": "Chalkboard Dust",
+      "kind": "gradient",
+      "recipe": "chalk-dust-wash",
+      "palette": ["#315E4B", "#4D8067", "#CFE0D7", "#3E715B", "#1E3B32", "#AFC6BC"],
+      "tags": ["school-days", "chalkboard", "chalk-dust", "green-base", "layout-agnostic"]
+    },
+    {
+      "number": 3,
+      "label": "Primary Block Grid",
+      "kind": "pattern",
+      "recipe": "primary-block-grid",
+      "palette": ["#2D6CDF", "#E23D3D", "#F4C542", "#F7F9FC", "#1F2937", "#3B8A5B"],
+      "tags": ["school-days", "blocks", "primary", "white-base", "layout-agnostic"]
+    },
+    {
+      "number": 4,
+      "label": "Pencil Stripe Paper",
+      "kind": "pattern",
+      "recipe": "pencil-stripe-paper",
+      "palette": ["#B8D6E8", "#5D8CC9", "#F4C542", "#FFF8D8", "#403A2B", "#E98062"],
+      "tags": ["school-days", "pencil", "stripes", "yellow-base", "layout-agnostic"]
+    },
+    {
+      "number": 5,
+      "label": "Ruler Tick Paper",
+      "kind": "illustration",
+      "recipe": "ruler-tick-paper",
+      "palette": ["#E5EEF7", "#2D6CDF", "#F4C542", "#F8FAFC", "#1F2937", "#E23D3D"],
+      "tags": ["school-days", "ruler", "ticks", "white-blue-base", "layout-agnostic"]
+    },
+    {
+      "number": 6,
+      "label": "Sticker Star Field",
+      "kind": "pattern",
+      "recipe": "sticker-star-field",
+      "palette": ["#2D6CDF", "#E23D3D", "#F4C542", "#EEF6FF", "#1F2937", "#3B8A5B"],
+      "tags": ["school-days", "stickers", "stars", "blue-base", "layout-agnostic"]
+    },
+    {
+      "number": 7,
+      "label": "Binder Grid Paper",
+      "kind": "pattern",
+      "recipe": "binder-grid-paper",
+      "palette": ["#DDE5EF", "#9BB7D4", "#E23D3D", "#F5F7FA", "#1F2937", "#3B8A5B"],
+      "tags": ["school-days", "binder", "grid", "cool-grey-base", "layout-agnostic"]
+    },
+    {
+      "number": 8,
+      "label": "Crayon Mark Paper",
+      "kind": "illustration",
+      "recipe": "crayon-mark-paper",
+      "palette": ["#2D6CDF", "#E23D3D", "#F4C542", "#FCF4F7", "#1F2937", "#3B8A5B"],
+      "tags": ["school-days", "crayon", "marks", "blush-base", "layout-agnostic"]
+    }
+  ]
+}

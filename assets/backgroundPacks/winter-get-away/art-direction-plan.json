@@ -1,0 +1,62 @@
+{
+  "theme": "winter get away",
+  "palette": ["#9FCBE3", "#DCECF5", "#B7434A", "#F7FBFC", "#213241", "#3F6B52"],
+  "backgrounds": [
+    {
+      "number": 1,
+      "label": "Frosted Window Wash",
+      "kind": "gradient",
+      "recipe": "frosted-window-gradient",
+      "tags": ["winter-get-away", "frost", "gradient", "layout-agnostic"]
+    },
+    {
+      "number": 2,
+      "label": "Cabin Blanket Plaid",
+      "kind": "pattern",
+      "recipe": "cabin-plaid",
+      "tags": ["winter-get-away", "cabin", "plaid", "layout-agnostic"]
+    },
+    {
+      "number": 3,
+      "label": "Soft Snowfall",
+      "kind": "pattern",
+      "recipe": "soft-snowfall",
+      "tags": ["winter-get-away", "snowfall", "dots", "layout-agnostic"]
+    },
+    {
+      "number": 4,
+      "label": "Mountain Contour Lines",
+      "kind": "illustration",
+      "recipe": "mountain-contour",
+      "tags": ["winter-get-away", "mountain", "contour", "layout-agnostic"]
+    },
+    {
+      "number": 5,
+      "label": "Evergreen Sprigs",
+      "kind": "illustration",
+      "recipe": "evergreen-sprigs",
+      "tags": ["winter-get-away", "evergreen", "sprigs", "layout-agnostic"]
+    },
+    {
+      "number": 6,
+      "label": "Wool Knit Texture",
+      "kind": "photo-texture",
+      "recipe": "knit-texture",
+      "tags": ["winter-get-away", "knit", "texture", "layout-agnostic"]
+    },
+    {
+      "number": 7,
+      "label": "Aurora Snowfield Wash",
+      "kind": "gradient",
+      "recipe": "aurora-wash",
+      "tags": ["winter-get-away", "aurora", "snowfield", "layout-agnostic"]
+    },
+    {
+      "number": 8,
+      "label": "Ski Track Lines",
+      "kind": "pattern",
+      "recipe": "ski-track-lines",
+      "tags": ["winter-get-away", "ski", "tracks", "layout-agnostic"]
+    }
+  ]
+}
