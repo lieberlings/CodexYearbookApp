@@ -154,6 +154,7 @@ export async function exportProjectToPdf(
             height:${(textFrame.height * 100).toFixed(4)}%;
             border-width:${(textBox.borderWidth ?? 0).toFixed(2)}px;
             border-color:${escapeAttr(textBox.borderColor ?? "#0f172a")};
+            border-radius:${(textBox.cornerRadius ?? 0).toFixed(2)}px;
             background:${escapeAttr(anchorSlot ? "transparent" : applyColorOpacity(textBox.fillColor ?? "#ffffff", textBox.fillOpacity ?? 0))};
             color:${escapeAttr(textBox.textColor ?? page.textColor ?? "#0f172a")};
             font-size:${(textBox.fontSize ?? page.textSize ?? 24).toFixed(0)}px;

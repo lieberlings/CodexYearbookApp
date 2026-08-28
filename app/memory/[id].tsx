@@ -1,3 +1,4 @@
+import type { ComponentProps } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
 import { router, Stack, useLocalSearchParams } from "expo-router";
@@ -36,8 +37,8 @@ import { pickImagesWithAndroidPhotoPicker } from "../../src/services/androidPhot
 import { pickPhotosFromMediaLibraryByAssetIds } from "../../src/services/photoService";
 import { MemoryPageSection, PageTextBox, TextBoxAlignment } from "../../src/types";
 
-type InspectorKind = "layout" | "background" | "border" | "text";
-type IconKind = "layout" | "text" | "border" | "background";
+type InspectorKind = "pages" | "layout" | "photos" | "text" | "background" | "border";
+type ToolIconName = ComponentProps<typeof Ionicons>["name"];
 
 type PhotoEditorState = {
   pageId: string;
@@ -52,9 +53,21 @@ type TextBoxGestureState = {
   startBox?: PageTextBox;
 };
 
-const COLOR_PALETTE = ["#ffffff", "#fff7ed", "#fef3c7", "#ecfccb", "#e0f2fe", "#ede9fe", "#fce7f3", "#f1f5f9"];
-const TEXT_COLORS = ["#0f172a", "#1d4ed8", "#0f766e", "#b45309", "#be123c", "#6d28d9", "#ffffff"];
-const BORDER_COLORS = ["#e2e8f0", "#0f172a", "#334155", "#0f766e", "#c2410c", "#b91c1c"];
+const COLOR_PALETTE = [
+  "#ffffff", "#f8fafc", "#e2e8f0", "#111827",
+  "#fff7ed", "#fde68a", "#fed7aa", "#fecdd3",
+  "#dcfce7", "#bbf7d0", "#ccfbf1", "#bae6fd",
+  "#dbeafe", "#e0e7ff", "#ede9fe", "#fce7f3"
+];
+const TEXT_COLORS = [
+  "#0f172a", "#334155", "#ffffff", "#991b1b", "#9a3412", "#854d0e",
+  "#166534", "#0f766e", "#075985", "#1d4ed8", "#6d28d9", "#be185d"
+];
+const BORDER_COLORS = [
+  "#ffffff", "#e2e8f0", "#94a3b8", "#334155", "#0f172a", "#dc2626",
+  "#ea580c", "#d97706", "#16a34a", "#0d9488", "#2563eb", "#7c3aed"
+];
+const TEXT_BOX_CORNER_RADII = [0, 8, 18, 32];
 const PHOTO_PICKER_SELECTION_LIMIT = 50;
 const ANDROID_PHOTO_PICKER_IMPORTS_ENABLED = true;
 const FONT_FAMILIES = [
@@ -94,6 +107,16 @@ function sameSectionOrder(left: MemoryPageSection[], right: MemoryPageSection[])
 
 function sectionOrderKey(sections: MemoryPageSection[]) {
   return sections.map((section) => section.id).join("|");
+}
+
+function groupTemplatesByPhotoCount(templates: TemplateDefinition[]) {
+  const groups = new Map<number, TemplateDefinition[]>();
+  templates.forEach((template) => {
+    groups.set(template.photoCount, [...(groups.get(template.photoCount) ?? []), template]);
+  });
+  return [...groups.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([photoCount, groupedTemplates]) => ({ photoCount, templates: groupedTemplates }));
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -136,45 +159,23 @@ function MiniTemplatePreview({ template, active }: { template: TemplateDefinitio
 
 function IconOrb({
   label,
-  kind,
+  icon,
   active,
   onPress
 }: {
   label: string;
-  kind: IconKind;
+  icon: ToolIconName;
   active?: boolean;
   onPress: () => void;
 }) {
   return (
-    <Pressable style={[styles.iconOrb, active ? styles.iconOrbActive : null]} onPress={onPress}>
-      <View style={styles.iconOrbGraphic}>
-        {kind === "layout" ? (
-          <>
-            <View style={[styles.layoutGlyphBlock, { left: 0, top: 0, width: 14, height: 12 }]} />
-            <View style={[styles.layoutGlyphBlock, { right: 0, top: 0, width: 10, height: 12 }]} />
-            <View style={[styles.layoutGlyphBlock, { left: 0, bottom: 0, width: 10, height: 10 }]} />
-            <View style={[styles.layoutGlyphBlock, { right: 0, bottom: 0, width: 14, height: 10 }]} />
-          </>
-        ) : null}
-        {kind === "text" ? (
-          <>
-            <View style={[styles.textGlyphLine, { width: 26, top: 4 }]} />
-            <View style={[styles.textGlyphLine, { width: 20, top: 12 }]} />
-            <View style={[styles.textGlyphLine, { width: 24, top: 20 }]} />
-          </>
-        ) : null}
-        {kind === "border" ? (
-          <View style={styles.borderGlyphFrame}>
-            <View style={styles.borderGlyphInner} />
-          </View>
-        ) : null}
-        {kind === "background" ? (
-          <>
-            <View style={styles.backgroundGlyphBack} />
-            <View style={styles.backgroundGlyphFront} />
-          </>
-        ) : null}
-      </View>
+    <Pressable
+      style={[styles.iconOrb, active ? styles.iconOrbActive : null]}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      <Ionicons name={icon} size={26} color={active ? "#ffffff" : "#d6e0f6"} />
       <Text style={[styles.iconOrbLabel, active ? styles.iconOrbLabelActive : null]}>{label}</Text>
     </Pressable>
   );
@@ -358,10 +359,14 @@ export default function MemoryDetailsScreen() {
   );
   const selectedSlotPhoto = selectedSlot?.photoId ? photosById[selectedSlot.photoId] : undefined;
   const selectedTextBox = activeTextBoxes.find((textBox) => textBox.id === selectedTextBoxId);
-  const canvasSize = Math.min(width - 64, height * 0.33, 352);
-  const pageCardWidth = Math.min(width - 30, 460);
+  const activeInspectorKind = activePageId && openInspector?.pageId === activePageId ? openInspector.kind : undefined;
+  const toolPanelMaxHeight = Math.min(Math.max(height * 0.26, 184), 340);
+  const toolPanelReserve = activeInspectorKind ? toolPanelMaxHeight : 0;
+  const availableCanvasHeight = height - insets.top - insets.bottom - 188 - toolPanelMaxHeight;
+  const canvasSize = Math.max(190, Math.min(width - 32, availableCanvasHeight, 430));
+  const pageCardWidth = Math.min(width - 24, 480);
   const editorSize = Math.min(width - 32, height * 0.56);
-  const stageButtonSize = 64;
+  const stageButtonSize = 84;
   const stagingPhotos = useMemo(() => photos.filter((photo) => !assignedPhotoIds.has(photo.id)), [assignedPhotoIds, photos]);
   const galleryDeletePhoto = galleryDeletePhotoId ? photosById[galleryDeletePhotoId] : undefined;
   const activePageIndex = useMemo(
@@ -499,7 +504,10 @@ export default function MemoryDetailsScreen() {
     ]);
   }
 
-  function handleAddTextBox(slot?: { id: string; frame: { x: number; y: number; width: number; height: number } }) {
+  function handleAddTextBox(
+    slot?: { id: string; frame: { x: number; y: number; width: number; height: number } },
+    beginEditing = false
+  ) {
     if (!activeSection) {
       return;
     }
@@ -518,17 +526,20 @@ export default function MemoryDetailsScreen() {
       fillColor: "#ffffff",
       fillOpacity: 0,
       textAlign: "center",
+      borderWidth: 1,
+      borderColor: sectionStyle.textColor,
+      cornerRadius: 8,
       x: slot ? slot.frame.x : undefined,
       y: slot ? slot.frame.y : undefined,
       width,
       height,
-      autoSize: !slot
+      autoSize: false
     });
     if (!createdId) {
       return;
     }
     setSelectedTextBoxId(createdId);
-    setEditingTextBoxId(createdId);
+    setEditingTextBoxId(beginEditing ? createdId : undefined);
     setOpenInspector({ pageId: activeSection.id, kind: "text" });
   }
 
@@ -1154,7 +1165,7 @@ export default function MemoryDetailsScreen() {
         </View>
         <View style={styles.topBarGhost} />
       </View>
-      <View style={[styles.container, { paddingBottom: Math.max(insets.bottom + 16, 28) }]}>
+      <View style={[styles.container, { paddingBottom: insets.bottom + 12 }]}>
         {activeSection && activeRenderedPage ? (() => {
           const section = activeSection;
           const renderedPage = activeRenderedPage;
@@ -1162,6 +1173,26 @@ export default function MemoryDetailsScreen() {
           const inspectorOpen = openInspector?.pageId === section.id ? openInspector.kind : undefined;
           const textModeActive = inspectorOpen === "text";
           const templates = listAllTemplates();
+          const templateGroups = groupTemplatesByPhotoCount(templates);
+          const toggleInspector = (kind: InspectorKind) => {
+            if (kind === "text") {
+              if (!selectedTextBox) {
+                handleAddTextBox();
+                return;
+              }
+              if (inspectorOpen === "text" && !editingTextBoxId) {
+                exitTextMode();
+                return;
+              }
+              setOpenInspector({ pageId: section.id, kind: "text" });
+              setEditingTextBoxId(undefined);
+              return;
+            }
+            Keyboard.dismiss();
+            setSelectedTextBoxId(undefined);
+            setEditingTextBoxId(undefined);
+            setOpenInspector((prev) => (prev?.pageId === section.id && prev.kind === kind ? undefined : { pageId: section.id, kind }));
+          };
           return (
             <View
               style={[
@@ -1317,6 +1348,7 @@ export default function MemoryDetailsScreen() {
                           {
                             borderWidth: textBox.borderWidth ?? 0,
                             borderColor: textBox.borderColor ?? "#0f172a",
+                            borderRadius: textBox.cornerRadius ?? 8,
                             backgroundColor: isAnchoredTextBox
                               ? "transparent"
                               : applyColorOpacity(textBox.fillColor ?? "#ffffff", textBox.fillOpacity ?? 0)
@@ -1434,233 +1466,270 @@ export default function MemoryDetailsScreen() {
                 })}
               </View>
 
-              {selectedTextBox ? (
-                <View
-                  style={[
-                    styles.textCompactToolbarShell,
-                    { maxHeight: Math.min(Math.max(height * 0.24, 196), 288) }
-                  ]}
+              <View style={styles.toolTray}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.toolRail}
                 >
-                  <ScrollView
-                    style={styles.textCompactToolbarScroll}
-                    contentContainerStyle={styles.textCompactToolbar}
-                    showsVerticalScrollIndicator
-                    keyboardShouldPersistTaps="handled"
-                    nestedScrollEnabled
-                  >
-                    <View style={styles.textCompactRow}>
-                      <View style={styles.fontDropdown}>
-                        {FONT_FAMILIES.map((fontFamily) => (
-                          <Pressable
-                            key={fontFamily.id}
-                            style={[styles.fontDropdownOption, selectedTextBox.fontFamily === fontFamily.id ? styles.fontDropdownOptionActive : null]}
-                            onPress={() => updateSelectedTextBox({ fontFamily: fontFamily.id })}
-                          >
-                            <Text style={[styles.fontDropdownText, { fontFamily: fontFamily.id === "System" ? undefined : fontFamily.id }]}>{fontFamily.label}</Text>
-                          </Pressable>
-                        ))}
-                      </View>
-                      <Pressable
-                        style={[styles.toggleChip, selectedTextBox.fontWeight === "700" ? styles.toggleChipActive : null]}
-                        onPress={() => updateSelectedTextBox({ fontWeight: selectedTextBox.fontWeight === "700" ? "400" : "700" })}
-                      >
-                        <Text style={styles.toggleChipText}>B</Text>
-                      </Pressable>
-                      <Pressable
-                        style={[styles.toggleChip, selectedTextBox.fontStyle === "italic" ? styles.toggleChipActive : null]}
-                        onPress={() => updateSelectedTextBox({ fontStyle: selectedTextBox.fontStyle === "italic" ? "normal" : "italic" })}
-                      >
-                        <Text style={[styles.toggleChipText, styles.toggleChipItalic]}>I</Text>
-                      </Pressable>
-                    </View>
-
-                  <View style={styles.textCompactRow}>
-                    <View style={styles.sliderGroup}>
-                      <Text style={styles.sliderLabel}>Size</Text>
-                      <View style={styles.sliderButtons}>
-                        <Pressable
-                          style={styles.sliderButton}
-                          onPress={() => updateSelectedTextBox({ fontSize: clamp((selectedTextBox.fontSize ?? 26) - 2, 10, 72) })}
-                        >
-                          <Text style={styles.sliderButtonText}>-</Text>
-                        </Pressable>
-                        <Text style={styles.metricText}>{selectedTextBox.fontSize ?? 26}</Text>
-                        <Pressable
-                          style={styles.sliderButton}
-                          onPress={() => updateSelectedTextBox({ fontSize: clamp((selectedTextBox.fontSize ?? 26) + 2, 10, 72) })}
-                        >
-                          <Text style={styles.sliderButtonText}>+</Text>
-                        </Pressable>
-                      </View>
-                    </View>
-                    <View style={styles.alignGroup}>
-                      {(["left", "center", "right"] as TextBoxAlignment[]).map((alignment) => (
-                        <Pressable
-                          key={alignment}
-                          style={[styles.alignButton, selectedTextBox.textAlign === alignment ? styles.alignButtonActive : null]}
-                          onPress={() => updateSelectedTextBox({ textAlign: alignment })}
-                        >
-                          <Text style={styles.alignButtonText}>{alignment === "left" ? "L" : alignment === "center" ? "C" : "R"}</Text>
-                        </Pressable>
-                      ))}
-                    </View>
-                  </View>
-
-                  <View style={styles.controlGroup}>
-                    <Text style={styles.controlGroupLabel}>Text</Text>
-                    <View style={styles.paletteRow}>
-                      {TEXT_COLORS.map((color) => (
-                        <Pressable
-                          key={color}
-                          style={[styles.colorSwatch, { backgroundColor: color }, selectedTextBox.textColor === color ? styles.colorSwatchActive : null]}
-                          onPress={() => updateSelectedTextBox({ textColor: color })}
-                        />
-                      ))}
-                    </View>
-                  </View>
-
-                  <View style={styles.controlGroup}>
-                    <Text style={styles.controlGroupLabel}>Border</Text>
-                    <View style={styles.controlRow}>
-                      <Pressable
-                        style={styles.stepperButton}
-                        onPress={() => updateSelectedTextBox({ borderWidth: clamp((selectedTextBox.borderWidth ?? 0) - 1, 0, 12) })}
-                      >
-                        <Text style={styles.stepperButtonText}>- Width</Text>
-                      </Pressable>
-                      <Text style={styles.metricText}>{selectedTextBox.borderWidth ?? 0}</Text>
-                      <Pressable
-                        style={styles.stepperButton}
-                        onPress={() => updateSelectedTextBox({ borderWidth: clamp((selectedTextBox.borderWidth ?? 0) + 1, 0, 12) })}
-                      >
-                        <Text style={styles.stepperButtonText}>+ Width</Text>
-                      </Pressable>
-                    </View>
-                    <View style={styles.paletteRow}>
-                      {BORDER_COLORS.map((color) => (
-                        <Pressable
-                          key={color}
-                          style={[styles.colorSwatch, { backgroundColor: color }, selectedTextBox.borderColor === color ? styles.colorSwatchActive : null]}
-                          onPress={() => updateSelectedTextBox({ borderColor: color })}
-                        />
-                      ))}
-                    </View>
-                  </View>
-
-                  {!selectedTextBox.anchorSlotId ? (
-                  <View style={styles.controlGroup}>
-                    <Text style={styles.controlGroupLabel}>Fill</Text>
-                    <View style={styles.paletteRow}>
-                      {COLOR_PALETTE.map((color) => (
-                        <Pressable
-                          key={color}
-                          style={[styles.colorSwatch, { backgroundColor: color }, selectedTextBox.fillColor === color ? styles.colorSwatchActive : null]}
-                          onPress={() => updateSelectedTextBox({ fillColor: color })}
-                        />
-                      ))}
-                    </View>
-                    <View style={styles.controlRow}>
-                      <Pressable
-                        style={styles.stepperButton}
-                        onPress={() => updateSelectedTextBox({ fillOpacity: clamp((selectedTextBox.fillOpacity ?? 0) - 0.1, 0, 1) })}
-                      >
-                        <Text style={styles.stepperButtonText}>- Opacity</Text>
-                      </Pressable>
-                      <Text style={styles.metricText}>{Math.round((selectedTextBox.fillOpacity ?? 0) * 100)}%</Text>
-                      <Pressable
-                        style={styles.stepperButton}
-                        onPress={() => updateSelectedTextBox({ fillOpacity: clamp((selectedTextBox.fillOpacity ?? 0) + 0.1, 0, 1) })}
-                      >
-                        <Text style={styles.stepperButtonText}>+ Opacity</Text>
-                      </Pressable>
-                    </View>
-                  </View>
-                  ) : null}
-
-                    <View style={styles.controlRow}>
-                      <Pressable style={styles.stepperButton} onPress={() => setEditingTextBoxId(selectedTextBox.id)}>
-                        <Text style={styles.stepperButtonText}>{editingTextBoxId ? "Editing..." : "Edit Text"}</Text>
-                      </Pressable>
-                      <Pressable style={[styles.stepperButton, styles.stepperButtonActive]} onPress={saveTextEditing}>
-                        <Text style={[styles.stepperButtonText, styles.stepperButtonTextActive]}>Save Text</Text>
-                      </Pressable>
-                      {selectedTextBox.anchorSlotId ? (
-                        <Pressable style={styles.stepperButton} onPress={revertSelectedTextSlotToPhotoSlot}>
-                          <Text style={styles.stepperButtonText}>Photo Slot</Text>
-                        </Pressable>
-                      ) : null}
-                      <Pressable
-                        style={styles.tinyButtonDanger}
-                        onPress={() => {
-                          deletePageTextBox(section.id, selectedTextBox.id);
-                          clearTextBoxSelection();
-                        }}
-                      >
-                        <Text style={styles.deleteText}>Delete Text</Text>
-                      </Pressable>
-                    </View>
-                  </ScrollView>
-                </View>
-              ) : (
-                <View style={styles.composerBar}>
-                  <IconOrb
-                    label="LAYOUT"
-                    kind="layout"
-                    active={inspectorOpen === "layout"}
-                    onPress={() => setOpenInspector((prev) => (prev?.pageId === section.id && prev.kind === "layout" ? undefined : { pageId: section.id, kind: "layout" }))}
-                  />
-                  <IconOrb
-                    label="TEXT"
-                    kind="text"
-                    active={inspectorOpen === "text"}
-                    onPress={() => {
-                      if (inspectorOpen === "text") {
-                        exitTextMode();
-                        return;
-                      }
-                      setOpenInspector({ pageId: section.id, kind: "text" });
-                      setSelectedTextBoxId(undefined);
-                      setEditingTextBoxId(undefined);
-                    }}
-                  />
-                  <IconOrb
-                    label="BORDERS"
-                    kind="border"
-                    active={inspectorOpen === "border"}
-                    onPress={() => setOpenInspector((prev) => (prev?.pageId === section.id && prev.kind === "border" ? undefined : { pageId: section.id, kind: "border" }))}
-                  />
-                  <IconOrb
-                    label="BACKGROUND"
-                    kind="background"
-                    active={inspectorOpen === "background"}
-                    onPress={() => setOpenInspector((prev) => (prev?.pageId === section.id && prev.kind === "background" ? undefined : { pageId: section.id, kind: "background" }))}
-                  />
-                </View>
-              )}
+                  <IconOrb label="Pages" icon="albums-outline" active={inspectorOpen === "pages"} onPress={() => toggleInspector("pages")} />
+                  <IconOrb label="Layout" icon="grid-outline" active={inspectorOpen === "layout"} onPress={() => toggleInspector("layout")} />
+                  <IconOrb label="Photos" icon="images-outline" active={inspectorOpen === "photos"} onPress={() => toggleInspector("photos")} />
+                  <IconOrb label="Text" icon="text-outline" active={inspectorOpen === "text"} onPress={() => toggleInspector("text")} />
+                  <IconOrb label="Background" icon="color-palette-outline" active={inspectorOpen === "background"} onPress={() => toggleInspector("background")} />
+                  <IconOrb label="Borders" icon="scan-outline" active={inspectorOpen === "border"} onPress={() => toggleInspector("border")} />
+                </ScrollView>
+              </View>
 
               {inspectorOpen ? (
-                <View style={[styles.inspectorArea, inspectorOpen === "background" ? styles.backgroundInspectorArea : null]}>
+                <View
+                  style={[
+                    styles.inspectorArea,
+                    inspectorOpen === "background" ? styles.backgroundInspectorArea : null,
+                    { maxHeight: toolPanelReserve }
+                  ]}
+                >
+                  {inspectorOpen === "pages" ? (
+                    <View style={styles.pageRail}>
+                    {/* Page reorder is owned by DraggableFlatList. Other editor drags still use the custom drag controller. */}
+                    <DraggableFlatList
+                      data={pageRailData}
+                      horizontal
+                      activationDistance={8}
+                      autoscrollSpeed={220}
+                      dragItemOverflow={false}
+                      animationConfig={{
+                        damping: 26,
+                        mass: 0.22,
+                        stiffness: 240,
+                        overshootClamping: true
+                      }}
+                      containerStyle={styles.pageRailList}
+                      contentContainerStyle={styles.pageRailRow}
+                      keyExtractor={(item) => item.id}
+                      showsHorizontalScrollIndicator={false}
+                      ItemSeparatorComponent={() => <View style={styles.pageRailSeparator} />}
+                      ListFooterComponentStyle={styles.pageRailFooter}
+                      onDragBegin={() => {
+                        setPageRailDragging(true);
+                      }}
+                      onRelease={() => {
+                        setPageRailDragging(false);
+                      }}
+                      onDragEnd={({ from, to, data }) => {
+                        setPageRailData(data);
+                        setPageRailDragging(false);
+                        if (from === to) {
+                          setPendingPageRailOrderKey(undefined);
+                          return;
+                        }
+                        const movedSection = data[to];
+                        if (!movedSection) {
+                          setPendingPageRailOrderKey(undefined);
+                          return;
+                        }
+                        setPendingPageRailOrderKey(sectionOrderKey(data));
+                        reorderPageSection(memoryId, movedSection.id, to);
+                      }}
+                      renderPlaceholder={({ item }) => (
+                        <View style={styles.pageRailItem}>
+                          <View style={styles.pageRailCard}>
+                            <View
+                              style={[
+                                styles.pageRailPreview,
+                                styles.pageRailPlaceholderPreview,
+                                { backgroundColor: getSectionStyle(item.id).backgroundColor }
+                              ]}
+                            >
+                              <PageBackground
+                                backgroundAssetId={getSectionStyle(item.id).backgroundAssetId}
+                                backgroundColor={getSectionStyle(item.id).backgroundColor}
+                              />
+                            </View>
+                            <Text style={[styles.pageRailLabel, styles.pageRailLabelPlaceholder]}>Page</Text>
+                          </View>
+                        </View>
+                      )}
+                      renderItem={({ item, drag: beginPageReorder, isActive, getIndex }) => {
+                        const renderedPage = renderedPageById[item.id];
+                        const isSelected = item.id === activePageId;
+                        const index = getIndex() ?? pageRailData.findIndex((pageSection) => pageSection.id === item.id);
+                        return (
+                          <View style={styles.pageRailItem}>
+                            <Pressable
+                              collapsable={false}
+                              delayLongPress={DRAG_HOLD_MS}
+                              onPress={() => {
+                                setSelection(item.id, undefined);
+                                setPhotoEditor(undefined);
+                              }}
+                              onLongPress={beginPageReorder}
+                              style={[
+                                styles.pageRailCard,
+                                isSelected && !pageRailDragging ? styles.pageRailCardActive : null,
+                                isActive ? styles.pageRailCardDragging : null
+                              ]}
+                            >
+                              <View
+                                style={[
+                                  styles.pageRailPreview,
+                                  isSelected ? styles.pageRailPreviewSelected : null,
+                                  { backgroundColor: getSectionStyle(item.id).backgroundColor }
+                                ]}
+                              >
+                                <PageBackground
+                                  backgroundAssetId={getSectionStyle(item.id).backgroundAssetId}
+                                  backgroundColor={getSectionStyle(item.id).backgroundColor}
+                                />
+                                {renderedPage?.slots.slice(0, 4).map((slot) => {
+                                  const previewPhoto = slot.photoId ? photosById[slot.photoId] : undefined;
+                                  return previewPhoto ? (
+                                    <Image
+                                      key={slot.id}
+                                      source={{ uri: previewPhoto.uri }}
+                                      style={[
+                                        styles.pageRailPreviewPhoto,
+                                        {
+                                          left: `${slot.frame.x * 100}%`,
+                                          top: `${slot.frame.y * 100}%`,
+                                          width: `${slot.frame.width * 100}%`,
+                                          height: `${slot.frame.height * 100}%`
+                                        }
+                                      ]}
+                                      resizeMode="cover"
+                                    />
+                                  ) : (
+                                    <View
+                                      key={slot.id}
+                                      style={[
+                                        styles.pageRailPreviewBlock,
+                                        {
+                                          left: `${slot.frame.x * 100}%`,
+                                          top: `${slot.frame.y * 100}%`,
+                                          width: `${slot.frame.width * 100}%`,
+                                          height: `${slot.frame.height * 100}%`
+                                        }
+                                      ]}
+                                    />
+                                  );
+                                })}
+                              </View>
+                              <Text style={[styles.pageRailLabel, isSelected ? styles.pageRailLabelActive : null]}>
+                                Page {(index >= 0 ? index : 0) + 1}
+                              </Text>
+                            </Pressable>
+                          </View>
+                        );
+                      }}
+                      ListFooterComponent={
+                        <View style={styles.pageRailItem}>
+                          <Pressable style={[styles.pageRailCard, styles.pageRailAddCard]} onPress={onAddPage}>
+                            <View style={[styles.pageRailPreview, styles.pageRailAddPreview]}>
+                              <Text style={styles.pageRailAddText}>+</Text>
+                            </View>
+                            <Text style={styles.pageRailLabel}>Add Page</Text>
+                          </Pressable>
+                        </View>
+                      }
+                    />
+                    </View>
+                  ) : null}
+
                   {inspectorOpen === "layout" ? (
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.templateRow}>
-                    <Pressable
-                      style={[styles.templateChoice, !section.templateId ? styles.templateChoiceActive : null]}
-                      onPress={() => setPageSectionTemplate(section.id, undefined)}
+                    <ScrollView
+                      style={styles.layoutPickerScroll}
+                      showsVerticalScrollIndicator
+                      nestedScrollEnabled
+                      contentContainerStyle={styles.layoutPicker}
                     >
-                      <Text style={styles.templateChoiceLabel}>Auto</Text>
-                    </Pressable>
-                    {templates.map((template) => {
-                      const active = section.templateId === template.id;
-                      return (
-                        <Pressable
-                          key={template.id}
-                          style={[styles.templateChoice, active ? styles.templateChoiceActive : null]}
-                          onPress={() => setPageSectionTemplate(section.id, template.id)}
-                        >
-                          <MiniTemplatePreview template={template} active={active} />
-                        </Pressable>
-                      );
-                    })}
-                  </ScrollView>
+                      <View style={styles.controlGroup}>
+                        <Text style={styles.controlGroupLabel}>Automatic</Text>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.templateRow}>
+                          <Pressable
+                            style={[styles.templateChoice, !section.templateId ? styles.templateChoiceActive : null]}
+                            onPress={() => setPageSectionTemplate(section.id, undefined)}
+                          >
+                            <Text style={styles.templateChoiceLabel}>Auto</Text>
+                          </Pressable>
+                        </ScrollView>
+                      </View>
+                      {templateGroups.map((group) => (
+                        <View key={group.photoCount} style={styles.controlGroup}>
+                          <Text style={styles.controlGroupLabel}>
+                            {group.photoCount} {group.photoCount === 1 ? "Photo" : "Photos"}
+                          </Text>
+                          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.templateRow}>
+                            {group.templates.map((template) => {
+                              const active = section.templateId === template.id;
+                              return (
+                                <Pressable
+                                  key={template.id}
+                                  style={[styles.templateChoice, active ? styles.templateChoiceActive : null]}
+                                  onPress={() => setPageSectionTemplate(section.id, template.id)}
+                                >
+                                  <MiniTemplatePreview template={template} active={active} />
+                                </Pressable>
+                              );
+                            })}
+                          </ScrollView>
+                        </View>
+                      ))}
+                    </ScrollView>
+                  ) : null}
+
+                  {inspectorOpen === "photos" ? (
+                    <View
+                      ref={stagingRef}
+                      collapsable={false}
+                      style={[
+                        styles.stagingStrip,
+                        hoveredTarget?.targetType === "gallery-strip" ? styles.stagingStripActive : null
+                      ]}
+                    >
+                      <Pressable
+                        ref={removePhotoTileRef}
+                        collapsable={false}
+                        style={[
+                          styles.stagingTile,
+                          styles.addPhotoTile,
+                          hoveredTarget?.targetType === "gallery-remove" ? styles.removePhotoTileActive : null,
+                          { width: stageButtonSize, height: stageButtonSize }
+                        ]}
+                        onPress={onAddPhotos}
+                      >
+                        {adding ? <ActivityIndicator color="#0f172a" /> : <Text style={styles.addPhotoTileText}>+</Text>}
+                      </Pressable>
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        scrollEnabled={drag.session.lifecycle !== "dragging"}
+                        contentContainerStyle={styles.stagingPhotosRow}
+                      >
+                        {stagingPhotos.map((photo) => {
+                          const isDragging = drag.session.payload?.dragType === "gallery-photo" && drag.session.payload.itemId === photo.id;
+                          const galleryPanHandlers = createLongPressDragHandlers({
+                            onTap: () => onPhotoPress(photo.id),
+                            onBeginDrag: (point) => startPhotoDrag(photo.id, photo.uri, point)
+                          });
+                          return (
+                            <Pressable
+                              key={photo.id}
+                              ref={(node) => {
+                                galleryPhotoRefs.current[photo.id] = node;
+                              }}
+                              collapsable={false}
+                              {...galleryPanHandlers}
+                              style={[styles.stagingTile, galleryDeletePhotoId === photo.id ? styles.thumbCardSelected : null, isDragging ? styles.thumbCardDragging : null]}
+                            >
+                              <Image source={{ uri: photo.uri }} style={styles.thumbImage} />
+                              {hoveredTarget?.targetType === "gallery-photo" && hoveredTarget.targetPhotoId === photo.id ? (
+                                <View pointerEvents="none" style={styles.gallerySwapTarget} />
+                              ) : null}
+                            </Pressable>
+                          );
+                        })}
+                      </ScrollView>
+                    </View>
                   ) : null}
 
                   {inspectorOpen === "background" ? (
@@ -1735,13 +1804,192 @@ export default function MemoryDetailsScreen() {
                     </View>
                   ) : null}
 
-                  {inspectorOpen === "text" && !selectedTextBox ? (
-                    <View style={styles.textInspector}>
-                      <Pressable style={styles.addTextButton} onPress={() => handleAddTextBox()}>
-                        <Text style={styles.addTextButtonText}>Add Text</Text>
-                      </Pressable>
-                      <Text style={styles.textInspectorHelp}>Add a text box or tap one on the page to edit it.</Text>
-                    </View>
+                  {inspectorOpen === "text" ? (
+                    selectedTextBox ? (
+                      <ScrollView
+                        style={styles.textCompactToolbarScroll}
+                        contentContainerStyle={styles.textCompactToolbar}
+                        showsVerticalScrollIndicator
+                        keyboardShouldPersistTaps="handled"
+                        nestedScrollEnabled
+                      >
+                        <View style={styles.textCompactRow}>
+                          <View style={styles.fontDropdown}>
+                            {FONT_FAMILIES.map((fontFamily) => (
+                              <Pressable
+                                key={fontFamily.id}
+                                style={[styles.fontDropdownOption, selectedTextBox.fontFamily === fontFamily.id ? styles.fontDropdownOptionActive : null]}
+                                onPress={() => updateSelectedTextBox({ fontFamily: fontFamily.id })}
+                              >
+                                <Text style={[styles.fontDropdownText, { fontFamily: fontFamily.id === "System" ? undefined : fontFamily.id }]}>{fontFamily.label}</Text>
+                              </Pressable>
+                            ))}
+                          </View>
+                          <Pressable
+                            style={[styles.toggleChip, selectedTextBox.fontWeight === "700" ? styles.toggleChipActive : null]}
+                            onPress={() => updateSelectedTextBox({ fontWeight: selectedTextBox.fontWeight === "700" ? "400" : "700" })}
+                          >
+                            <Text style={styles.toggleChipText}>B</Text>
+                          </Pressable>
+                          <Pressable
+                            style={[styles.toggleChip, selectedTextBox.fontStyle === "italic" ? styles.toggleChipActive : null]}
+                            onPress={() => updateSelectedTextBox({ fontStyle: selectedTextBox.fontStyle === "italic" ? "normal" : "italic" })}
+                          >
+                            <Text style={[styles.toggleChipText, styles.toggleChipItalic]}>I</Text>
+                          </Pressable>
+                        </View>
+
+                        <View style={styles.textCompactRow}>
+                          <View style={styles.sliderGroup}>
+                            <Text style={styles.sliderLabel}>Size</Text>
+                            <View style={styles.sliderButtons}>
+                              <Pressable
+                                style={styles.sliderButton}
+                                onPress={() => updateSelectedTextBox({ fontSize: clamp((selectedTextBox.fontSize ?? 26) - 2, 10, 72) })}
+                              >
+                                <Text style={styles.sliderButtonText}>-</Text>
+                              </Pressable>
+                              <Text style={styles.metricText}>{selectedTextBox.fontSize ?? 26}</Text>
+                              <Pressable
+                                style={styles.sliderButton}
+                                onPress={() => updateSelectedTextBox({ fontSize: clamp((selectedTextBox.fontSize ?? 26) + 2, 10, 72) })}
+                              >
+                                <Text style={styles.sliderButtonText}>+</Text>
+                              </Pressable>
+                            </View>
+                          </View>
+                          <View style={styles.alignGroup}>
+                            {(["left", "center", "right"] as TextBoxAlignment[]).map((alignment) => (
+                              <Pressable
+                                key={alignment}
+                                style={[styles.alignButton, selectedTextBox.textAlign === alignment ? styles.alignButtonActive : null]}
+                                onPress={() => updateSelectedTextBox({ textAlign: alignment })}
+                              >
+                                <Text style={styles.alignButtonText}>{alignment === "left" ? "L" : alignment === "center" ? "C" : "R"}</Text>
+                              </Pressable>
+                            ))}
+                          </View>
+                        </View>
+
+                        <View style={styles.controlGroup}>
+                          <Text style={styles.controlGroupLabel}>Text</Text>
+                          <View style={styles.paletteRow}>
+                            {TEXT_COLORS.map((color) => (
+                              <Pressable
+                                key={color}
+                                style={[styles.colorSwatch, { backgroundColor: color }, selectedTextBox.textColor === color ? styles.colorSwatchActive : null]}
+                                onPress={() => updateSelectedTextBox({ textColor: color })}
+                              />
+                            ))}
+                          </View>
+                        </View>
+
+                        <View style={styles.controlGroup}>
+                          <Text style={styles.controlGroupLabel}>Border</Text>
+                          <View style={styles.controlRow}>
+                            <Pressable
+                              style={styles.stepperButton}
+                              onPress={() => updateSelectedTextBox({ borderWidth: clamp((selectedTextBox.borderWidth ?? 0) - 1, 0, 12) })}
+                            >
+                              <Text style={styles.stepperButtonText}>- Width</Text>
+                            </Pressable>
+                            <Text style={styles.metricText}>{selectedTextBox.borderWidth ?? 0}</Text>
+                            <Pressable
+                              style={styles.stepperButton}
+                              onPress={() => updateSelectedTextBox({ borderWidth: clamp((selectedTextBox.borderWidth ?? 0) + 1, 0, 12) })}
+                            >
+                              <Text style={styles.stepperButtonText}>+ Width</Text>
+                            </Pressable>
+                          </View>
+                          <View style={styles.paletteRow}>
+                            {BORDER_COLORS.map((color) => (
+                              <Pressable
+                                key={color}
+                                style={[styles.colorSwatch, { backgroundColor: color }, selectedTextBox.borderColor === color ? styles.colorSwatchActive : null]}
+                                onPress={() => updateSelectedTextBox({ borderColor: color })}
+                              />
+                            ))}
+                          </View>
+                          <View style={styles.shapeRow}>
+                            {TEXT_BOX_CORNER_RADII.map((radius) => (
+                              <Pressable
+                                key={radius}
+                                style={[
+                                  styles.shapeChoice,
+                                  { borderRadius: radius / 2 },
+                                  (selectedTextBox.cornerRadius ?? 0) === radius ? styles.shapeChoiceActive : null
+                                ]}
+                                onPress={() => updateSelectedTextBox({ cornerRadius: radius })}
+                                accessibilityRole="button"
+                                accessibilityLabel={`Text box corner radius ${radius}`}
+                              >
+                                <Text style={styles.shapeChoiceText}>{radius === 0 ? "Square" : radius}</Text>
+                              </Pressable>
+                            ))}
+                          </View>
+                        </View>
+
+                        {!selectedTextBox.anchorSlotId ? (
+                          <View style={styles.controlGroup}>
+                            <Text style={styles.controlGroupLabel}>Fill</Text>
+                            <View style={styles.paletteRow}>
+                              {COLOR_PALETTE.map((color) => (
+                                <Pressable
+                                  key={color}
+                                  style={[styles.colorSwatch, { backgroundColor: color }, selectedTextBox.fillColor === color ? styles.colorSwatchActive : null]}
+                                  onPress={() => updateSelectedTextBox({ fillColor: color })}
+                                />
+                              ))}
+                            </View>
+                            <View style={styles.controlRow}>
+                              <Pressable
+                                style={styles.stepperButton}
+                                onPress={() => updateSelectedTextBox({ fillOpacity: clamp((selectedTextBox.fillOpacity ?? 0) - 0.1, 0, 1) })}
+                              >
+                                <Text style={styles.stepperButtonText}>- Opacity</Text>
+                              </Pressable>
+                              <Text style={styles.metricText}>{Math.round((selectedTextBox.fillOpacity ?? 0) * 100)}%</Text>
+                              <Pressable
+                                style={styles.stepperButton}
+                                onPress={() => updateSelectedTextBox({ fillOpacity: clamp((selectedTextBox.fillOpacity ?? 0) + 0.1, 0, 1) })}
+                              >
+                                <Text style={styles.stepperButtonText}>+ Opacity</Text>
+                              </Pressable>
+                            </View>
+                          </View>
+                        ) : null}
+
+                        <View style={styles.controlRow}>
+                          <Pressable style={styles.stepperButton} onPress={() => setEditingTextBoxId(selectedTextBox.id)}>
+                            <Text style={styles.stepperButtonText}>{editingTextBoxId ? "Editing..." : "Edit Text"}</Text>
+                          </Pressable>
+                          <Pressable style={[styles.stepperButton, styles.stepperButtonActive]} onPress={saveTextEditing}>
+                            <Text style={[styles.stepperButtonText, styles.stepperButtonTextActive]}>Save Text</Text>
+                          </Pressable>
+                          {selectedTextBox.anchorSlotId ? (
+                            <Pressable style={styles.stepperButton} onPress={revertSelectedTextSlotToPhotoSlot}>
+                              <Text style={styles.stepperButtonText}>Photo Slot</Text>
+                            </Pressable>
+                          ) : null}
+                          <Pressable
+                            style={styles.tinyButtonDanger}
+                            onPress={() => {
+                              deletePageTextBox(section.id, selectedTextBox.id);
+                              clearTextBoxSelection();
+                            }}
+                          >
+                            <Text style={styles.deleteText}>Delete Text</Text>
+                          </Pressable>
+                        </View>
+                      </ScrollView>
+                    ) : (
+                      <View style={styles.textInspector}>
+                        <Pressable style={styles.addTextButton} onPress={() => handleAddTextBox()}>
+                          <Text style={styles.addTextButtonText}>Add Text</Text>
+                        </Pressable>
+                        <Text style={styles.textInspectorHelp}>Add a text box or tap one on the page to edit it.</Text>
+                      </View>
+                    )
                   ) : null}
                 </View>
               ) : null}
@@ -1750,190 +1998,6 @@ export default function MemoryDetailsScreen() {
         })() : (
           <Text style={styles.empty}>No page selected.</Text>
         )}
-
-        <View style={styles.stagingBlock}>
-          <Text style={styles.blockLabel}>Extra Photos</Text>
-          <View
-            ref={stagingRef}
-            collapsable={false}
-            style={[
-              styles.stagingStrip,
-              hoveredTarget?.targetType === "gallery-strip" ? styles.stagingStripActive : null
-            ]}
-          >
-          <Pressable
-            ref={removePhotoTileRef}
-            collapsable={false}
-            style={[
-              styles.stagingTile,
-              styles.addPhotoTile,
-              hoveredTarget?.targetType === "gallery-remove" ? styles.removePhotoTileActive : null,
-              { width: stageButtonSize, height: stageButtonSize }
-            ]}
-            onPress={onAddPhotos}
-          >
-            {adding ? <ActivityIndicator color="#0f172a" /> : <Text style={styles.addPhotoTileText}>+</Text>}
-          </Pressable>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            scrollEnabled={drag.session.lifecycle !== "dragging"}
-            contentContainerStyle={styles.stagingPhotosRow}
-          >
-            {stagingPhotos.map((photo) => {
-              const isDragging = drag.session.payload?.dragType === "gallery-photo" && drag.session.payload.itemId === photo.id;
-              const galleryPanHandlers = createLongPressDragHandlers({
-                onTap: () => onPhotoPress(photo.id),
-                onBeginDrag: (point) => startPhotoDrag(photo.id, photo.uri, point)
-              });
-              return (
-                <Pressable
-                  key={photo.id}
-                  ref={(node) => {
-                    galleryPhotoRefs.current[photo.id] = node;
-                  }}
-                  collapsable={false}
-                  {...galleryPanHandlers}
-                  style={[styles.stagingTile, galleryDeletePhotoId === photo.id ? styles.thumbCardSelected : null, isDragging ? styles.thumbCardDragging : null]}
-                >
-                  <Image source={{ uri: photo.uri }} style={styles.thumbImage} />
-                  {hoveredTarget?.targetType === "gallery-photo" && hoveredTarget.targetPhotoId === photo.id ? (
-                    <View pointerEvents="none" style={styles.gallerySwapTarget} />
-                  ) : null}
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-          </View>
-        </View>
-
-        <View style={[styles.pageRailSection, { paddingBottom: Math.max(insets.bottom + 64, 84) }]}>
-          <View style={styles.pageRail}>
-          {/* Page reorder is owned by DraggableFlatList. Other editor drags still use the custom drag controller. */}
-          <DraggableFlatList
-            data={pageRailData}
-            horizontal
-            activationDistance={8}
-            autoscrollSpeed={220}
-            dragItemOverflow={false}
-            animationConfig={{
-              damping: 26,
-              mass: 0.22,
-              stiffness: 240,
-              overshootClamping: true
-            }}
-            containerStyle={styles.pageRailList}
-            contentContainerStyle={styles.pageRailRow}
-            keyExtractor={(item) => item.id}
-            showsHorizontalScrollIndicator={false}
-            ItemSeparatorComponent={() => <View style={styles.pageRailSeparator} />}
-            ListFooterComponentStyle={styles.pageRailFooter}
-            onDragBegin={() => {
-              setPageRailDragging(true);
-            }}
-            onRelease={() => {
-              setPageRailDragging(false);
-            }}
-            onDragEnd={({ from, to, data }) => {
-              setPageRailData(data);
-              setPageRailDragging(false);
-              if (from === to) {
-                setPendingPageRailOrderKey(undefined);
-                return;
-              }
-              const movedSection = data[to];
-              if (!movedSection) {
-                setPendingPageRailOrderKey(undefined);
-                return;
-              }
-              setPendingPageRailOrderKey(sectionOrderKey(data));
-              reorderPageSection(memoryId, movedSection.id, to);
-            }}
-            renderPlaceholder={({ item }) => (
-              <View style={styles.pageRailItem}>
-                <View style={styles.pageRailCard}>
-                  <View
-                    style={[
-                      styles.pageRailPreview,
-                      styles.pageRailPlaceholderPreview,
-                      { backgroundColor: getSectionStyle(item.id).backgroundColor }
-                    ]}
-                  >
-                    <PageBackground
-                      backgroundAssetId={getSectionStyle(item.id).backgroundAssetId}
-                      backgroundColor={getSectionStyle(item.id).backgroundColor}
-                    />
-                  </View>
-                  <Text style={[styles.pageRailLabel, styles.pageRailLabelPlaceholder]}>Page</Text>
-                </View>
-              </View>
-            )}
-            renderItem={({ item, drag: beginPageReorder, isActive, getIndex }) => {
-              const renderedPage = renderedPageById[item.id];
-              const isSelected = item.id === activePageId;
-              const index = getIndex() ?? pageRailData.findIndex((section) => section.id === item.id);
-              return (
-                <View style={styles.pageRailItem}>
-                  <Pressable
-                    collapsable={false}
-                    delayLongPress={DRAG_HOLD_MS}
-                    onPress={() => {
-                      setSelection(item.id, undefined);
-                      setPhotoEditor(undefined);
-                    }}
-                    onLongPress={beginPageReorder}
-                    style={[
-                      styles.pageRailCard,
-                      isSelected && !pageRailDragging ? styles.pageRailCardActive : null,
-                      isActive ? styles.pageRailCardDragging : null
-                    ]}
-                  >
-                    <View
-                      style={[
-                        styles.pageRailPreview,
-                        isSelected ? styles.pageRailPreviewSelected : null,
-                        { backgroundColor: getSectionStyle(item.id).backgroundColor }
-                      ]}
-                    >
-                      <PageBackground
-                        backgroundAssetId={getSectionStyle(item.id).backgroundAssetId}
-                        backgroundColor={getSectionStyle(item.id).backgroundColor}
-                      />
-                      {renderedPage?.slots.slice(0, 4).map((slot) => (
-                        <View
-                          key={slot.id}
-                          style={[
-                            styles.pageRailPreviewBlock,
-                            {
-                              left: `${slot.frame.x * 100}%`,
-                              top: `${slot.frame.y * 100}%`,
-                              width: `${slot.frame.width * 100}%`,
-                              height: `${slot.frame.height * 100}%`
-                            }
-                          ]}
-                        />
-                      ))}
-                    </View>
-                    <Text style={[styles.pageRailLabel, isSelected ? styles.pageRailLabelActive : null]}>
-                      Page {(index >= 0 ? index : 0) + 1}
-                    </Text>
-                  </Pressable>
-                </View>
-              );
-            }}
-            ListFooterComponent={
-              <View style={styles.pageRailItem}>
-                <Pressable style={[styles.pageRailCard, styles.pageRailAddCard]} onPress={onAddPage}>
-                  <View style={[styles.pageRailPreview, styles.pageRailAddPreview]}>
-                    <Text style={styles.pageRailAddText}>+</Text>
-                  </View>
-                  <Text style={styles.pageRailLabel}>Add Page</Text>
-                </Pressable>
-              </View>
-            }
-          />
-          </View>
-        </View>
 
         {photos.length === 0 ? (
           <Text style={styles.empty}>No photos in this memory yet. Use Add Photos to begin.</Text>
@@ -2124,10 +2188,10 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    paddingHorizontal: 20,
-    paddingTop: 18,
+    paddingHorizontal: 12,
+    paddingTop: 12,
     paddingBottom: 12,
-    gap: 18
+    gap: 10
   },
   containerWithFloatingActions: {
     paddingBottom: 180
@@ -2251,20 +2315,20 @@ const styles = StyleSheet.create({
   },
   pageCard: {
     position: "relative",
-    backgroundColor: "#101a2d",
-    borderWidth: 1,
-    borderColor: "#20304d",
-    borderRadius: 26,
-    padding: 16,
+    backgroundColor: "transparent",
+    borderWidth: 0,
+    borderColor: "transparent",
+    borderRadius: 0,
+    padding: 0,
     shadowColor: "#000000",
-    shadowOpacity: 0.22,
-    shadowRadius: 14,
+    shadowOpacity: 0,
+    shadowRadius: 0,
     shadowOffset: { width: 0, height: 8 },
-    elevation: 8
+    elevation: 0
   },
   activePageCard: {
     alignSelf: "center",
-    paddingBottom: 18
+    paddingBottom: 0
   },
   pageInsertMarker: {
     alignSelf: "center",
@@ -2327,18 +2391,15 @@ const styles = StyleSheet.create({
     gap: 10,
     marginBottom: 8
   },
-  composerBar: {
-    marginTop: 8,
+  toolTray: {
+    marginTop: 8
+  },
+  toolRail: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    borderRadius: 30,
-    borderWidth: 1,
-    borderColor: "#20304d",
-    backgroundColor: "#10192c"
+    gap: 10,
+    paddingHorizontal: 2,
+    paddingVertical: 4
   },
   textCompactToolbarShell: {
     marginTop: 12,
@@ -2460,8 +2521,8 @@ const styles = StyleSheet.create({
   },
   pageDeleteCornerButton: {
     position: "absolute",
-    top: 12,
-    right: 12,
+    top: 8,
+    right: 6,
     width: 42,
     height: 42,
     borderRadius: 21,
@@ -2473,9 +2534,9 @@ const styles = StyleSheet.create({
     zIndex: 30
   },
   iconOrb: {
-    width: 64,
-    height: 72,
-    borderRadius: 36,
+    width: 72,
+    height: 68,
+    borderRadius: 34,
     borderWidth: 1,
     borderColor: "#243452",
     backgroundColor: "#1a2740",
@@ -2486,81 +2547,37 @@ const styles = StyleSheet.create({
     borderColor: "#2f80ff",
     backgroundColor: "#22385e"
   },
-  iconOrbGraphic: {
-    width: 28,
-    height: 28,
-    position: "relative"
-  },
-  layoutGlyphBlock: {
-    position: "absolute",
-    borderRadius: 3,
-    backgroundColor: "#f8fbff"
-  },
-  textGlyphLine: {
-    position: "absolute",
-    left: 1,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: "#f8fbff"
-  },
-  borderGlyphFrame: {
-    position: "absolute",
-    inset: 1,
-    borderRadius: 8,
-    borderWidth: 2,
-    borderColor: "#f8fbff",
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  borderGlyphInner: {
-    width: 12,
-    height: 8,
-    borderRadius: 3,
-    backgroundColor: "rgba(248, 251, 255, 0.2)"
-  },
-  backgroundGlyphBack: {
-    position: "absolute",
-    left: 2,
-    top: 6,
-    width: 18,
-    height: 18,
-    borderRadius: 5,
-    backgroundColor: "#2f80ff"
-  },
-  backgroundGlyphFront: {
-    position: "absolute",
-    right: 0,
-    top: 0,
-    width: 18,
-    height: 18,
-    borderRadius: 5,
-    backgroundColor: "#f0b54a",
-    borderWidth: 1,
-    borderColor: "#f8fbff"
-  },
   iconOrbLabel: {
     marginTop: 6,
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: "700",
     color: "#d6e0f6",
     textAlign: "center",
-    maxWidth: 62
+    maxWidth: 68
   },
   iconOrbLabelActive: {
     color: "#ffffff"
   },
   inspectorArea: {
     justifyContent: "center",
-    marginTop: 14,
-    marginBottom: 6,
+    marginTop: 8,
+    marginBottom: 0,
     borderRadius: 20,
     borderWidth: 1,
     borderColor: "#20304d",
     backgroundColor: "#10192c",
-    padding: 14
+    padding: 12,
+    overflow: "hidden"
   },
   backgroundInspectorArea: {
-    maxHeight: 238
+    maxHeight: 320
+  },
+  layoutPickerScroll: {
+    flexGrow: 0
+  },
+  layoutPicker: {
+    gap: 14,
+    paddingBottom: 4
   },
   templateRow: {
     gap: 10,
@@ -2584,8 +2601,8 @@ const styles = StyleSheet.create({
     color: "#d6e0f6"
   },
   templateMiniCard: {
-    width: 72,
-    height: 72,
+    width: 90,
+    height: 90,
     borderRadius: 0,
     backgroundColor: "#0f182a",
     position: "relative",
@@ -2641,6 +2658,30 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 10
+  },
+  shapeRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8
+  },
+  shapeChoice: {
+    minWidth: 58,
+    height: 34,
+    borderWidth: 2,
+    borderColor: "#2a3b5d",
+    backgroundColor: "#18243b",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 10
+  },
+  shapeChoiceActive: {
+    borderColor: "#38bdf8",
+    backgroundColor: "#22385e"
+  },
+  shapeChoiceText: {
+    color: "#eef4ff",
+    fontWeight: "700",
+    fontSize: 12
   },
   backgroundPicker: {
     gap: 14,
@@ -2719,10 +2760,10 @@ const styles = StyleSheet.create({
     position: "relative",
     borderRadius: 0,
     overflow: "hidden",
-    marginBottom: 14
+    marginBottom: 0
   },
   primaryCanvasWrap: {
-    marginTop: 4
+    marginTop: 0
   },
   slotFrameWrap: {
     position: "absolute"
@@ -2792,8 +2833,9 @@ const styles = StyleSheet.create({
     zIndex: 30
   },
   slotDropTarget: {
-    borderColor: "#2563eb",
-    borderWidth: 3
+    borderColor: "#38bdf8",
+    borderWidth: 5,
+    backgroundColor: "rgba(56, 189, 248, 0.2)"
   },
   slotDragging: {
     opacity: 0.32
@@ -2879,15 +2921,18 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    padding: 14,
-    borderRadius: 22,
-    backgroundColor: "#10192c",
-    borderWidth: 1,
-    borderColor: "#20304d"
+    padding: 0,
+    borderRadius: 0,
+    backgroundColor: "transparent",
+    borderWidth: 0,
+    borderColor: "transparent"
   },
   stagingStripActive: {
-    borderColor: "#2f80ff",
-    borderWidth: 2
+    borderColor: "#38bdf8",
+    borderWidth: 4,
+    borderRadius: 18,
+    backgroundColor: "rgba(56, 189, 248, 0.14)",
+    padding: 6
   },
   stagingBlock: {
     marginTop: 4,
@@ -2907,8 +2952,8 @@ const styles = StyleSheet.create({
     alignItems: "center"
   },
   stagingTile: {
-    width: 76,
-    height: 76,
+    width: 92,
+    height: 92,
     borderRadius: 14,
     overflow: "hidden",
     backgroundColor: "#17233b",
@@ -2922,9 +2967,9 @@ const styles = StyleSheet.create({
     borderStyle: "dashed"
   },
   removePhotoTileActive: {
-    borderColor: "#2f80ff",
-    borderWidth: 3,
-    backgroundColor: "#22385e"
+    borderColor: "#38bdf8",
+    borderWidth: 4,
+    backgroundColor: "#0f2f4a"
   },
   addPhotoTileText: {
     fontSize: 28,
@@ -2954,9 +2999,9 @@ const styles = StyleSheet.create({
   gallerySwapTarget: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: 14,
-    borderWidth: 3,
-    borderColor: "#2f80ff",
-    backgroundColor: "rgba(47, 128, 255, 0.18)"
+    borderWidth: 5,
+    borderColor: "#38bdf8",
+    backgroundColor: "rgba(56, 189, 248, 0.22)"
   },
   thumbImage: {
     width: "100%",
@@ -2972,7 +3017,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#14b8a6"
   },
   pageRail: {
-    paddingVertical: 4
+    paddingVertical: 0
   },
   pageRailSection: {
     marginTop: "auto",
@@ -2994,13 +3039,13 @@ const styles = StyleSheet.create({
     marginLeft: 12
   },
   pageRailItem: {
-    width: 92,
+    width: 128,
     alignItems: "center",
     justifyContent: "flex-end"
   },
   pageRailCard: {
-    width: 92,
-    minHeight: 96,
+    width: 128,
+    minHeight: 124,
     alignItems: "center"
   },
   pageRailCardDragging: {
@@ -3014,8 +3059,8 @@ const styles = StyleSheet.create({
     transform: [{ translateY: -4 }]
   },
   pageRailPreview: {
-    width: 92,
-    height: 72,
+    width: 128,
+    height: 96,
     borderRadius: 0,
     position: "relative",
     overflow: "hidden",
@@ -3024,7 +3069,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#17233b"
   },
   pageRailPreviewSelected: {
-    borderColor: "#2f80ff"
+    borderColor: "#38bdf8",
+    borderWidth: 3
   },
   pageRailPlaceholderPreview: {
     opacity: 0.28,
@@ -3040,6 +3086,10 @@ const styles = StyleSheet.create({
     position: "absolute",
     backgroundColor: "rgba(191, 205, 228, 0.4)",
     borderRadius: 0
+  },
+  pageRailPreviewPhoto: {
+    position: "absolute",
+    backgroundColor: "#e2e8f0"
   },
   pageRailAddText: {
     fontSize: 28,

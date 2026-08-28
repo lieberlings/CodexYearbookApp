@@ -1067,6 +1067,7 @@ export function AppProvider({ children }: PropsWithChildren) {
           textAlign: initial?.textAlign ?? "center",
           borderWidth: initial?.borderWidth ?? 0,
           borderColor: initial?.borderColor ?? "#0f172a",
+          cornerRadius: initial?.cornerRadius ?? 0,
           fillColor: initial?.fillColor ?? "#ffffff",
           fillOpacity: initial?.fillOpacity ?? 0,
           autoSize: initial?.autoSize ?? true

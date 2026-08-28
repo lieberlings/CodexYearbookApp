@@ -15,6 +15,13 @@ type OverlayAnimation = {
   opacity: Animated.Value;
 };
 
+function getPreviewCenterPoint(payload: DragPayload, point: Point, grabOffset: Point): Point {
+  return {
+    x: point.x - grabOffset.x + payload.sourceRect.width / 2,
+    y: point.y - grabOffset.y + payload.sourceRect.height / 2
+  };
+}
+
 export function useDragInteraction(options: UseDragInteractionOptions) {
   const [session, setSession] = useState<DragSession>({ lifecycle: "idle" });
   const sessionRef = useRef<DragSession>({ lifecycle: "idle" });
@@ -62,7 +69,8 @@ export function useDragInteraction(options: UseDragInteractionOptions) {
       y: point.y - active.grabOffset.y
     });
     const targets = options.getTargets();
-    const hoveredTarget = resolveHoverTarget(active.payload, point, targets, active.hoveredTarget);
+    const hoverPoint = getPreviewCenterPoint(active.payload, point, active.grabOffset);
+    const hoveredTarget = resolveHoverTarget(active.payload, hoverPoint, targets, active.hoveredTarget);
     updateSession({
       ...active,
       currentPoint: point,
@@ -118,8 +126,8 @@ export function useDragInteraction(options: UseDragInteractionOptions) {
     if (active.lifecycle !== "dragging" || !active.payload) {
       return;
     }
-    const finalTarget = active.currentPoint
-      ? resolveHoverTarget(active.payload, active.currentPoint, options.getTargets())
+    const finalTarget = active.currentPoint && active.grabOffset
+      ? resolveHoverTarget(active.payload, getPreviewCenterPoint(active.payload, active.currentPoint, active.grabOffset), options.getTargets())
       : active.hoveredTarget;
     const resolution = resolveDropAction(active.payload, finalTarget);
     if (resolution.action === "cancel") {

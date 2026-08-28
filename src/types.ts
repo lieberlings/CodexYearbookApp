@@ -64,6 +64,7 @@ export type PageTextBox = {
   textAlign?: TextBoxAlignment;
   borderWidth?: number;
   borderColor?: string;
+  cornerRadius?: number;
   fillColor?: string;
   fillOpacity?: number;
   autoSize?: boolean;

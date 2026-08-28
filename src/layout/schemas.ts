@@ -38,6 +38,7 @@ export const PageTextBoxSchema = z.object({
   textAlign: TextBoxAlignmentSchema.optional(),
   borderWidth: z.number().min(0).max(24).optional(),
   borderColor: z.string().optional(),
+  cornerRadius: z.number().min(0).max(48).optional(),
   fillColor: z.string().optional(),
   fillOpacity: z.number().min(0).max(1).optional(),
   autoSize: z.boolean().optional()
