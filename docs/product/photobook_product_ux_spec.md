@@ -12,6 +12,16 @@ The app should help users create a photobook by:
 
 The MVP should not expose project-level photo management or debug image-analysis tools in the normal user experience.
 
+## Current product stance
+As of 2026-09-02, the product direction is no longer just a reset proposal. The app should be treated as being in the memory-first MVP implementation phase.
+
+The product should protect these shipped/partly shipped assumptions:
+- suggested memory candidates are temporary until accepted
+- accepting a suggestion is a review-and-select workflow, not a bulk import
+- manual memory and theme imports are explicit user choices through picker flows
+- debug/photo-analysis affordances belong behind development access
+- theme pages may be implemented as collection-style memories with theme metadata until a separate model is clearly needed
+
 ## Primary user promise
 The app helps users create a meaningful photobook with less effort, while keeping the user in control.
 
@@ -121,6 +131,8 @@ The app should not automatically import all theme search results.
 
 Theme picker imports are manual user selections. They may not include GPS/location metadata from Android Photo Picker results. Location-aware suggestions should come from the separate on-device MediaLibrary scan path, not from theme picker imports.
 
+For MVP, a theme page can be represented as a collection memory with `themeLabel` and `themeTags` if that keeps editing, export, and finalization simple. The user-facing promise matters more than a separate storage entity.
+
 ### 6. Finalization
 Finalization helps the user finish the book.
 
@@ -144,6 +156,8 @@ The normal user workflow should not require or expose project-level photo pools.
 Suggested memory photos and theme picker results are not project photos until the user accepts/selects them.
 
 Suggested memory candidates should be generated from MediaLibrary/canonical asset metadata where available. Manual Photo Picker imports may be picker-fallback photos and should not be treated as the source of truth for future GPS-based suggestion clustering.
+
+Acceptance should preserve control: users can accept the idea of a suggested memory while still choosing which candidate photos enter the memory.
 
 ### User control
 No automatic memory/page creation without review.

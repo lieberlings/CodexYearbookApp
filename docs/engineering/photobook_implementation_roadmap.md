@@ -20,7 +20,7 @@ The MVP roadmap now prioritizes:
 
 ### Internal entities
 - LibraryScanCandidate
-- CandidatePhotoRef
+- SuggestionCandidatePhotoRef
 - SuggestedMemoryCandidate
 - ThemePhotoSelection
 
@@ -29,6 +29,23 @@ The MVP roadmap now prioritizes:
 - cluster inspector
 - media-library probe tools
 - raw ML Kit label/face debug output
+
+## Status as of 2026-09-02
+
+### Implemented or partly implemented
+- Project and memory records include timeline, assist/style, finalization, memory kind, status, and theme metadata.
+- `SuggestionCandidatePhotoRef` exists for MediaLibrary-backed temporary suggestion candidates.
+- `scanMediaLibrarySuggestionsForProject` scans local MediaLibrary assets by project bounds, builds temporary refs, runs the project cluster engine, and creates event suggestions without importing photos.
+- Suggestion upsert/status helpers preserve non-new lifecycle state across repeated scans and clear dismissed candidate refs.
+- Android Photo Picker integration exists for explicit manual memory/theme imports and records picker-fallback metadata.
+- Dev analysis, cluster, and MediaLibrary probe surfaces are guarded through `DEV_TOOLS_ENABLED`.
+
+### Product-critical gaps
+- Accepted suggestion flow still needs a complete review/select/import step that copies only selected candidate assets into `PhotoItem` records for the created memory.
+- Scan cadence fields such as `scanInterval` and `lastScanAt` are not yet part of `Project`.
+- Theme pages are represented by collection-style memories; this is acceptable for MVP, but the create/add-to-existing flow should stay user-led.
+- Finalization should be reconciled so it only works from accepted memory/theme content, not raw project-pool assumptions.
+- Legacy/internal project-level photo import APIs still exist and should remain hidden from normal UX unless used for migration or dev support.
 
 ## Phase 1 — MVP UI reset
 
@@ -58,6 +75,8 @@ Normal users do not see:
 - raw face metadata
 - probe buttons
 - project photo management
+
+Status: largely implemented. Keep auditing new project-screen controls so project-pool, inspector, cluster, and probe concepts remain dev-only.
 
 ## Phase 2 — On-device library scan for suggested memories
 
@@ -102,6 +121,8 @@ SuggestedMemory candidates with:
 - on reject, discard candidate refs
 - preserve stable suggestion ids across repeated scans
 
+Status: scanner and temporary ref generation are implemented. Remaining work is the user-reviewed candidate selection/import step on acceptance and broader device validation.
+
 ## Phase 3 — Ongoing and hybrid scan behavior
 
 ### Goal
@@ -118,6 +139,8 @@ Make ongoing and hybrid projects useful without depending on unreliable backgrou
 - scan on project open when interval elapsed
 - record lastScanAt
 - dedupe against accepted/rejected/snoozed suggestions
+
+Status: manual scan behavior exists; interval persistence and project-open cadence remain to be added.
 
 ### Deferred
 - true background scanning
@@ -153,6 +176,8 @@ Fallback:
 - preserve highest available/original-quality source
 - record source metadata available from the picker
 - do not require GPS/canonical MediaStore ids for manual Photo Picker imports
+
+Status: Android picker integration and picker-fallback metadata exist. Complete the product flow as create-new-theme/add-to-existing collection memory, unless a separate `ThemePage` entity becomes necessary.
 
 ### Metadata note
 Android Photo Picker imports are the preferred manual memory/theme UX because search highlighting helps users find photos. On tested Android providers, Photo Picker URIs may reject unredacted EXIF/GPS reads even when `ACCESS_MEDIA_LOCATION` is granted and `MediaStore.setRequireOriginal()` is requested. GPS-dependent features should therefore use the MediaLibrary-backed scan path in Phase 2.
@@ -199,11 +224,13 @@ These should not block the MVP.
 
 ### Do
 - keep memory editor stable
-- use temporary library candidate refs
+- use temporary MediaLibrary candidate refs for suggested memories
 - keep accepted photos as memory/theme photos
 - keep scans scoped to project settings
 - preserve canonical media resolver work
 - preserve Android GPS handling for MediaLibrary-backed scans
+- preserve suggestion lifecycle state across scans
+- keep project-level photo APIs internal/legacy unless deliberately promoted
 
 ### Do not
 - expose project photo pool as normal UX
@@ -212,3 +239,4 @@ These should not block the MVP.
 - depend on cloud Google Photos full-library scanning
 - require full image analysis for suggested memories
 - expand debug tooling in normal UX
+- require Photo Picker imports to provide GPS or canonical MediaStore asset ids

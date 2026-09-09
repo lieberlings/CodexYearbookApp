@@ -6,6 +6,25 @@ Photobook app — memory-first MVP reset
 ## Milestone
 MVP Reset — memory-level editing, on-device suggested memories, and user-led theme pages
 
+## Status as of 2026-09-02
+The reset is now partly implemented and should be treated as the active governing direction, not just a proposal.
+
+Already present:
+- memory-first project and memory flows
+- project timeline, assist/style, and finalization metadata
+- `SuggestionCandidatePhotoRef` for temporary MediaLibrary-backed suggestion candidates
+- MediaLibrary suggestion scanning through `scanMediaLibrarySuggestionsForProject`
+- persisted suggestion lifecycle state for new, watching, snoozed, dismissed, and accepted suggestions
+- Android Photo Picker support for explicit manual imports with picker-fallback metadata
+- dev-only boundaries for analysis, probe, and cluster tools
+
+Current priority gaps:
+- complete the accepted-suggestion review/select/import flow so only chosen candidate photos become memory `PhotoItem`s
+- add scan interval and `lastScanAt` persistence for ongoing/hybrid projects
+- finish user-led theme-page create/add-to-existing behavior using collection-style memories unless a separate model becomes necessary
+- align finalization with accepted memory/theme content only
+- keep project-level photo import APIs internal/legacy rather than normal UX
+
 ## Why this reset exists
 The app has grown into an advanced prototype with project-level photo pools, image-analysis inspectors, native ML Kit experiments, cluster inspectors, project-photo intake, and several overlapping suggestion systems.
 
@@ -110,6 +129,8 @@ Suggested memory flow:
 6. selected photos are imported into a normal memory
 7. rejected suggestion candidate photos are discarded unless already used elsewhere
 
+Accepting a suggestion means accepting the proposed memory, not importing every candidate photo automatically. The user-reviewed candidate selection step is required before candidate refs become `PhotoItem`s.
+
 ### Suggested theme pages
 Theme pages are user-led, not fully automatic.
 
@@ -145,6 +166,8 @@ If search highlighting is unavailable on a device, fall back to:
 Theme pages should not depend on unattended full-library cloud scanning.
 
 Theme Photo Picker selections are explicit user imports. They may be stored as picker-fallback photos without GPS or canonical MediaLibrary asset ids. This is acceptable because GPS is only needed for suggestion scanning, not manual theme creation.
+
+For MVP implementation, theme pages may remain collection-style memories with `themeLabel` and `themeTags`. Introduce a separate `ThemePage` entity only if the user-facing workflow or finalization model needs a distinct storage boundary.
 
 ### Cloud photo sources
 MVP event scanning is limited to the on-device media library.
@@ -199,7 +222,7 @@ Finalization may help users:
 ### Introduce or emphasize
 - `LibraryScanCandidate`
 - `SuggestedMemory`
-- `CandidatePhotoRef`
+- `SuggestionCandidatePhotoRef`
 - `ThemePage`
 - `ThemePhotoSelection`
 
@@ -270,6 +293,11 @@ Tasks:
 
 Use MediaLibrary/canonical metadata for this phase. Do not rely on Android Photo Picker imports for GPS or stable asset ids.
 
+Current state:
+- scanner and temporary candidate refs exist
+- repeated scan upserts preserve explicit lifecycle state
+- accepted-suggestion candidate selection/import remains the next product-critical implementation step
+
 ### Phase 3 — Ongoing/hybrid scan interval
 Goal:
 Make ongoing projects useful without heavy background infrastructure.
@@ -280,6 +308,10 @@ Tasks:
 - trigger scans manually and on project open
 - respect rejected/snoozed/accepted suggestions
 - avoid duplicates
+
+Current state:
+- manual scanning exists
+- `scanInterval` and `lastScanAt` still need to be added to the project model and persistence flow
 
 ### Phase 4 — Theme page picker/search
 Goal:
@@ -293,6 +325,10 @@ Tasks:
 - preserve highest available quality
 - record dimensions and picker-available source metadata
 - allow picker-fallback imports without GPS metadata
+
+Current state:
+- Android Photo Picker path exists
+- theme pages should be completed as user-led collection-memory creation/addition before adding a separate model
 
 ### Phase 5 — Finalization cleanup
 Goal:
