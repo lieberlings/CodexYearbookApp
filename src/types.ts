@@ -71,6 +71,8 @@ export type PageTextBox = {
 };
 
 export type MemoryPageSection = {
+  exportToFolder?: boolean;
+  exportFolderName?: string;
   id: string;
   memoryId: string;
   order: number;

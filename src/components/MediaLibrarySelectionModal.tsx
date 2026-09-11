@@ -202,7 +202,7 @@ export function MediaLibrarySelectionModal({
                 <Text style={styles.subtitle}>{subtitle}</Text>
               </View>
               <Pressable style={styles.closeButton} onPress={onClose} disabled={confirming}>
-                <Ionicons name="close" size={22} color="#eef4ff" />
+                <Ionicons name="close" size={22} color="#4A4239" />
               </Pressable>
             </View>
 
@@ -226,7 +226,7 @@ export function MediaLibrarySelectionModal({
 
               {choicesBusy && choices.length === 0 ? (
                 <View style={styles.emptyCard}>
-                  <ActivityIndicator color="#7fa7ff" />
+                  <ActivityIndicator color="#6B5BD2" />
                   <Text style={styles.emptyTitle}>Loading Media Library assets</Text>
                   <Text style={styles.emptyText}>Fetching recent photo assets for canonical project and memory imports.</Text>
                 </View>
@@ -245,7 +245,7 @@ export function MediaLibrarySelectionModal({
                         >
                           {thumbnailFailed ? (
                             <View style={styles.thumbnailFallback}>
-                              <Ionicons name="image-outline" size={30} color="#6d82aa" />
+                              <Ionicons name="image-outline" size={30} color="#6B6156" />
                               <Text numberOfLines={2} style={styles.thumbnailFallbackText}>
                                 Preview unavailable
                               </Text>
@@ -286,7 +286,7 @@ export function MediaLibrarySelectionModal({
                         disabled={choicesBusy || confirming}
                       >
                         {choicesBusy ? (
-                          <ActivityIndicator color="#eef4ff" />
+                          <ActivityIndicator color="#4A4239" />
                         ) : (
                           <Text style={styles.loadMoreButtonText}>Load More</Text>
                         )}
@@ -296,7 +296,7 @@ export function MediaLibrarySelectionModal({
                 </>
               ) : (
                 <View style={styles.emptyCard}>
-                  <Ionicons name="albums-outline" size={30} color="#5d7097" />
+                  <Ionicons name="albums-outline" size={30} color="#6B6156" />
                   <Text style={styles.emptyTitle}>No Media Library assets ready</Text>
                   <Text style={styles.emptyText}>
                     {choicesError ??
@@ -315,7 +315,7 @@ export function MediaLibrarySelectionModal({
                     onPress={() => void submitSelection()}
                     disabled={selectedIds.length === 0 || confirming}
                   >
-                    {confirming ? <ActivityIndicator color="#eef4ff" /> : <Text style={styles.primaryButtonText}>{confirmLabel}</Text>}
+                    {confirming ? <ActivityIndicator color="#4A4239" /> : <Text style={styles.primaryButtonText}>{confirmLabel}</Text>}
                   </Pressable>
                 ) : null}
                 <Pressable style={styles.secondaryButton} onPress={onClose} disabled={confirming}>
@@ -345,8 +345,8 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     borderWidth: 1,
-    borderColor: "#20304d",
-    backgroundColor: "#0d1526",
+    borderColor: "#E8DFD2",
+    backgroundColor: "#F3EBDE",
     paddingHorizontal: 18,
     paddingTop: 18
   },
@@ -362,12 +362,12 @@ const styles = StyleSheet.create({
     gap: 8
   },
   title: {
-    color: "#f8fbff",
+    color: "#241F1B",
     fontSize: 20,
     fontWeight: "800"
   },
   subtitle: {
-    color: "#90a4cc",
+    color: "#6B6156",
     fontSize: 13,
     lineHeight: 20
   },
@@ -377,7 +377,7 @@ const styles = StyleSheet.create({
     borderRadius: 21,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#15213a"
+    backgroundColor: "#F3EBDE"
   },
   content: {
     gap: 16,
@@ -387,7 +387,7 @@ const styles = StyleSheet.create({
     gap: 10
   },
   sectionTitle: {
-    color: "#dfe8fb",
+    color: "#4A4239",
     fontSize: 14,
     fontWeight: "800",
     letterSpacing: 0.3,
@@ -396,26 +396,26 @@ const styles = StyleSheet.create({
   sectionBody: {
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#20304d",
-    backgroundColor: "#101a2d",
+    borderColor: "#E8DFD2",
+    backgroundColor: "#FFFFFF",
     overflow: "hidden"
   },
   fieldRow: {
     paddingHorizontal: 14,
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#223456",
+    borderBottomColor: "#E8DFD2",
     gap: 6
   },
   fieldLabel: {
-    color: "#88a0cb",
+    color: "#6B6156",
     fontSize: 11,
     fontWeight: "800",
     letterSpacing: 0.4,
     textTransform: "uppercase"
   },
   fieldValue: {
-    color: "#eef4ff",
+    color: "#4A4239",
     fontSize: 14,
     lineHeight: 20
   },
@@ -424,19 +424,19 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     borderWidth: 1,
     borderStyle: "dashed",
-    borderColor: "#304465",
-    backgroundColor: "#111a2c",
+    borderColor: "#E8DFD2",
+    backgroundColor: "#F3EBDE",
     alignItems: "center",
     gap: 12
   },
   emptyTitle: {
-    color: "#eef4ff",
+    color: "#4A4239",
     fontSize: 16,
     fontWeight: "800",
     textAlign: "center"
   },
   emptyText: {
-    color: "#8ea3ca",
+    color: "#6B6156",
     fontSize: 13,
     lineHeight: 20,
     textAlign: "center"
@@ -452,11 +452,11 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "#24385f",
-    backgroundColor: "#14223a"
+    borderColor: "#E8DFD2",
+    backgroundColor: "#F3EBDE"
   },
   gridItemSelected: {
-    borderColor: "#2f80ff",
+    borderColor: "#6B5BD2",
     borderWidth: 2
   },
   gridImage: {
@@ -469,10 +469,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 8,
     paddingHorizontal: 10,
-    backgroundColor: "#101a2d"
+    backgroundColor: "#FFFFFF"
   },
   thumbnailFallbackText: {
-    color: "#9eb0d3",
+    color: "#6B6156",
     fontSize: 12,
     fontWeight: "700",
     textAlign: "center"
@@ -484,16 +484,16 @@ const styles = StyleSheet.create({
     bottom: 10,
     minHeight: 36,
     borderRadius: 999,
-    backgroundColor: "rgba(31, 78, 158, 0.92)",
+    backgroundColor: "rgba(251, 246, 238, 0.93)",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 12
   },
   badgeSelected: {
-    backgroundColor: "rgba(28, 129, 84, 0.95)"
+    backgroundColor: "rgba(107, 91, 210, 0.95)"
   },
   badgeText: {
-    color: "#eef4ff",
+    color: "#4A4239",
     fontSize: 13,
     fontWeight: "800"
   },
@@ -510,7 +510,7 @@ const styles = StyleSheet.create({
     alignItems: "center"
   },
   catalogFooterText: {
-    color: "#8ea3ca",
+    color: "#6B6156",
     fontSize: 12,
     fontWeight: "700",
     textAlign: "center"
@@ -518,15 +518,15 @@ const styles = StyleSheet.create({
   loadMoreButton: {
     minHeight: 42,
     borderRadius: 999,
-    backgroundColor: "#172a48",
+    backgroundColor: "#F3EBDE",
     borderWidth: 1,
-    borderColor: "#2d4f82",
+    borderColor: "#E8DFD2",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 18
   },
   loadMoreButtonText: {
-    color: "#eef4ff",
+    color: "#4A4239",
     fontSize: 13,
     fontWeight: "800"
   },
@@ -534,7 +534,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     minHeight: 44,
     borderRadius: 999,
-    backgroundColor: "#2f80ff",
+    backgroundColor: "#6B5BD2",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 18
@@ -543,7 +543,7 @@ const styles = StyleSheet.create({
     opacity: 0.6
   },
   primaryButtonText: {
-    color: "#eef4ff",
+    color: "#4A4239",
     fontSize: 14,
     fontWeight: "800"
   },
@@ -553,12 +553,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#23121a",
+    backgroundColor: "#F3EBDE",
     borderWidth: 1,
-    borderColor: "#703043"
+    borderColor: "#E8DFD2"
   },
   secondaryButtonText: {
-    color: "#ffb8c3",
+    color: "#6B6156",
     fontSize: 14,
     fontWeight: "800"
   }

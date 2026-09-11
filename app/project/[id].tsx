@@ -21,6 +21,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MediaLibrarySelectionModal } from "../../src/components/MediaLibrarySelectionModal";
 import { useAppData } from "../../src/context/AppContext";
 import { formatPhotoLocation, normalizePhotoLocation } from "../../src/lib/photoLocation";
+import { exportProjectPhotosToZip, sharePhotoZip } from "../../src/services/photoZipExportService";
 import { exportProjectToPdf, sharePdf } from "../../src/services/exportService";
 import { detectPhotoFacesHeuristic } from "../../src/services/faceDetectionService";
 import { detectFacesLocally, NativeFaceDetectionResult } from "../../src/services/nativeFaceDetection";
@@ -124,7 +125,7 @@ function prioritizePrimary(photos: PhotoItem[], primaryPhotoId?: string): PhotoI
 }
 
 function formatProjectStats(memoryCount: number, photoCount: number, pageCount: number): string {
-  return `${pluralize(memoryCount, "Memory")} | ${pluralize(photoCount, "Photo")} | ${pluralize(pageCount, "Page")}`;
+  return `${pluralize(memoryCount, "Memory")} · ${pluralize(photoCount, "Photo")} · ${pluralize(pageCount, "Page")}`;
 }
 
 function getMemoryKindLabel(kind: Memory["kind"]): string {
@@ -533,7 +534,7 @@ function MemoryCollagePreview({ photos, thumbnailUri }: { photos: PhotoItem[]; t
   if (photos.length === 0) {
     return (
       <View style={[styles.previewPanel, styles.previewEmpty]}>
-        <Ionicons name="images-outline" size={34} color="#6b7da7" />
+        <Ionicons name="images-outline" size={34} color="#6B6156" />
         <Text style={styles.previewEmptyText}>Add photos inside the memory</Text>
       </View>
     );
@@ -616,6 +617,7 @@ export default function ProjectDetailsScreen() {
   const slotOverridesByPage = useEditorStore((state) => state.slotOverridesByPage);
 
   const [exporting, setExporting] = useState(false);
+  const [zipProgress, setZipProgress] = useState<string | undefined>(undefined);
   const [addMenuVisible, setAddMenuVisible] = useState(false);
   const [projectMenuVisible, setProjectMenuVisible] = useState(false);
   const [composerVisible, setComposerVisible] = useState(false);
@@ -1457,6 +1459,34 @@ export default function ProjectDetailsScreen() {
     ]);
   }, [deleteProject, project]);
 
+  const onExportPhotos = useCallback(async (includeUnplacedPhotos: boolean) => {
+    if (!project || exporting) return;
+    try {
+      setExporting(true);
+      setZipProgress("Preparing photos...");
+      const result = await exportProjectPhotosToZip(project, memories, getPhotosByProjectId(project.id),
+        memories.flatMap((memory) => getPageSectionsByMemoryId(memory.id)), slotOverridesByPage,
+        ({ completed, total }) => setZipProgress(`Packing ${completed} of ${total}...`), includeUnplacedPhotos);
+      setZipProgress("Opening share sheet...");
+      await sharePhotoZip(result.uri);
+      Alert.alert("Photo ZIP prepared", `${result.exported} photo files packed. ${result.storedCopies} used stored copies; ${result.missing} were unavailable. See export-report.json inside the ZIP for details.`);
+    } catch (error) {
+      Alert.alert("Unable to export photos", (error as Error).message);
+    } finally {
+      setZipProgress(undefined);
+      setExporting(false);
+    }
+  }, [exporting, getPageSectionsByMemoryId, getPhotosByProjectId, memories, project, slotOverridesByPage]);
+
+  const choosePhotoExportScope = useCallback(() => {
+    if (exporting) return;
+    Alert.alert("Export project photos", "Include all photos, or only the photos currently shown on book pages?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Only photos on pages", onPress: () => void onExportPhotos(false) },
+      { text: "All photos", onPress: () => void onExportPhotos(true) }
+    ]);
+  }, [exporting, onExportPhotos]);
+
   const onOrderProject = useCallback(async () => {
     if (!project || exporting) {
       return;
@@ -2202,7 +2232,7 @@ export default function ProjectDetailsScreen() {
           </View>
           <Text style={styles.suggestionMessage}>{cluster.explanation}</Text>
           <Text style={styles.suggestionMeta}>
-            {formatClusterTimeRange(cluster)} | {pluralize(cluster.photoCount, "photo")} |{" "}
+            {formatClusterTimeRange(cluster)} · {pluralize(cluster.photoCount, "photo")} |{" "}
             {pluralize(cluster.bestPhotoIds.length, "best pick")}
           </Text>
           <Text style={styles.suggestionLifecycleNote}>{formatClusterLocation(cluster)}</Text>
@@ -2234,15 +2264,14 @@ export default function ProjectDetailsScreen() {
     [openAnalysisInspector, projectPhotos]
   );
 
-  const toolbarBottom = insets.bottom + 24;
-  const bottomToolbarHeight = insets.bottom + 102;
+  const bottomToolbarHeight = insets.bottom + 76;
   const composerCanSave = composerTitle.trim().length > 0 && !composerSaving;
 
   if (!project) {
     return (
       <View style={[styles.missingScreen, { paddingTop: insets.top + 24 }]}>
         <Stack.Screen options={{ headerShown: false }} />
-        <StatusBar style="light" />
+        <StatusBar style="dark" />
         <Text style={styles.missingTitle}>Project not found</Text>
         <Pressable style={styles.primaryAction} onPress={() => router.replace("/")}>
           <Text style={styles.primaryActionText}>Go Home</Text>
@@ -2254,11 +2283,11 @@ export default function ProjectDetailsScreen() {
   return (
     <View style={styles.screen}>
       <Stack.Screen options={{ headerShown: false }} />
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
 
       <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
         <Pressable style={styles.topIconButton} onPress={() => router.replace("/")}>
-          <Ionicons name="chevron-back" size={28} color="#f8fbff" />
+          <Ionicons name="chevron-back" size={28} color="#241F1B" />
         </Pressable>
         <View style={styles.topBarTextWrap}>
           <Text numberOfLines={1} style={styles.projectTitle}>
@@ -2267,7 +2296,7 @@ export default function ProjectDetailsScreen() {
           <Text style={styles.projectStats}>{projectStats.text}</Text>
         </View>
         <Pressable style={styles.topIconButton} onPress={onOpenProjectMenu}>
-          <Ionicons name="ellipsis-horizontal" size={24} color="#f8fbff" />
+          <Ionicons name="ellipsis-horizontal" size={24} color="#241F1B" />
         </Pressable>
       </View>
 
@@ -2279,11 +2308,23 @@ export default function ProjectDetailsScreen() {
           autoscrollThreshold={96}
           autoscrollSpeed={180}
           contentContainerStyle={{
-            paddingHorizontal: 20,
+            paddingHorizontal: 16,
             paddingTop: 8,
             paddingBottom: bottomToolbarHeight + 72
           }}
-          ItemSeparatorComponent={() => <View style={{ height: 18 }} />}
+          ItemSeparatorComponent={() => <View style={{ height: 14 }} />}
+          ListFooterComponent={
+            <Pressable style={styles.suggestionEntry} onPress={() => openProjectAddIntent("suggestions")}>
+              <Ionicons name="sparkles-outline" size={26} color="#6B5BD2" />
+              <View style={{ flex: 1, gap: 5 }}>
+                <Text style={styles.suggestionTitle}>
+                  {newSuggestions.length > 0 ? `${newSuggestions.length} suggested memories` : "Ideas from your photos"}
+                </Text>
+                <Text style={styles.suggestionMessage}>Find a few more stories for your book.</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#6B5BD2" />
+            </Pressable>
+          }
           ListHeaderComponent={
             <View style={styles.listHeader}>
               {DEV_TOOLS_ENABLED && devToolsExpanded ? (
@@ -2301,11 +2342,11 @@ export default function ProjectDetailsScreen() {
                 <Text style={styles.sectionHeading}>Project Photos</Text>
                 <View style={[styles.sectionHeaderActions, styles.sectionHeaderActionsFullWidth]}>
                   <Pressable style={styles.dismissedToggle} onPress={() => openAnalysisInspector()}>
-                    <Ionicons name="bug-outline" size={15} color="#9ab2dd" />
+                    <Ionicons name="bug-outline" size={15} color="#6B6156" />
                     <Text style={styles.dismissedToggleText}>Analysis Inspector</Text>
                   </Pressable>
                   <Pressable style={styles.dismissedToggle} onPress={openMediaLibraryPicker}>
-                    <Ionicons name="albums-outline" size={15} color="#9ab2dd" />
+                    <Ionicons name="albums-outline" size={15} color="#6B6156" />
                     <Text style={styles.dismissedToggleText}>Probe Media Asset</Text>
                   </Pressable>
                   <Pressable
@@ -2314,10 +2355,10 @@ export default function ProjectDetailsScreen() {
                     disabled={projectPhotoIntakeBusy}
                   >
                     {projectPhotoIntakeBusy ? (
-                      <ActivityIndicator color="#eef4ff" size="small" />
+                      <ActivityIndicator color="#4A4239" size="small" />
                     ) : (
                       <>
-                        <Ionicons name="images-outline" size={15} color="#eef4ff" />
+                        <Ionicons name="images-outline" size={15} color="#4A4239" />
                         <Text style={styles.scanButtonText}>Add Photos to Project</Text>
                       </>
                     )}
@@ -2328,7 +2369,7 @@ export default function ProjectDetailsScreen() {
                 Photos added here stay in the project pool without being assigned to a memory until you use them.
               </Text>
               <Text style={styles.suggestionSummary}>
-                {pluralize(projectPhotos.length, "project photo")} | {pluralize(unassignedProjectPhotos.length, "unassigned photo")}
+                {pluralize(projectPhotos.length, "project photo")} · {pluralize(unassignedProjectPhotos.length, "unassigned photo")}
               </Text>
               {project && project.timelineMode !== "past" ? (
                 <View style={styles.projectPoolControlRow}>
@@ -2346,7 +2387,7 @@ export default function ProjectDetailsScreen() {
                     <Ionicons
                       name={project.includeFutureProjectPhotos ? "flash-outline" : "pause-outline"}
                       size={15}
-                      color="#9ab2dd"
+                      color="#6B6156"
                     />
                     <Text style={styles.dismissedToggleText}>
                       {project.includeFutureProjectPhotos ? "Pause Future Intake" : "Include Future Photos"}
@@ -2366,7 +2407,7 @@ export default function ProjectDetailsScreen() {
                   <Ionicons
                     name={projectPhotoStateCard.icon}
                     size={24}
-                    color={projectPhotoStateCard.tone === "error" ? "#ff9aae" : projectPhotoStateCard.tone === "success" ? "#82efb4" : "#7fa7ff"}
+                    color={projectPhotoStateCard.tone === "error" ? "#AD432F" : projectPhotoStateCard.tone === "success" ? "#327558" : "#6B5BD2"}
                   />
                   <Text style={styles.emptyTitle}>{projectPhotoStateCard.title}</Text>
                   <Text style={styles.emptyText}>{projectPhotoStateCard.message}</Text>
@@ -2395,9 +2436,9 @@ export default function ProjectDetailsScreen() {
                     disabled={clusterAnalysisBusy}
                   >
                     {clusterAnalysisBusy ? (
-                      <ActivityIndicator color="#9ab2dd" size="small" />
+                      <ActivityIndicator color="#6B6156" size="small" />
                     ) : (
-                      <Ionicons name="analytics-outline" size={15} color="#9ab2dd" />
+                      <Ionicons name="analytics-outline" size={15} color="#6B6156" />
                     )}
                     <Text style={styles.dismissedToggleText}>
                       {clusterAnalysisBusy ? "Analyzing..." : "Analyze All"}
@@ -2407,7 +2448,7 @@ export default function ProjectDetailsScreen() {
                     <Ionicons
                       name={clusterInspectorExpanded ? "chevron-up-outline" : "chevron-down-outline"}
                       size={15}
-                      color="#9ab2dd"
+                      color="#6B6156"
                     />
                     <Text style={styles.dismissedToggleText}>
                       {clusterInspectorExpanded
@@ -2433,17 +2474,17 @@ export default function ProjectDetailsScreen() {
                   ]}
                 >
                   {clusterAnalysisBusy ? (
-                    <ActivityIndicator color="#dbe8ff" />
+                    <ActivityIndicator color="#4A4239" />
                   ) : (
                     <Ionicons
                       name={clusterAnalysisFeedback.icon}
                       size={24}
                       color={
                         clusterAnalysisFeedback.tone === "error"
-                          ? "#ff9aae"
+                          ? "#AD432F"
                           : clusterAnalysisFeedback.tone === "success"
-                            ? "#82efb4"
-                            : "#7fa7ff"
+                            ? "#327558"
+                            : "#6B5BD2"
                       }
                     />
                   )}
@@ -2453,7 +2494,7 @@ export default function ProjectDetailsScreen() {
               ) : null}
               {clusterInspectorExpanded && projectClusters.length === 0 ? (
                 <View style={styles.suggestionsEmptyCard}>
-                  <Ionicons name="git-branch-outline" size={28} color="#5d7097" />
+                  <Ionicons name="git-branch-outline" size={28} color="#6B6156" />
                   <Text style={styles.emptyTitle}>No strong clusters yet</Text>
                   <Text style={styles.emptyText}>
                     Add or analyze more project photos. The first pass needs close time groups or repeated themes across days.
@@ -2477,10 +2518,10 @@ export default function ProjectDetailsScreen() {
                   disabled={scanningSuggestions}
                 >
                   {scanningSuggestions ? (
-                    <ActivityIndicator color="#eef4ff" size="small" />
+                    <ActivityIndicator color="#4A4239" size="small" />
                   ) : (
                     <>
-                      <Ionicons name="search-outline" size={15} color="#eef4ff" />
+                      <Ionicons name="search-outline" size={15} color="#4A4239" />
                       <Text style={styles.scanButtonText}>Scan Memories</Text>
                     </>
                   )}
@@ -2498,7 +2539,7 @@ export default function ProjectDetailsScreen() {
                     <Ionicons
                       name={suggestionsExpanded ? "chevron-up-outline" : "chevron-down-outline"}
                       size={15}
-                      color="#9ab2dd"
+                      color="#6B6156"
                     />
                     <Text style={styles.dismissedToggleText}>
                       {suggestionsExpanded
@@ -2515,7 +2556,7 @@ export default function ProjectDetailsScreen() {
                       <Ionicons
                         name={showDismissedSuggestions ? "eye-off-outline" : "eye-outline"}
                         size={15}
-                        color="#9ab2dd"
+                        color="#6B6156"
                       />
                       <Text style={styles.dismissedToggleText}>
                         {showDismissedSuggestions
@@ -2537,17 +2578,17 @@ export default function ProjectDetailsScreen() {
                   ]}
                 >
                   {suggestionScanState === "scanning" ? (
-                    <ActivityIndicator color="#dbe8ff" />
+                    <ActivityIndicator color="#4A4239" />
                   ) : (
                     <Ionicons
                       name={suggestionStateCard.icon}
                       size={24}
                       color={
                         suggestionStateCard.tone === "error"
-                          ? "#ff9aae"
+                          ? "#AD432F"
                           : suggestionStateCard.tone === "success"
-                            ? "#82efb4"
-                            : "#7fa7ff"
+                            ? "#327558"
+                            : "#6B5BD2"
                       }
                     />
                   )}
@@ -2619,7 +2660,7 @@ export default function ProjectDetailsScreen() {
               <View style={styles.sectionHeaderRow}>
                 <Text style={styles.sectionHeading}>Suggested Theme Pages</Text>
                 <Pressable style={styles.scanButton} onPress={() => setThemePickerVisible(true)}>
-                  <Ionicons name="search-outline" size={15} color="#eef4ff" />
+                  <Ionicons name="search-outline" size={15} color="#4A4239" />
                   <Text style={styles.scanButtonText}>Pick Theme</Text>
                 </Pressable>
               </View>
@@ -2628,7 +2669,7 @@ export default function ProjectDetailsScreen() {
               </Text>
               <View style={styles.themeSuggestionCard}>
                 <View style={styles.themeSuggestionHeader}>
-                  <Ionicons name="albums-outline" size={24} color="#7fa7ff" />
+                  <Ionicons name="albums-outline" size={24} color="#6B5BD2" />
                   <View style={styles.themeSuggestionTextBlock}>
                     <Text style={styles.emptyTitle}>Theme picker</Text>
                     <Text style={styles.emptyText}>
@@ -2649,12 +2690,12 @@ export default function ProjectDetailsScreen() {
                 <Text style={styles.sectionHeading}>Finalization</Text>
                 {project?.finalizationStatus === "idle" ? (
                   <Pressable style={styles.scanButton} onPress={onStartFinalization}>
-                    <Ionicons name="flag-outline" size={15} color="#eef4ff" />
+                    <Ionicons name="flag-outline" size={15} color="#4A4239" />
                     <Text style={styles.scanButtonText}>Start Finalization</Text>
                   </Pressable>
                 ) : (
                   <Pressable style={styles.scanButton} onPress={onCompleteFinalization}>
-                    <Ionicons name="checkmark-done-outline" size={15} color="#eef4ff" />
+                    <Ionicons name="checkmark-done-outline" size={15} color="#4A4239" />
                     <Text style={styles.scanButtonText}>
                       {project?.finalizationStatus === "reviewed" ? "Reviewed" : "Mark Reviewed"}
                     </Text>
@@ -2672,7 +2713,7 @@ export default function ProjectDetailsScreen() {
                   <Ionicons
                     name={finalizationExpanded ? "chevron-up-outline" : "chevron-down-outline"}
                     size={15}
-                    color="#9ab2dd"
+                    color="#6B6156"
                   />
                   <Text style={styles.dismissedToggleText}>
                     {finalizationExpanded
@@ -2701,10 +2742,10 @@ export default function ProjectDetailsScreen() {
                     size={24}
                     color={
                       finalizationStateCard.tone === "error"
-                        ? "#ff9aae"
+                        ? "#AD432F"
                         : finalizationStateCard.tone === "success"
-                          ? "#82efb4"
-                          : "#7fa7ff"
+                          ? "#327558"
+                          : "#6B5BD2"
                     }
                   />
                   <Text style={styles.emptyTitle}>{finalizationStateCard.title}</Text>
@@ -2802,7 +2843,7 @@ export default function ProjectDetailsScreen() {
                     }}
                     style={styles.memoryCard}
                   >
-                    <MemoryCollagePreview photos={memoryPhotos} thumbnailUri={memoryThumbnailUri} />
+                    <MemoryCollagePreview photos={memoryPhotos} thumbnailUri={memoryThumbnailUri ?? memoryPhotos[0]?.uri} />
                     <View style={styles.memoryBody}>
                       <View style={styles.memoryMetaRow}>
                         <View
@@ -2825,7 +2866,7 @@ export default function ProjectDetailsScreen() {
                         {item.title}
                       </Text>
                       <Text style={styles.memorySummary}>
-                        {pluralize(photoCount, "photo")} | {pluralize(pageCount, "page")}
+                        {pluralize(photoCount, "photo")} · {pluralize(pageCount, "page")}
                       </Text>
                       {item.kind === "collection" && item.themeTags && item.themeTags.length > 0 ? (
                         <Text style={styles.memoryTagsSummary}>{item.themeTags.join(" | ")}</Text>
@@ -2835,7 +2876,7 @@ export default function ProjectDetailsScreen() {
                           style={styles.memoryCandidateButton}
                           onPress={() => onOpenCandidateReview(item.id)}
                         >
-                          <Ionicons name="sparkles-outline" size={14} color="#9bc2ff" />
+                          <Ionicons name="sparkles-outline" size={14} color="#6B5BD2" />
                           <Text style={styles.memoryCandidateButtonText}>
                             Review {pluralize(candidatePhotos.length, "suggested addition")}
                           </Text>
@@ -2844,7 +2885,7 @@ export default function ProjectDetailsScreen() {
                     </View>
                   </Pressable>
                   <Pressable hitSlop={10} onPress={() => openEditComposer(item.id)} style={styles.memoryMenuButton}>
-                    <Ionicons name="ellipsis-horizontal" size={18} color="#d7e2ff" />
+                    <Ionicons name="ellipsis-horizontal" size={18} color="#4A4239" />
                   </Pressable>
                 </View>
               </ScaleDecorator>
@@ -2852,7 +2893,7 @@ export default function ProjectDetailsScreen() {
           }}
           ListEmptyComponent={
             <View style={styles.emptyCard}>
-              <Ionicons name="images-outline" size={34} color="#5d7097" />
+              <Ionicons name="images-outline" size={34} color="#6B6156" />
               <Text style={styles.emptyTitle}>No memories yet</Text>
               <Text style={styles.emptyText}>Create the first memory with the add button below.</Text>
             </View>
@@ -2860,29 +2901,29 @@ export default function ProjectDetailsScreen() {
         />
       </View>
 
-      <Pressable onPress={openProjectAddMenu} style={[styles.addButton, { bottom: toolbarBottom + 22 }]}>
-        <Ionicons name="add" size={34} color="#ffffff" />
+      <Pressable onPress={openProjectAddMenu} style={[styles.addButton, { bottom: bottomToolbarHeight + 12 }]}>
+        <Ionicons name="add" size={22} color="#ffffff" />
+        <Text style={styles.addButtonLabel}>Add memory</Text>
       </Pressable>
 
       <View style={[styles.bottomToolbar, { height: bottomToolbarHeight, paddingBottom: insets.bottom + 18 }]}>
         <Pressable style={styles.toolbarItem} onPress={() => router.replace("/")}>
-          <Ionicons name="home-outline" size={22} color="#d2def5" />
+          <Ionicons name="home-outline" size={22} color="#4A4239" />
           <Text style={styles.toolbarLabel}>Home</Text>
         </Pressable>
         <Pressable
           style={styles.toolbarItem}
           onPress={() => router.push({ pathname: "/project/[id]/preview", params: { id: project.id } })}
         >
-          <Ionicons name="book-outline" size={22} color="#d2def5" />
+          <Ionicons name="book-outline" size={22} color="#4A4239" />
           <Text style={styles.toolbarLabel}>Preview</Text>
         </Pressable>
-        <View style={styles.toolbarCenterSpacer} />
         <Pressable style={styles.toolbarItem} onPress={onOrderProject} disabled={exporting}>
-          {exporting ? <ActivityIndicator color="#d2def5" /> : <Ionicons name="cart-outline" size={22} color="#d2def5" />}
+          {exporting ? <ActivityIndicator color="#4A4239" /> : <Ionicons name="cart-outline" size={22} color="#4A4239" />}
           <Text style={styles.toolbarLabel}>Order</Text>
         </Pressable>
         <Pressable style={styles.toolbarItem} onPress={() => router.push("/prompts")}>
-          <Ionicons name="notifications-outline" size={22} color="#d2def5" />
+          <Ionicons name="notifications-outline" size={22} color="#4A4239" />
           <Text style={styles.toolbarLabel}>Notifications</Text>
         </Pressable>
       </View>
@@ -2900,22 +2941,26 @@ export default function ProjectDetailsScreen() {
                   setProjectMenuVisible(false);
                 }}
               >
-                <Ionicons name="construct-outline" size={20} color="#d7e2ff" />
+                <Ionicons name="construct-outline" size={20} color="#4A4239" />
                 <Text style={styles.actionMenuButtonText}>
                   {devToolsExpanded ? "Hide Developer Tools" : "Show Developer Tools"}
                 </Text>
               </Pressable>
             ) : null}
+            <Pressable style={[styles.actionMenuButton, exporting ? styles.suggestionActionDisabled : null]} onPress={choosePhotoExportScope} disabled={exporting}>
+              {zipProgress ? <ActivityIndicator color="#6B5BD2" /> : <Ionicons name="download-outline" size={20} color="#4A4239" />}
+              <Text style={styles.actionMenuButtonText}>{zipProgress ?? "Export photos (ZIP)"}</Text>
+            </Pressable>
             <Pressable style={styles.actionMenuButton} onPress={onChangeProjectCover} disabled={projectMenuBusy}>
               {projectMenuBusy ? (
-                <ActivityIndicator color="#d7e2ff" />
+                <ActivityIndicator color="#4A4239" />
               ) : (
-                <Ionicons name="image-outline" size={20} color="#d7e2ff" />
+                <Ionicons name="image-outline" size={20} color="#4A4239" />
               )}
               <Text style={styles.actionMenuButtonText}>Change Cover Photo</Text>
             </Pressable>
             <Pressable style={[styles.actionMenuButton, styles.actionMenuDanger]} onPress={onDeleteProjectFromMenu}>
-              <Ionicons name="trash-outline" size={20} color="#ff9aae" />
+              <Ionicons name="trash-outline" size={20} color="#AD432F" />
               <Text style={styles.actionMenuDangerText}>Delete Project</Text>
             </Pressable>
             <Pressable style={styles.secondaryButtonLike} onPress={() => setProjectMenuVisible(false)}>
@@ -2931,21 +2976,21 @@ export default function ProjectDetailsScreen() {
             <Text style={styles.modalTitle}>Add to Project</Text>
             <Text style={styles.modalSubtitle}>Choose what you want to create or review.</Text>
             <Pressable style={styles.actionMenuButton} onPress={() => openProjectAddIntent("memory")}>
-              <Ionicons name="images-outline" size={20} color="#d7e2ff" />
+              <Ionicons name="images-outline" size={20} color="#4A4239" />
               <View style={styles.actionMenuTextBlock}>
                 <Text style={styles.actionMenuButtonText}>Memory</Text>
                 <Text style={styles.actionMenuHint}>Create an event memory and add photos.</Text>
               </View>
             </Pressable>
             <Pressable style={styles.actionMenuButton} onPress={() => openProjectAddIntent("collection")}>
-              <Ionicons name="albums-outline" size={20} color="#d7e2ff" />
+              <Ionicons name="albums-outline" size={20} color="#4A4239" />
               <View style={styles.actionMenuTextBlock}>
                 <Text style={styles.actionMenuButtonText}>Collection</Text>
                 <Text style={styles.actionMenuHint}>Create a theme collection with selected photos.</Text>
               </View>
             </Pressable>
             <Pressable style={styles.actionMenuButton} onPress={() => openProjectAddIntent("suggestions")}>
-              <Ionicons name="sparkles-outline" size={20} color="#d7e2ff" />
+              <Ionicons name="sparkles-outline" size={20} color="#4A4239" />
               <View style={styles.actionMenuTextBlock}>
                 <Text style={styles.actionMenuButtonText}>Review Suggestions</Text>
                 <Text style={styles.actionMenuHint}>Scan, review, snooze, or dismiss suggested memories.</Text>
@@ -2977,7 +3022,7 @@ export default function ProjectDetailsScreen() {
               value={customThemeLabel}
               onChangeText={setCustomThemeLabel}
               placeholder="Examples: Christmas, desserts, grandparents"
-              placeholderTextColor="#6f7f9f"
+              placeholderTextColor="#6B6156"
               style={styles.modalInput}
             />
             <Pressable
@@ -3024,7 +3069,7 @@ export default function ProjectDetailsScreen() {
               onPress={createNewThemeCollection}
               disabled={themeSelectionBusy || themeStagedAssets.length === 0}
             >
-              <Ionicons name="albums-outline" size={20} color="#d7e2ff" />
+              <Ionicons name="albums-outline" size={20} color="#4A4239" />
               <View style={styles.actionMenuTextBlock}>
                 <Text style={styles.actionMenuButtonText}>Create New Collection</Text>
                 <Text style={styles.actionMenuHint}>Name it, confirm the thumbnail, then save.</Text>
@@ -3040,7 +3085,7 @@ export default function ProjectDetailsScreen() {
                     onPress={() => void addThemePhotosToCollection(memory.id)}
                     disabled={themeSelectionBusy}
                   >
-                    <Ionicons name="add-circle-outline" size={20} color="#d7e2ff" />
+                    <Ionicons name="add-circle-outline" size={20} color="#4A4239" />
                     <View style={styles.actionMenuTextBlock}>
                       <Text style={styles.actionMenuButtonText}>{memory.title}</Text>
                       <Text style={styles.actionMenuHint}>
@@ -3073,7 +3118,7 @@ export default function ProjectDetailsScreen() {
                   </Text>
                 </View>
                 <Pressable style={styles.modalCloseButton} onPress={() => setSuggestionsModalVisible(false)}>
-                  <Ionicons name="close" size={22} color="#eef4ff" />
+                  <Ionicons name="close" size={22} color="#4A4239" />
                 </Pressable>
               </View>
 
@@ -3086,10 +3131,10 @@ export default function ProjectDetailsScreen() {
                     disabled={scanningSuggestions}
                   >
                     {scanningSuggestions ? (
-                      <ActivityIndicator color="#eef4ff" size="small" />
+                      <ActivityIndicator color="#4A4239" size="small" />
                     ) : (
                       <>
-                        <Ionicons name="search-outline" size={15} color="#eef4ff" />
+                        <Ionicons name="search-outline" size={15} color="#4A4239" />
                         <Text style={styles.scanButtonText}>Scan</Text>
                       </>
                     )}
@@ -3106,17 +3151,17 @@ export default function ProjectDetailsScreen() {
                     ]}
                   >
                     {suggestionScanState === "scanning" ? (
-                      <ActivityIndicator color="#dbe8ff" />
+                      <ActivityIndicator color="#4A4239" />
                     ) : (
                       <Ionicons
                         name={suggestionStateCard.icon}
                         size={24}
                         color={
                           suggestionStateCard.tone === "error"
-                            ? "#ff9aae"
+                            ? "#AD432F"
                             : suggestionStateCard.tone === "success"
-                              ? "#82efb4"
-                              : "#7fa7ff"
+                              ? "#327558"
+                              : "#6B5BD2"
                         }
                       />
                     )}
@@ -3170,7 +3215,7 @@ export default function ProjectDetailsScreen() {
                   </Text>
                 </View>
                 <Pressable style={styles.modalCloseButton} onPress={closeSuggestionReview}>
-                  <Ionicons name="close" size={22} color="#eef4ff" />
+                  <Ionicons name="close" size={22} color="#4A4239" />
                 </Pressable>
               </View>
 
@@ -3198,7 +3243,7 @@ export default function ProjectDetailsScreen() {
                             <Ionicons
                               name={selected ? "checkmark" : "add"}
                               size={16}
-                              color={selected ? "#ffffff" : "#d9e6ff"}
+                              color={selected ? "#ffffff" : "#4A4239"}
                             />
                           </View>
                           {ref.location ? (
@@ -3229,7 +3274,7 @@ export default function ProjectDetailsScreen() {
                             <Ionicons
                               name={selected ? "checkmark" : "add"}
                               size={16}
-                              color={selected ? "#ffffff" : "#d9e6ff"}
+                              color={selected ? "#ffffff" : "#4A4239"}
                             />
                           </View>
                         </Pressable>
@@ -3238,7 +3283,7 @@ export default function ProjectDetailsScreen() {
                   </View>
                 ) : (
                   <View style={styles.emptyCard}>
-                    <Ionicons name="images-outline" size={30} color="#5d7097" />
+                    <Ionicons name="images-outline" size={30} color="#6B6156" />
                     <Text style={styles.emptyTitle}>No preview photos</Text>
                     <Text style={styles.emptyText}>This suggestion does not currently have candidate photos attached.</Text>
                   </View>
@@ -3306,7 +3351,7 @@ export default function ProjectDetailsScreen() {
                   </Text>
                 </View>
                 <Pressable style={styles.modalCloseButton} onPress={closeCandidateReview}>
-                  <Ionicons name="close" size={22} color="#eef4ff" />
+                  <Ionicons name="close" size={22} color="#4A4239" />
                 </Pressable>
               </View>
 
@@ -3330,7 +3375,7 @@ export default function ProjectDetailsScreen() {
                             <Ionicons
                               name={selected ? "checkmark" : "add"}
                               size={16}
-                              color={selected ? "#ffffff" : "#d9e6ff"}
+                              color={selected ? "#ffffff" : "#4A4239"}
                             />
                           </View>
                         </Pressable>
@@ -3339,7 +3384,7 @@ export default function ProjectDetailsScreen() {
                   </View>
                 ) : (
                   <View style={styles.emptyCard}>
-                    <Ionicons name="sparkles-outline" size={30} color="#5d7097" />
+                    <Ionicons name="sparkles-outline" size={30} color="#6B6156" />
                     <Text style={styles.emptyTitle}>No candidate photos right now</Text>
                     <Text style={styles.emptyText}>
                       Add more project photos or widen the project pool to get stronger photo-addition suggestions.
@@ -3393,7 +3438,7 @@ export default function ProjectDetailsScreen() {
                   </Text>
                 </View>
                 <Pressable style={styles.modalCloseButton} onPress={closeFinalizationReview}>
-                  <Ionicons name="close" size={22} color="#eef4ff" />
+                  <Ionicons name="close" size={22} color="#4A4239" />
                 </Pressable>
               </View>
 
@@ -3408,7 +3453,7 @@ export default function ProjectDetailsScreen() {
                   </View>
                 ) : (
                   <View style={styles.emptyCard}>
-                    <Ionicons name="albums-outline" size={30} color="#5d7097" />
+                    <Ionicons name="albums-outline" size={30} color="#6B6156" />
                     <Text style={styles.emptyTitle}>No review photos right now</Text>
                     <Text style={styles.emptyText}>
                       This finalization idea does not currently have a stable candidate set attached.
@@ -3448,7 +3493,7 @@ export default function ProjectDetailsScreen() {
                   </Text>
                 </View>
                 <Pressable style={styles.modalCloseButton} onPress={closeAnalysisInspector} disabled={analysisInspectorBusy}>
-                  <Ionicons name="close" size={22} color="#eef4ff" />
+                  <Ionicons name="close" size={22} color="#4A4239" />
                 </Pressable>
               </View>
 
@@ -3485,7 +3530,7 @@ export default function ProjectDetailsScreen() {
                   </View>
                 ) : (
                   <View style={styles.emptyCard}>
-                    <Ionicons name="images-outline" size={30} color="#5d7097" />
+                    <Ionicons name="images-outline" size={30} color="#6B6156" />
                     <Text style={styles.emptyTitle}>No project photos to inspect</Text>
                     <Text style={styles.emptyText}>
                       Add project photos or memory photos in this project first, then reopen the inspector.
@@ -3503,17 +3548,17 @@ export default function ProjectDetailsScreen() {
                     ]}
                   >
                     {analysisInspectorBusy ? (
-                      <ActivityIndicator color="#dbe8ff" />
+                      <ActivityIndicator color="#4A4239" />
                     ) : (
                       <Ionicons
                         name={analysisInspectorFeedback.icon}
                         size={24}
                         color={
                           analysisInspectorFeedback.tone === "error"
-                            ? "#ff9aae"
+                            ? "#AD432F"
                             : analysisInspectorFeedback.tone === "success"
-                              ? "#82efb4"
-                              : "#7fa7ff"
+                              ? "#327558"
+                              : "#6B5BD2"
                         }
                       />
                     )}
@@ -3535,10 +3580,10 @@ export default function ProjectDetailsScreen() {
                         disabled={analysisInspectorBusy}
                       >
                         {analysisInspectorBusy ? (
-                          <ActivityIndicator color="#eef4ff" size="small" />
+                          <ActivityIndicator color="#4A4239" size="small" />
                         ) : (
                           <>
-                            <Ionicons name="analytics-outline" size={15} color="#eef4ff" />
+                            <Ionicons name="analytics-outline" size={15} color="#4A4239" />
                             <Text style={styles.scanButtonText}>Analyze Selected</Text>
                           </>
                         )}
@@ -3548,7 +3593,7 @@ export default function ProjectDetailsScreen() {
                         onPress={() => runInspectorAnalysis(true)}
                         disabled={analysisInspectorBusy}
                       >
-                        <Ionicons name="refresh-outline" size={15} color="#9ab2dd" />
+                        <Ionicons name="refresh-outline" size={15} color="#6B6156" />
                         <Text style={styles.dismissedToggleText}>Force Reanalyze</Text>
                       </Pressable>
                       <Pressable
@@ -3556,7 +3601,7 @@ export default function ProjectDetailsScreen() {
                         onPress={logInspectorDebugReport}
                         disabled={!inspectorDebugReport}
                       >
-                        <Ionicons name="terminal-outline" size={15} color="#9ab2dd" />
+                        <Ionicons name="terminal-outline" size={15} color="#6B6156" />
                         <Text style={styles.dismissedToggleText}>Log Report</Text>
                       </Pressable>
                     </View>
@@ -3935,7 +3980,7 @@ export default function ProjectDetailsScreen() {
                   </Text>
                 </View>
                 <Pressable style={styles.modalCloseButton} onPress={closeComposer}>
-                  <Ionicons name="close" size={22} color="#eef4ff" />
+                  <Ionicons name="close" size={22} color="#4A4239" />
                 </Pressable>
               </View>
 
@@ -3947,7 +3992,7 @@ export default function ProjectDetailsScreen() {
                   value={composerTitle}
                   onChangeText={setComposerTitle}
                   placeholder={composerMemoryKind === "collection" ? "Collection title" : "Memory title"}
-                  placeholderTextColor="#6f7f9f"
+                  placeholderTextColor="#6B6156"
                   style={styles.modalInput}
                 />
 
@@ -3958,7 +4003,7 @@ export default function ProjectDetailsScreen() {
                       value={composerCollectionHooks}
                       onChangeText={setComposerCollectionHooks}
                       placeholder="Examples: hiking, family, sunsets"
-                      placeholderTextColor="#6f7f9f"
+                      placeholderTextColor="#6B6156"
                       style={styles.modalInput}
                     />
                     <Text style={styles.fieldHelperText}>
@@ -4017,7 +4062,7 @@ export default function ProjectDetailsScreen() {
                       </ScrollView>
                     ) : (
                       <View style={styles.thumbnailOptionEmpty}>
-                        <Ionicons name="sparkles-outline" size={24} color="#607296" />
+                        <Ionicons name="sparkles-outline" size={24} color="#6B6156" />
                       </View>
                     )}
                   </View>
@@ -4027,7 +4072,7 @@ export default function ProjectDetailsScreen() {
                   <Text style={styles.fieldLabel}>Photos</Text>
                   <Pressable style={styles.inlineButton} onPress={onPickComposerPhotos} disabled={composerPicking}>
                     {composerPicking ? (
-                      <ActivityIndicator color="#eef4ff" />
+                      <ActivityIndicator color="#4A4239" />
                     ) : (
                       <Text style={styles.inlineButtonText}>Add Photos</Text>
                     )}
@@ -4039,7 +4084,7 @@ export default function ProjectDetailsScreen() {
                     <Image source={{ uri: composerThumbnailUri }} style={styles.thumbnailPreviewImage} />
                   ) : (
                     <View style={styles.thumbnailPreviewPlaceholder}>
-                      <Ionicons name="image-outline" size={32} color="#6c7c9d" />
+                      <Ionicons name="image-outline" size={32} color="#6B6156" />
                       <Text style={styles.thumbnailPreviewPlaceholderText}>Select a thumbnail</Text>
                     </View>
                   )}
@@ -4104,7 +4149,7 @@ export default function ProjectDetailsScreen() {
                   })}
                   {composerExistingPhotos.length === 0 && composerSelectableProjectPhotos.length === 0 && composerStagedAssets.length === 0 ? (
                     <View style={[styles.thumbnailOption, styles.thumbnailOptionEmpty]}>
-                      <Ionicons name="images-outline" size={28} color="#607296" />
+                      <Ionicons name="images-outline" size={28} color="#6B6156" />
                     </View>
                   ) : null}
                 </ScrollView>
@@ -4135,20 +4180,25 @@ export default function ProjectDetailsScreen() {
 }
 
 const styles = StyleSheet.create({
+  suggestionEntry: {
+    flexDirection: "row", alignItems: "center", gap: 12, padding: 18,
+    marginTop: 14, borderRadius: 20, borderWidth: 1, borderColor: "#D9D1F6", backgroundColor: "#EDE8FA"
+  },
+  addButtonLabel: { color: "#FFFFFF", fontSize: 15, fontWeight: "700" },
   screen: {
     flex: 1,
-    backgroundColor: "#0a1220"
+    backgroundColor: "#FBF6EE"
   },
   missingScreen: {
     flex: 1,
-    backgroundColor: "#0a1220",
+    backgroundColor: "#FBF6EE",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 24,
     gap: 16
   },
   missingTitle: {
-    color: "#f8fbff",
+    color: "#241F1B",
     fontSize: 22,
     fontWeight: "700"
   },
@@ -4159,7 +4209,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingBottom: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#20304d"
+    borderBottomColor: "#E8DFD2"
   },
   topIconButton: {
     width: 40,
@@ -4169,16 +4219,17 @@ const styles = StyleSheet.create({
   },
   topBarTextWrap: {
     flex: 1,
-    alignItems: "center"
+    alignItems: "flex-start",
   },
   projectTitle: {
-    color: "#f8fbff",
+    color: "#241F1B",
     fontSize: 20,
-    fontWeight: "800"
+    fontWeight: "700",
+    letterSpacing: -0.4,
   },
   projectStats: {
     marginTop: 4,
-    color: "#9fb2d9",
+    color: "#6B6156",
     fontSize: 13
   },
   contentArea: {
@@ -4194,9 +4245,9 @@ const styles = StyleSheet.create({
     padding: 14,
     borderRadius: 22,
     borderWidth: 1,
-    borderColor: "#263958",
+    borderColor: "#E8DFD2",
     borderStyle: "dashed",
-    backgroundColor: "#0e1728"
+    backgroundColor: "#F3EBDE"
   },
   sectionHeaderRow: {
     flexDirection: "row",
@@ -4219,13 +4270,13 @@ const styles = StyleSheet.create({
     justifyContent: "flex-start"
   },
   sectionHeading: {
-    color: "#f8fbff",
+    color: "#241F1B",
     fontSize: 22,
     fontWeight: "800",
     flexShrink: 1
   },
   sectionSubheading: {
-    color: "#90a4cc",
+    color: "#6B6156",
     fontSize: 13,
     lineHeight: 18
   },
@@ -4234,9 +4285,9 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    backgroundColor: "#1b2c49",
+    backgroundColor: "#F3EBDE",
     borderWidth: 1,
-    borderColor: "#2d4f82",
+    borderColor: "#E8DFD2",
     flexDirection: "row",
     alignItems: "center",
     gap: 6
@@ -4245,17 +4296,17 @@ const styles = StyleSheet.create({
     opacity: 0.6
   },
   scanButtonText: {
-    color: "#eef4ff",
+    color: "#4A4239",
     fontSize: 12,
     fontWeight: "700"
   },
   suggestionSummary: {
-    color: "#7f97c4",
+    color: "#6B6156",
     fontSize: 12,
     fontWeight: "700"
   },
   suggestionCollapsedHint: {
-    color: "#9ab2dd",
+    color: "#6B6156",
     fontSize: 12,
     lineHeight: 18
   },
@@ -4273,7 +4324,7 @@ const styles = StyleSheet.create({
     gap: 10
   },
   projectPoolControlText: {
-    color: "#9eb0d3",
+    color: "#6B6156",
     fontSize: 12,
     lineHeight: 18
   },
@@ -4283,8 +4334,8 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "#24385f",
-    backgroundColor: "#14223a"
+    borderColor: "#E8DFD2",
+    backgroundColor: "#F3EBDE"
   },
   projectPhotoThumb: {
     width: "100%",
@@ -4303,12 +4354,12 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "#24385f",
-    backgroundColor: "#14223a"
+    borderColor: "#E8DFD2",
+    backgroundColor: "#F3EBDE"
   },
   analysisPickerCardSelected: {
     borderWidth: 2,
-    borderColor: "#2f80ff"
+    borderColor: "#6B5BD2"
   },
   analysisPickerImage: {
     width: "100%",
@@ -4321,7 +4372,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8
   },
   analysisPickerMetaText: {
-    color: "#c8d7f7",
+    color: "#4A4239",
     fontSize: 11,
     fontWeight: "700",
     textAlign: "center"
@@ -4331,8 +4382,8 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "#223456",
-    backgroundColor: "#14223a"
+    borderColor: "#E8DFD2",
+    backgroundColor: "#F3EBDE"
   },
   analysisPreviewImage: {
     width: "100%",
@@ -4347,7 +4398,7 @@ const styles = StyleSheet.create({
     gap: 10
   },
   analysisSectionTitle: {
-    color: "#dfe8fb",
+    color: "#4A4239",
     fontSize: 14,
     fontWeight: "800",
     letterSpacing: 0.3,
@@ -4356,31 +4407,31 @@ const styles = StyleSheet.create({
   analysisSectionBody: {
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#20304d",
-    backgroundColor: "#101a2d",
+    borderColor: "#E8DFD2",
+    backgroundColor: "#FFFFFF",
     overflow: "hidden"
   },
   analysisFieldRow: {
     paddingHorizontal: 14,
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#223456",
+    borderBottomColor: "#E8DFD2",
     gap: 6
   },
   analysisFieldLabel: {
-    color: "#88a0cb",
+    color: "#6B6156",
     fontSize: 11,
     fontWeight: "800",
     letterSpacing: 0.4,
     textTransform: "uppercase"
   },
   analysisFieldValue: {
-    color: "#eef4ff",
+    color: "#4A4239",
     fontSize: 14,
     lineHeight: 20
   },
   analysisCodeBlock: {
-    color: "#dbe8ff",
+    color: "#4A4239",
     fontSize: 12,
     lineHeight: 18,
     fontFamily: Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" }),
@@ -4393,15 +4444,15 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    backgroundColor: "#111d31",
+    backgroundColor: "#F3EBDE",
     borderWidth: 1,
-    borderColor: "#24385f",
+    borderColor: "#E8DFD2",
     flexDirection: "row",
     alignItems: "center",
     gap: 6
   },
   dismissedToggleText: {
-    color: "#9ab2dd",
+    color: "#6B6156",
     fontSize: 12,
     fontWeight: "700"
   },
@@ -4410,22 +4461,22 @@ const styles = StyleSheet.create({
     padding: 18,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "#223456",
-    backgroundColor: "#10192c",
+    borderColor: "#E8DFD2",
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     gap: 10
   },
   suggestionsStateCardInfo: {
-    borderColor: "#294266",
-    backgroundColor: "#101b2f"
+    borderColor: "#E8DFD2",
+    backgroundColor: "#FFFFFF"
   },
   suggestionsStateCardSuccess: {
-    borderColor: "#27563e",
-    backgroundColor: "#0f2018"
+    borderColor: "#A7CEB9",
+    backgroundColor: "#E5F1E9"
   },
   suggestionsStateCardError: {
-    borderColor: "#6d3345",
-    backgroundColor: "#1f1018"
+    borderColor: "#E7B6A8",
+    backgroundColor: "#FBECE6"
   },
   suggestionGroup: {
     gap: 10
@@ -4434,14 +4485,14 @@ const styles = StyleSheet.create({
     gap: 4
   },
   suggestionGroupTitle: {
-    color: "#dfe8fb",
+    color: "#4A4239",
     fontSize: 14,
     fontWeight: "800",
     letterSpacing: 0.3,
     textTransform: "uppercase"
   },
   suggestionGroupHint: {
-    color: "#8ea2ca",
+    color: "#6B6156",
     fontSize: 12,
     lineHeight: 17
   },
@@ -4451,26 +4502,26 @@ const styles = StyleSheet.create({
   },
   suggestionCard: {
     borderRadius: 20,
-    backgroundColor: "#101a2d",
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: "#20304d",
+    borderColor: "#E8DFD2",
     padding: 16,
     gap: 10
   },
   clusterCard: {
     borderRadius: 20,
-    backgroundColor: "#0f1b2f",
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: "#294266",
+    borderColor: "#E8DFD2",
     padding: 16,
     gap: 10
   },
   clusterScoreBadge: {
-    backgroundColor: "#10213f",
-    borderColor: "#2f80ff"
+    backgroundColor: "#EDE8FA",
+    borderColor: "#6B5BD2"
   },
   clusterScoreText: {
-    color: "#8fc2ff"
+    color: "#6B5BD2"
   },
   clusterBestPhotoRow: {
     gap: 10,
@@ -4482,8 +4533,8 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "#2d4f82",
-    backgroundColor: "#14223a"
+    borderColor: "#E8DFD2",
+    backgroundColor: "#F3EBDE"
   },
   clusterBestPhotoImage: {
     width: "100%",
@@ -4497,22 +4548,23 @@ const styles = StyleSheet.create({
   },
   suggestionTitle: {
     flex: 1,
-    color: "#f8fbff",
-    fontSize: 17,
-    fontWeight: "800"
+    color: "#241F1B",
+    fontSize: 20,
+    fontWeight: "700",
+    letterSpacing: -0.5,
   },
   suggestionMessage: {
-    color: "#c2d0ee",
+    color: "#4A4239",
     fontSize: 14,
     lineHeight: 20
   },
   suggestionMeta: {
-    color: "#84a0d5",
+    color: "#6B6156",
     fontSize: 12,
     fontWeight: "600"
   },
   suggestionLifecycleNote: {
-    color: "#9eb0d3",
+    color: "#6B6156",
     fontSize: 12,
     lineHeight: 18
   },
@@ -4521,12 +4573,12 @@ const styles = StyleSheet.create({
     paddingRight: 12
   },
   suggestionPreviewThumb: {
-    width: 62,
-    height: 62,
+    width: 76,
+    height: 76,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#2d4f82",
-    backgroundColor: "#14223a"
+    borderColor: "#E8DFD2",
+    backgroundColor: "#F3EBDE"
   },
   suggestionStatusBadge: {
     borderRadius: 999,
@@ -4541,46 +4593,46 @@ const styles = StyleSheet.create({
     textTransform: "uppercase"
   },
   suggestionStatusNew: {
-    backgroundColor: "#10213f",
-    borderColor: "#2f80ff"
+    backgroundColor: "#EDE8FA",
+    borderColor: "#6B5BD2"
   },
   suggestionStatusNewText: {
-    color: "#8fc2ff"
+    color: "#6B5BD2"
   },
   suggestionStatusWatching: {
-    backgroundColor: "#1e1a2b",
-    borderColor: "#7d59d1"
+    backgroundColor: "#EDE8FA",
+    borderColor: "#E8DFD2"
   },
   suggestionStatusWatchingText: {
-    color: "#ceb4ff"
+    color: "#6B5BD2"
   },
   suggestionStatusSnoozed: {
-    backgroundColor: "#2a2211",
-    borderColor: "#8a6d1d"
+    backgroundColor: "#F7EDD6",
+    borderColor: "#E8DFD2"
   },
   suggestionStatusSnoozedText: {
-    color: "#ffd57a"
+    color: "#805A20"
   },
   suggestionStatusAccepted: {
-    backgroundColor: "#11291c",
-    borderColor: "#2b8f5a"
+    backgroundColor: "#E5F1E9",
+    borderColor: "#A7CEB9"
   },
   suggestionStatusAcceptedText: {
-    color: "#82efb4"
+    color: "#327558"
   },
   suggestionStatusDismissed: {
-    backgroundColor: "#2a151c",
-    borderColor: "#854357"
+    backgroundColor: "#FBECE6",
+    borderColor: "#E7B6A8"
   },
   suggestionStatusDismissedText: {
-    color: "#ff9aae"
+    color: "#AD432F"
   },
   finalizationStatusBadge: {
-    backgroundColor: "#15243d",
-    borderColor: "#3f6ab2"
+    backgroundColor: "#F3EBDE",
+    borderColor: "#E8DFD2"
   },
   finalizationStatusText: {
-    color: "#a7c8ff"
+    color: "#6B5BD2"
   },
   suggestionActionRow: {
     flexDirection: "row",
@@ -4590,7 +4642,7 @@ const styles = StyleSheet.create({
   },
   suggestionActionButton: {
     minHeight: 40,
-    borderRadius: 14,
+    borderRadius: 999,
     paddingHorizontal: 14,
     paddingVertical: 10,
     alignItems: "center",
@@ -4598,8 +4650,8 @@ const styles = StyleSheet.create({
     borderWidth: 1
   },
   suggestionPrimaryAction: {
-    backgroundColor: "#2f80ff",
-    borderColor: "#2f80ff"
+    backgroundColor: "#6B5BD2",
+    borderColor: "#6B5BD2"
   },
   suggestionPrimaryActionText: {
     color: "#ffffff",
@@ -4607,20 +4659,20 @@ const styles = StyleSheet.create({
     fontWeight: "800"
   },
   suggestionSecondaryAction: {
-    backgroundColor: "#132239",
-    borderColor: "#294266"
+    backgroundColor: "#F3EBDE",
+    borderColor: "#E8DFD2"
   },
   suggestionSecondaryActionText: {
-    color: "#d7e2ff",
+    color: "#4A4239",
     fontSize: 13,
     fontWeight: "700"
   },
   suggestionDangerAction: {
-    backgroundColor: "#24131a",
-    borderColor: "#6d3345"
+    backgroundColor: "#FBECE6",
+    borderColor: "#E7B6A8"
   },
   suggestionDangerActionText: {
-    color: "#ff9aae",
+    color: "#AD432F",
     fontSize: 13,
     fontWeight: "700"
   },
@@ -4632,9 +4684,9 @@ const styles = StyleSheet.create({
     padding: 24,
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: "#223456",
+    borderColor: "#E8DFD2",
     borderStyle: "dashed",
-    backgroundColor: "#10192c",
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     gap: 10
   },
@@ -4642,8 +4694,8 @@ const styles = StyleSheet.create({
     padding: 18,
     borderRadius: 22,
     borderWidth: 1,
-    borderColor: "#223456",
-    backgroundColor: "#10192c",
+    borderColor: "#E8DFD2",
+    backgroundColor: "#FFFFFF",
     gap: 16
   },
   themeSuggestionHeader: {
@@ -4664,63 +4716,64 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 7,
-    backgroundColor: "#12233f",
+    backgroundColor: "#F3EBDE",
     borderWidth: 1,
-    borderColor: "#2c5aa0"
+    borderColor: "#E8DFD2"
   },
   themeChipText: {
-    color: "#9bc2ff",
+    color: "#6B5BD2",
     fontSize: 12,
     fontWeight: "800"
   },
   memoryCardShell: {
-    borderRadius: 24,
-    backgroundColor: "#101a2d",
+    borderRadius: 20,
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: "#20304d",
+    borderColor: "#E8DFD2",
     overflow: "hidden",
-    shadowColor: "#000000",
-    shadowOpacity: 0.24,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 8
+    shadowColor: "#241F1B",
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
   },
   memoryCardShellActive: {
     opacity: 0.92
   },
   memoryCard: {
-    padding: 12,
-    gap: 14
+    padding: 10,
+    gap: 12,
   },
   memoryMenuButton: {
     position: "absolute",
-    right: 10,
-    top: 10,
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: "rgba(12, 20, 36, 0.86)",
+    right: 20,
+    top: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(251, 246, 238, 0.93)",
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: "#223456"
+    borderColor: "#E8DFD2"
   },
   previewPanel: {
-    height: 196,
-    borderRadius: 18,
+    width: "100%",
+    aspectRatio: 1,
+    borderRadius: 14,
     overflow: "hidden",
-    backgroundColor: "#1a2843"
+    backgroundColor: "#F3EBDE"
   },
   previewEmpty: {
     alignItems: "center",
     justifyContent: "center",
     gap: 12,
     borderWidth: 1,
-    borderColor: "#233556",
+    borderColor: "#E8DFD2",
     borderStyle: "dashed"
   },
   previewEmptyText: {
-    color: "#9badcf",
+    color: "#6B6156",
     fontSize: 14
   },
   previewSingle: {
@@ -4771,12 +4824,12 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 5,
-    backgroundColor: "#12233f",
-    borderWidth: 1,
-    borderColor: "#2c5aa0"
+    backgroundColor: "#F3EBDE",
+    borderWidth: 0,
+    borderColor: "#E8DFD2"
   },
   memoryKindBadgeEventText: {
-    color: "#9bc2ff",
+    color: "#4A4239",
     fontSize: 11,
     fontWeight: "800",
     letterSpacing: 0.3,
@@ -4786,29 +4839,30 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 5,
-    backgroundColor: "#1d1b0f",
-    borderWidth: 1,
-    borderColor: "#8d7a31"
+    backgroundColor: "#EDE8FA",
+    borderWidth: 0,
+    borderColor: "#E8DFD2"
   },
   memoryKindBadgeCollectionText: {
-    color: "#ffe48b",
+    color: "#4E3FBC",
     fontSize: 11,
     fontWeight: "800",
     letterSpacing: 0.3,
     textTransform: "uppercase"
   },
   memoryName: {
-    color: "#f8fbff",
-    fontSize: 19,
-    fontWeight: "800",
-    paddingRight: 36
+    color: "#241F1B",
+    fontSize: 22,
+    fontWeight: "700",
+    paddingRight: 36,
+    letterSpacing: -0.55,
   },
   memorySummary: {
-    color: "#9fb2d9",
-    fontSize: 14
+    color: "#6B6156",
+    fontSize: 13,
   },
   memoryTagsSummary: {
-    color: "#c6d4ee",
+    color: "#4A4239",
     fontSize: 12,
     lineHeight: 17
   },
@@ -4819,15 +4873,15 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    backgroundColor: "#11213a",
+    backgroundColor: "#F3EBDE",
     borderWidth: 1,
-    borderColor: "#294266",
+    borderColor: "#E8DFD2",
     flexDirection: "row",
     alignItems: "center",
     gap: 6
   },
   memoryCandidateButtonText: {
-    color: "#d7e2ff",
+    color: "#4A4239",
     fontSize: 12,
     fontWeight: "700"
   },
@@ -4836,36 +4890,40 @@ const styles = StyleSheet.create({
     padding: 24,
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: "#223456",
+    borderColor: "#E8DFD2",
     borderStyle: "dashed",
-    backgroundColor: "#10192c",
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     gap: 10
   },
   emptyTitle: {
-    color: "#f3f7ff",
+    color: "#241F1B",
     fontWeight: "700",
     fontSize: 18
   },
   emptyText: {
-    color: "#8ea4cf",
+    color: "#6B6156",
     textAlign: "center"
   },
   addButton: {
     position: "absolute",
-    alignSelf: "center",
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: "#2f80ff",
+    alignSelf: "flex-end",
+    width: "auto",
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: "#6B5BD2",
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#2f80ff",
-    shadowOpacity: 0.45,
-    shadowRadius: 18,
+    shadowColor: "#241F1B",
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
     shadowOffset: { width: 0, height: 10 },
-    elevation: 12,
-    zIndex: 20
+    elevation: 4,
+    zIndex: 20,
+    right: 16,
+    paddingHorizontal: 20,
+    flexDirection: "row",
+    gap: 9,
   },
   bottomToolbar: {
     position: "absolute",
@@ -4873,9 +4931,9 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     height: 92,
-    backgroundColor: "#0d1729",
+    backgroundColor: "#FBF6EE",
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "#223456",
+    borderTopColor: "#E8DFD2",
     flexDirection: "row",
     alignItems: "flex-start",
     justifyContent: "space-between",
@@ -4891,13 +4949,13 @@ const styles = StyleSheet.create({
     width: 76
   },
   toolbarLabel: {
-    color: "#d2def5",
+    color: "#4A4239",
     fontSize: 12,
     fontWeight: "600"
   },
   centerModalBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(2, 6, 14, 0.78)",
+    backgroundColor: "rgba(36, 31, 27, 0.38)",
     alignItems: "center",
     justifyContent: "center",
     padding: 22
@@ -4907,8 +4965,8 @@ const styles = StyleSheet.create({
     maxWidth: 420,
     borderRadius: 28,
     borderWidth: 1,
-    borderColor: "#223456",
-    backgroundColor: "#0f182a",
+    borderColor: "#E8DFD2",
+    backgroundColor: "#FFFFFF",
     padding: 20,
     gap: 12
   },
@@ -4916,8 +4974,8 @@ const styles = StyleSheet.create({
     minHeight: 58,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#263958",
-    backgroundColor: "#111d31",
+    borderColor: "#E8DFD2",
+    backgroundColor: "#F3EBDE",
     paddingHorizontal: 14,
     paddingVertical: 12,
     flexDirection: "row",
@@ -4929,21 +4987,21 @@ const styles = StyleSheet.create({
     gap: 4
   },
   actionMenuButtonText: {
-    color: "#eef4ff",
+    color: "#4A4239",
     fontSize: 15,
     fontWeight: "800"
   },
   actionMenuHint: {
-    color: "#8ea4cf",
+    color: "#6B6156",
     fontSize: 12,
     lineHeight: 16
   },
   actionMenuDanger: {
-    backgroundColor: "#24131a",
-    borderColor: "#6d3345"
+    backgroundColor: "#FBECE6",
+    borderColor: "#E7B6A8"
   },
   actionMenuDangerText: {
-    color: "#ff9aae",
+    color: "#AD432F",
     fontSize: 15,
     fontWeight: "800"
   },
@@ -4953,18 +5011,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: "#263958",
-    backgroundColor: "#0c1424",
+    borderColor: "#E8DFD2",
+    backgroundColor: "#F3EBDE",
     paddingHorizontal: 16
   },
   secondaryButtonLikeText: {
-    color: "#d7e2ff",
+    color: "#4A4239",
     fontSize: 14,
     fontWeight: "800"
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(2, 6, 14, 0.76)",
+    backgroundColor: "rgba(36, 31, 27, 0.38)",
     justifyContent: "flex-end"
   },
   modalAvoider: {
@@ -4973,11 +5031,11 @@ const styles = StyleSheet.create({
   },
   modalSheet: {
     maxHeight: "88%",
-    backgroundColor: "#0f182a",
+    backgroundColor: "#FBF6EE",
     borderTopLeftRadius: 26,
     borderTopRightRadius: 26,
     borderTopWidth: 1,
-    borderColor: "#223456",
+    borderColor: "#E8DFD2",
     paddingHorizontal: 20,
     paddingTop: 18
   },
@@ -4989,13 +5047,13 @@ const styles = StyleSheet.create({
     marginBottom: 14
   },
   modalTitle: {
-    color: "#f8fbff",
+    color: "#241F1B",
     fontSize: 22,
     fontWeight: "800"
   },
   modalSubtitle: {
     marginTop: 6,
-    color: "#8ea4cf",
+    color: "#6B6156",
     fontSize: 13,
     lineHeight: 18,
     maxWidth: 280
@@ -5004,7 +5062,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: "#17223a",
+    backgroundColor: "#F3EBDE",
     alignItems: "center",
     justifyContent: "center"
   },
@@ -5016,23 +5074,23 @@ const styles = StyleSheet.create({
     gap: 10
   },
   fieldLabel: {
-    color: "#dce7ff",
+    color: "#4A4239",
     fontSize: 13,
     fontWeight: "700",
     letterSpacing: 0.4,
     textTransform: "uppercase"
   },
   fieldHelperText: {
-    color: "#7f93bb",
+    color: "#6B6156",
     fontSize: 12,
     lineHeight: 17
   },
   modalInput: {
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#233456",
-    backgroundColor: "#111d31",
-    color: "#f8fbff",
+    borderColor: "#E8DFD2",
+    backgroundColor: "#F3EBDE",
+    color: "#241F1B",
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 16
@@ -5048,22 +5106,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderWidth: 1,
-    borderColor: "#223456",
-    backgroundColor: "#111d31",
+    borderColor: "#E8DFD2",
+    backgroundColor: "#F3EBDE",
     alignItems: "center",
     justifyContent: "center"
   },
   choiceChipSelected: {
-    backgroundColor: "#1f3f76",
-    borderColor: "#2f80ff"
+    backgroundColor: "#EDE8FA",
+    borderColor: "#6B5BD2"
   },
   choiceChipText: {
-    color: "#c9d7f5",
+    color: "#4A4239",
     fontSize: 14,
     fontWeight: "700"
   },
   choiceChipTextSelected: {
-    color: "#f8fbff"
+    color: "#241F1B"
   },
   inlineActionRow: {
     flexDirection: "row",
@@ -5074,7 +5132,7 @@ const styles = StyleSheet.create({
   inlineButton: {
     minWidth: 108,
     borderRadius: 14,
-    backgroundColor: "#2f80ff",
+    backgroundColor: "#6B5BD2",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 14,
@@ -5087,10 +5145,10 @@ const styles = StyleSheet.create({
   thumbnailPreviewCard: {
     height: 190,
     borderRadius: 22,
-    backgroundColor: "#14223a",
+    backgroundColor: "#F3EBDE",
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "#223456"
+    borderColor: "#E8DFD2"
   },
   thumbnailPreviewImage: {
     width: "100%",
@@ -5103,7 +5161,7 @@ const styles = StyleSheet.create({
     gap: 10
   },
   thumbnailPreviewPlaceholderText: {
-    color: "#8ea4cf"
+    color: "#6B6156"
   },
   thumbnailPickerRow: {
     gap: 10,
@@ -5114,12 +5172,12 @@ const styles = StyleSheet.create({
     height: 92,
     borderRadius: 18,
     borderWidth: 2,
-    borderColor: "#20304d",
+    borderColor: "#E8DFD2",
     overflow: "hidden",
-    backgroundColor: "#14223a"
+    backgroundColor: "#F3EBDE"
   },
   thumbnailOptionSelected: {
-    borderColor: "#2f80ff"
+    borderColor: "#6B5BD2"
   },
   thumbnailOptionImage: {
     width: "100%",
@@ -5139,11 +5197,11 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "#24385f",
-    backgroundColor: "#14223a"
+    borderColor: "#E8DFD2",
+    backgroundColor: "#F3EBDE"
   },
   collectionCandidateCardSelected: {
-    borderColor: "#2f80ff",
+    borderColor: "#6B5BD2",
     borderWidth: 2
   },
   collectionCandidateImage: {
@@ -5157,17 +5215,17 @@ const styles = StyleSheet.create({
     bottom: 6,
     borderRadius: 999,
     paddingVertical: 4,
-    backgroundColor: "rgba(12, 20, 36, 0.84)",
+    backgroundColor: "rgba(251, 246, 238, 0.93)",
     borderWidth: 1,
-    borderColor: "#223456",
+    borderColor: "#E8DFD2",
     alignItems: "center"
   },
   collectionCandidateBadgeSelected: {
-    backgroundColor: "rgba(47, 128, 255, 0.95)",
-    borderColor: "#2f80ff"
+    backgroundColor: "rgba(107, 91, 210, 0.95)",
+    borderColor: "#6B5BD2"
   },
   collectionCandidateBadgeText: {
-    color: "#d9e6ff",
+    color: "#4A4239",
     fontSize: 11,
     fontWeight: "800"
   },
@@ -5185,11 +5243,11 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "#223456",
-    backgroundColor: "#14223a"
+    borderColor: "#E8DFD2",
+    backgroundColor: "#F3EBDE"
   },
   candidateGridItemSelected: {
-    borderColor: "#2f80ff",
+    borderColor: "#6B5BD2",
     borderWidth: 2
   },
   finalizationGridItem: {
@@ -5198,8 +5256,8 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "#223456",
-    backgroundColor: "#14223a"
+    borderColor: "#E8DFD2",
+    backgroundColor: "#F3EBDE"
   },
   candidateGridImage: {
     width: "100%",
@@ -5212,15 +5270,15 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: "rgba(12, 20, 36, 0.88)",
+    backgroundColor: "rgba(251, 246, 238, 0.93)",
     borderWidth: 1,
-    borderColor: "#223456",
+    borderColor: "#E8DFD2",
     alignItems: "center",
     justifyContent: "center"
   },
   candidateGridCheckSelected: {
-    backgroundColor: "#2f80ff",
-    borderColor: "#2f80ff"
+    backgroundColor: "#6B5BD2",
+    borderColor: "#6B5BD2"
   },
   mediaLibraryProbeBadge: {
     position: "absolute",
@@ -5229,9 +5287,9 @@ const styles = StyleSheet.create({
     bottom: 8,
     minHeight: 32,
     borderRadius: 999,
-    backgroundColor: "rgba(47, 128, 255, 0.92)",
+    backgroundColor: "rgba(107, 91, 210, 0.92)",
     borderWidth: 1,
-    borderColor: "#2f80ff",
+    borderColor: "#6B5BD2",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 10
@@ -5245,7 +5303,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 6,
     bottom: 6,
-    backgroundColor: "rgba(16, 35, 61, 0.9)",
+    backgroundColor: "rgba(36, 31, 27, 0.9)",
     borderRadius: 999,
     paddingHorizontal: 8,
     paddingVertical: 4
@@ -5254,7 +5312,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 6,
     bottom: 6,
-    backgroundColor: "rgba(47, 128, 255, 0.9)",
+    backgroundColor: "rgba(107, 91, 210, 0.9)",
     borderRadius: 999,
     paddingHorizontal: 8,
     paddingVertical: 4
@@ -5273,7 +5331,7 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 52,
     borderRadius: 16,
-    backgroundColor: "#2f80ff",
+    backgroundColor: "#6B5BD2",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 18
@@ -5290,14 +5348,14 @@ const styles = StyleSheet.create({
     minHeight: 52,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#6f2432",
-    backgroundColor: "#28131a",
+    borderColor: "#E7B6A8",
+    backgroundColor: "#FBECE6",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 18
   },
   deleteMemoryButtonText: {
-    color: "#ff8ea2",
+    color: "#AD432F",
     fontSize: 14,
     fontWeight: "700"
   }

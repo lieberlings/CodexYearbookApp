@@ -1,6 +1,9 @@
-import { useLocalSearchParams } from "expo-router";
-import { useMemo } from "react";
-import { Image, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { router, Stack, useLocalSearchParams } from "expo-router";
+import { StatusBar } from "expo-status-bar";
+import { useMemo, useState } from "react";
+import { Image, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppData } from "../../../src/context/AppContext";
 import { PageBackground } from "../../../src/components/PageBackground";
 import { buildLayoutDocument } from "../../../src/layout/engine";
@@ -28,6 +31,9 @@ export default function ProjectPreviewScreen() {
   const params = useLocalSearchParams<{ id: string }>();
   const projectId = Array.isArray(params.id) ? (params.id[0] ?? "") : (params.id ?? "");
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const [showAllPages, setShowAllPages] = useState(false);
+  const [selectedPageIndex, setSelectedPageIndex] = useState(0);
 
   const { getProjectById, getMemoriesByProjectId, getPhotosByMemoryId, getPageSectionsByMemoryId } = useAppData();
   const slotOverridesByPage = useEditorStore((state) => state.slotOverridesByPage);
@@ -61,32 +67,47 @@ export default function ProjectPreviewScreen() {
   if (!project) {
     return (
       <View style={styles.centered}>
-        <Text>Project not found.</Text>
+        <Stack.Screen options={{ title: "Book preview", headerStyle: { backgroundColor: "#241F1B" }, headerTintColor: "#FBF6EE" }} />
+        <StatusBar style="light" />
+        <Text style={styles.empty}>Project not found.</Text>
       </View>
     );
   }
 
-  const pageWidth = Math.min(width - 24, 520);
+  const currentPageIndex = Math.min(selectedPageIndex, Math.max(0, renderedPages.length - 1));
+  const fullPageWidth = Math.min(width - 32, 520);
+  const pageWidth = showAllPages ? (fullPageWidth - 16) / 2 : fullPageWidth;
+  const previewScale = showAllPages ? (pageWidth - 20) / (fullPageWidth - 20) : 1;
   const pageHeight = pageWidth;
   const pageInnerWidth = pageWidth - 20;
   const pageContentHeight = pageWidth - 20;
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.projectTitle}>{project.name}</Text>
-        <Text style={styles.projectType}>{project.projectType}</Text>
+    <View style={[styles.screen, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+      <Stack.Screen options={{ headerShown: false }} />
+      <StatusBar style="light" />
+      <View style={styles.topBar}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Close preview" style={styles.iconButton} onPress={() => router.back()}>
+          <Ionicons name="close" size={23} color="#FBF6EE" />
+        </Pressable>
+        <View style={styles.header}>
+          <Text numberOfLines={1} style={styles.projectTitle}>{project.name}</Text>
+          <Text style={styles.projectType}>{showAllPages ? "All pages" : "Book preview"} · {renderedPages.length} pages</Text>
+        </View>
+        <Pressable accessibilityRole="button" accessibilityLabel={showAllPages ? "Show one page" : "Show all pages"} accessibilityState={{ selected: showAllPages }} style={[styles.iconButton, showAllPages && styles.iconButtonActive]} onPress={() => setShowAllPages((value) => !value)}>
+          <Ionicons name={showAllPages ? "book-outline" : "grid-outline"} size={21} color="#FBF6EE" />
+        </Pressable>
       </View>
-
-      <Text style={styles.helpText}>Preview only. Edit page layout, template, fit, scale, and swaps inside each memory.</Text>
-
+      <ScrollView contentContainerStyle={styles.container}>
       {document?.pages.length === 0 ? <Text style={styles.empty}>No pages to preview yet.</Text> : null}
-
-      {renderedPages.map((entry) => {
+      <View style={[styles.pages, { width: fullPageWidth }]}>
+      {renderedPages.map((entry, index) => {
+        if (!showAllPages && index !== currentPageIndex) return null;
         const page = entry.applied;
         const textAnchorSlotIds = new Set(page.textBoxes.map((textBox) => textBox.anchorSlotId).filter(Boolean));
         return (
-          <View key={page.id} style={[styles.pageCard, { width: pageWidth, minHeight: pageHeight }]}>
+          <View key={page.id} style={{ width: pageWidth }}>
+          <Pressable disabled={!showAllPages} accessibilityRole={showAllPages ? "button" : undefined} accessibilityLabel={`Page ${index + 1}`} onPress={() => { setSelectedPageIndex(index); setShowAllPages(false); }} style={[styles.pageCard, { width: pageWidth, minHeight: pageHeight }]}>
             <View style={[styles.canvasArea, { width: pageInnerWidth, height: pageContentHeight, borderRadius: 0 }]}>
               <PageBackground backgroundAssetId={page.backgroundAssetId} backgroundColor={page.backgroundColor} />
               {page.slots.map((slot) => {
@@ -152,6 +173,8 @@ export default function ProjectPreviewScreen() {
                         width: `${textFrame.width * 100}%`,
                         height: `${textFrame.height * 100}%`,
                         borderWidth: textBox.borderWidth ?? 0,
+                        paddingHorizontal: 10 * previewScale,
+                        paddingVertical: 6 * previewScale,
                         borderColor: textBox.borderColor ?? "#0f172a",
                         backgroundColor: anchorSlot
                           ? "transparent"
@@ -164,7 +187,8 @@ export default function ProjectPreviewScreen() {
                         styles.textBoxText,
                         {
                           color: textBox.textColor ?? page.textColor ?? "#0f172a",
-                          fontSize: textBox.fontSize ?? page.textSize ?? 24,
+                          fontSize: (textBox.fontSize ?? page.textSize ?? 24) * previewScale,
+                          lineHeight: 28 * previewScale,
                           fontWeight: (textBox.fontWeight as "400" | "500" | "600" | "700") ?? "700",
                           fontStyle: (textBox.fontStyle as "normal" | "italic") ?? "normal",
                           fontFamily: textBox.fontFamily ?? page.textFontFamily,
@@ -179,48 +203,80 @@ export default function ProjectPreviewScreen() {
               })}
             </View>
 
+          </Pressable>
+          <Text style={styles.pageNumber}>{index + 1}</Text>
           </View>
         );
       })}
-    </ScrollView>
+      </View>
+      </ScrollView>
+      {!showAllPages && renderedPages.length > 0 ? (
+        <View style={styles.pageNavigation}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Previous page" disabled={currentPageIndex === 0} style={[styles.iconButton, currentPageIndex === 0 && styles.disabled]} onPress={() => setSelectedPageIndex(currentPageIndex - 1)}>
+            <Ionicons name="chevron-back" size={23} color="#FBF6EE" />
+          </Pressable>
+          <Text style={styles.pageCount}>Page {currentPageIndex + 1} of {renderedPages.length}</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel="Next page" disabled={currentPageIndex === renderedPages.length - 1} style={[styles.iconButton, currentPageIndex === renderedPages.length - 1 && styles.disabled]} onPress={() => setSelectedPageIndex(currentPageIndex + 1)}>
+            <Ionicons name="chevron-forward" size={23} color="#FBF6EE" />
+          </Pressable>
+        </View>
+      ) : null}
+      <Text style={styles.helpText}>{showAllPages ? "Tap a page to take a closer look." : "Make changes to this page in its memory."}</Text>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: "#241F1B" },
+  topBar: { flexDirection: "row", alignItems: "center", gap: 10, padding: 12 },
+  iconButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: "#38312B", alignItems: "center", justifyContent: "center" },
+  iconButtonActive: { backgroundColor: "#6B5BD2" },
+  disabled: { opacity: 0.3 },
+  pages: { flexDirection: "row", flexWrap: "wrap", gap: 16, alignItems: "flex-start" },
+  pageNavigation: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 24, padding: 12 },
+  pageCount: { color: "#FBF6EE", fontSize: 14, fontWeight: "600" },
+  pageNumber: { color: "#D3C7B8", fontSize: 12, textAlign: "center", marginTop: 10 },
   container: {
-    padding: 12,
+    padding: 16,
+    flexGrow: 1,
+    justifyContent: "center",
     alignItems: "center",
     gap: 14
   },
   centered: {
     flex: 1,
+    backgroundColor: "#241F1B",
     justifyContent: "center",
     alignItems: "center"
   },
   header: {
-    width: "100%",
-    maxWidth: 520
+    flex: 1
   },
   projectTitle: {
-    fontSize: 24,
+    fontSize: 17,
     fontWeight: "700",
-    color: "#0f172a"
+    color: "#FBF6EE"
   },
   projectType: {
     marginTop: 4,
-    color: "#64748b"
+    color: "#D3C7B8",
+    fontSize: 12
   },
   helpText: {
-    width: "100%",
-    maxWidth: 520,
-    color: "#64748b"
+    textAlign: "center",
+    padding: 16,
+    color: "#D3C7B8",
+    fontSize: 12
   },
   pageCard: {
     backgroundColor: "#ffffff",
     borderRadius: 0,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    padding: 10
+    padding: 10,
+    shadowColor: "#000000",
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 6
   },
   canvasArea: {
     position: "relative"
@@ -247,7 +303,7 @@ const styles = StyleSheet.create({
     lineHeight: 28
   },
   empty: {
-    color: "#64748b",
+    color: "#D3C7B8",
     width: "100%",
     maxWidth: 520
   },

@@ -127,6 +127,7 @@ type AppContextValue = {
   deletePageTextBox: (pageSectionId: string, textBoxId: string) => void;
   setPageHero: (pageSectionId: string, photoId: string) => void;
   setPageSectionTemplate: (pageSectionId: string, templateId?: string) => void;
+  updatePageSectionExport: (pageSectionId: string, updates: Pick<MemoryPageSection, "exportToFolder" | "exportFolderName">) => void;
   updatePageSectionStyle: (
     pageSectionId: string,
     updates: Partial<
@@ -1135,6 +1136,10 @@ export function AppProvider({ children }: PropsWithChildren) {
     );
   }, []);
 
+  const updatePageSectionExport = useCallback((pageSectionId: string, updates: Pick<MemoryPageSection, "exportToFolder" | "exportFolderName">) => {
+    setPageSections((prev) => prev.map((section) => section.id === pageSectionId ? { ...section, ...updates } : section));
+  }, []);
+
   const updatePageSectionStyle = useCallback(
     (
       pageSectionId: string,
@@ -1653,6 +1658,7 @@ export function AppProvider({ children }: PropsWithChildren) {
       setPageHero,
       setPageSectionTemplate,
       updatePageSectionStyle,
+      updatePageSectionExport,
       getMemoriesByProjectId,
       getMemoryById,
       getPhotosByProjectId,
@@ -1717,6 +1723,7 @@ export function AppProvider({ children }: PropsWithChildren) {
       setPageSectionTemplate,
       upsertSuggestions,
       updatePageSectionStyle,
+      updatePageSectionExport,
       updateMemory,
       updateProject
     ]

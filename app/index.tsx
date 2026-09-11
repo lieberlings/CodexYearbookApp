@@ -57,12 +57,12 @@ function pluralize(count: number, singular: string, plural = `${singular}s`): st
 }
 
 function formatProjectStats(memoryCount: number, pageCount: number, photoCount: number): string {
-  return `${pluralize(memoryCount, "memory")} | ${pluralize(pageCount, "page")} | ${pluralize(photoCount, "photo")}`;
+  return `${pluralize(memoryCount, "memory")} · ${pluralize(pageCount, "page")} · ${pluralize(photoCount, "photo")}`;
 }
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
-  const bottomToolbarHeight = insets.bottom + 102;
+  const bottomToolbarHeight = insets.bottom + 76;
   const {
     loading,
     projects,
@@ -287,8 +287,8 @@ export default function HomeScreen() {
   if (loading) {
     return (
       <View style={styles.loadingScreen}>
-        <StatusBar style="light" />
-        <ActivityIndicator size="large" color="#2f80ff" />
+        <StatusBar style="dark" />
+        <ActivityIndicator size="large" color="#6B5BD2" />
       </View>
     );
   }
@@ -296,27 +296,21 @@ export default function HomeScreen() {
   return (
     <View style={styles.screen}>
       <Stack.Screen options={{ headerShown: false }} />
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
 
       <ScrollView
         contentContainerStyle={{
           paddingTop: insets.top + 18,
-          paddingHorizontal: 22,
+          paddingHorizontal: 16,
           paddingBottom: bottomToolbarHeight + 72
         }}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.headerRow}>
-          <View style={styles.avatarCircle}>
-            <Ionicons name="book-outline" size={22} color="#2f80ff" />
-          </View>
           <View style={styles.headerTextWrap}>
-            <Text style={styles.welcomeText}>Welcome back,</Text>
-            <Text style={styles.screenTitle}>Your Projects</Text>
+            <Text style={styles.screenTitle}>Your books</Text>
           </View>
         </View>
-
-        <Text style={styles.sectionTitle}>Active Projects</Text>
 
         <View style={styles.projectList}>
           {projects.map((project) => {
@@ -337,10 +331,11 @@ export default function HomeScreen() {
                     <Image source={{ uri: stats.previewUri }} style={styles.projectPreview} />
                   ) : (
                     <View style={[styles.projectPreview, styles.projectPreviewPlaceholder]}>
-                      <Ionicons name="images-outline" size={42} color="#7084ad" />
+                      <Ionicons name="images-outline" size={42} color="#6B6156" />
                     </View>
                   )}
                   <View style={styles.projectInfo}>
+                    <Text style={styles.timelineBadge}>{project.timelineMode}</Text>
                     <Text numberOfLines={1} style={styles.projectTitle}>
                       {project.name}
                     </Text>
@@ -350,7 +345,7 @@ export default function HomeScreen() {
                   </View>
                 </Pressable>
                 <Pressable hitSlop={10} onPress={() => openEditComposer(project.id)} style={styles.projectMenuButton}>
-                  <Ionicons name="ellipsis-horizontal" size={18} color="#d7e2ff" />
+                  <Ionicons name="ellipsis-horizontal" size={18} color="#4A4239" />
                 </Pressable>
               </View>
             );
@@ -358,7 +353,7 @@ export default function HomeScreen() {
 
           {projects.length === 0 ? (
             <View style={styles.emptyCard}>
-              <Ionicons name="albums-outline" size={38} color="#62759c" />
+              <Ionicons name="albums-outline" size={38} color="#6B6156" />
               <Text style={styles.emptyTitle}>No projects yet</Text>
               <Text style={styles.emptyText}>Use the add button below to create the first one.</Text>
             </View>
@@ -366,8 +361,9 @@ export default function HomeScreen() {
         </View>
       </ScrollView>
 
-      <Pressable onPress={openCreateComposer} style={[styles.addButton, { bottom: insets.bottom + 32 }]}>
-        <Ionicons name="add" size={34} color="#ffffff" />
+      <Pressable onPress={openCreateComposer} style={[styles.addButton, { bottom: bottomToolbarHeight + 12 }]}>
+        <Ionicons name="add" size={22} color="#ffffff" />
+        <Text style={styles.addButtonLabel}>New book</Text>
       </Pressable>
 
       <View style={[styles.bottomToolbar, { height: bottomToolbarHeight, paddingBottom: insets.bottom + 18 }]}>
@@ -375,22 +371,20 @@ export default function HomeScreen() {
           style={styles.toolbarItem}
           onPress={() => Alert.alert("Settings", "Settings screen is not wired yet.")}
         >
-          <Ionicons name="settings-outline" size={22} color="#d2def5" />
+          <Ionicons name="settings-outline" size={22} color="#4A4239" />
           <Text style={styles.toolbarLabel}>Settings</Text>
         </Pressable>
         <Pressable
           style={styles.toolbarItem}
           onPress={() => Alert.alert("Orders", "Open a project and use Order there for now.")}
         >
-          <Ionicons name="bag-handle-outline" size={22} color="#d2def5" />
+          <Ionicons name="bag-handle-outline" size={22} color="#4A4239" />
           <Text style={styles.toolbarLabel}>Orders</Text>
         </Pressable>
-        <View style={styles.toolbarCenterSpacer} />
         <Pressable style={styles.toolbarItem} onPress={() => router.push("/prompts")}>
-          <Ionicons name="notifications-outline" size={22} color="#d2def5" />
+          <Ionicons name="notifications-outline" size={22} color="#4A4239" />
           <Text style={styles.toolbarLabel}>Notifications</Text>
         </Pressable>
-        <View style={styles.toolbarGhostSpacer} />
       </View>
 
       <Modal transparent animationType="slide" visible={composerVisible} onRequestClose={closeComposer}>
@@ -408,7 +402,7 @@ export default function HomeScreen() {
                   </Text>
                 </View>
                 <Pressable style={styles.modalCloseButton} onPress={closeComposer}>
-                  <Ionicons name="close" size={22} color="#eef4ff" />
+                  <Ionicons name="close" size={22} color="#4A4239" />
                 </Pressable>
               </View>
 
@@ -423,7 +417,7 @@ export default function HomeScreen() {
                   value={composerTitle}
                   onChangeText={setComposerTitle}
                   placeholder="Project title"
-                  placeholderTextColor="#6f7f9f"
+                  placeholderTextColor="#6B6156"
                   style={styles.modalInput}
                 />
 
@@ -467,7 +461,7 @@ export default function HomeScreen() {
                         value={composerStartDate}
                         onChangeText={setComposerStartDate}
                         placeholder="Start YYYY-MM-DD"
-                        placeholderTextColor="#6f7f9f"
+                        placeholderTextColor="#6B6156"
                         style={[styles.modalInput, styles.dateInput]}
                         autoCapitalize="none"
                         autoCorrect={false}
@@ -477,7 +471,7 @@ export default function HomeScreen() {
                         value={composerEndDate}
                         onChangeText={setComposerEndDate}
                         placeholder="End YYYY-MM-DD"
-                        placeholderTextColor="#6f7f9f"
+                        placeholderTextColor="#6B6156"
                         style={[styles.modalInput, styles.dateInput]}
                         autoCapitalize="none"
                         autoCorrect={false}
@@ -523,7 +517,7 @@ export default function HomeScreen() {
                     <Image source={{ uri: composerThumbnailUri }} style={styles.thumbnailPreviewImage} />
                   ) : (
                     <View style={styles.thumbnailPreviewPlaceholder}>
-                      <Ionicons name="image-outline" size={34} color="#6c7c9d" />
+                      <Ionicons name="image-outline" size={34} color="#6B6156" />
                       <Text style={styles.thumbnailPreviewPlaceholderText}>Pick a project thumbnail</Text>
                     </View>
                   )}
@@ -531,7 +525,7 @@ export default function HomeScreen() {
 
                 <Pressable style={styles.inlineButton} onPress={onPickComposerThumbnail} disabled={composerPicking}>
                   {composerPicking ? (
-                    <ActivityIndicator color="#eef4ff" />
+                    <ActivityIndicator color="#4A4239" />
                   ) : (
                     <Text style={styles.inlineButtonText}>Pick Thumbnail</Text>
                   )}
@@ -563,139 +557,135 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
+  timelineBadge: {
+    alignSelf: "flex-start", backgroundColor: "#F3EBDE", color: "#4A4239",
+    borderRadius: 13, paddingHorizontal: 11, paddingVertical: 6,
+    fontSize: 11, fontWeight: "700", letterSpacing: 1, textTransform: "uppercase", marginBottom: 7
+  },
+  addButtonLabel: { color: "#FFFFFF", fontSize: 15, fontWeight: "700" },
   screen: {
     flex: 1,
-    backgroundColor: "#0a1220"
+    backgroundColor: "#FBF6EE"
   },
   loadingScreen: {
     flex: 1,
-    backgroundColor: "#0a1220",
+    backgroundColor: "#FBF6EE",
     alignItems: "center",
     justifyContent: "center"
   },
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 14,
-    marginBottom: 34
-  },
-  avatarCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: "#17233b",
-    borderWidth: 1,
-    borderColor: "#2d3d61",
-    alignItems: "center",
-    justifyContent: "center"
+    gap: 10,
+    marginBottom: 18,
   },
   headerTextWrap: {
     flex: 1
   },
-  welcomeText: {
-    color: "#95a8cf",
-    fontSize: 17
-  },
   screenTitle: {
-    color: "#f8fbff",
-    fontSize: 24,
-    fontWeight: "800",
-    marginTop: 4
-  },
-  sectionTitle: {
-    color: "#f8fbff",
+    color: "#241F1B",
     fontSize: 22,
-    fontWeight: "800",
-    marginBottom: 18
+    fontWeight: "700",
+    marginTop: 0,
+    letterSpacing: -0.55,
   },
   projectList: {
-    gap: 20
+    gap: 14,
   },
   projectCard: {
-    borderRadius: 24,
-    backgroundColor: "#101a2d",
+    borderRadius: 20,
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: "#20304d",
+    borderColor: "#E8DFD2",
     overflow: "hidden",
-    shadowColor: "#000000",
-    shadowOpacity: 0.22,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 8
+    shadowColor: "#241F1B",
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
+    padding: 10,
   },
   projectCardPressable: {
     gap: 0
   },
   projectPreview: {
     width: "100%",
-    height: 280,
-    backgroundColor: "#1a2843"
+    aspectRatio: 1,
+    backgroundColor: "#F3EBDE",
+    borderRadius: 14,
   },
   projectPreviewPlaceholder: {
     alignItems: "center",
     justifyContent: "center"
   },
   projectInfo: {
-    paddingHorizontal: 20,
-    paddingVertical: 18
+    paddingHorizontal: 4,
+    paddingVertical: 18,
+    paddingTop: 12,
+    paddingBottom: 4,
   },
   projectTitle: {
-    color: "#f8fbff",
-    fontSize: 20,
-    fontWeight: "800"
+    color: "#241F1B",
+    fontSize: 23,
+    fontWeight: "700",
+    letterSpacing: -0.6,
   },
   projectMeta: {
-    marginTop: 8,
-    color: "#9fb2d9",
+    marginTop: 7,
+    color: "#6B6156",
     fontSize: 13
   },
   projectMenuButton: {
     position: "absolute",
-    right: 12,
-    top: 12,
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: "rgba(12, 20, 36, 0.86)",
+    right: 20,
+    top: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(251, 246, 238, 0.93)",
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: "#223456"
+    borderColor: "#E8DFD2"
   },
   emptyCard: {
     padding: 24,
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: "#223456",
+    borderColor: "#E8DFD2",
     borderStyle: "dashed",
-    backgroundColor: "#10192c",
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     gap: 10
   },
   emptyTitle: {
-    color: "#f3f7ff",
+    color: "#241F1B",
     fontWeight: "700",
     fontSize: 18
   },
   emptyText: {
-    color: "#8ea4cf",
+    color: "#6B6156",
     textAlign: "center"
   },
   addButton: {
     position: "absolute",
-    alignSelf: "center",
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: "#2f80ff",
+    alignSelf: "flex-end",
+    width: "auto",
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: "#6B5BD2",
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#2f80ff",
-    shadowOpacity: 0.45,
-    shadowRadius: 18,
+    shadowColor: "#241F1B",
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
     shadowOffset: { width: 0, height: 10 },
-    elevation: 12,
-    zIndex: 20
+    elevation: 4,
+    zIndex: 20,
+    right: 16,
+    paddingHorizontal: 20,
+    flexDirection: "row",
+    gap: 9,
   },
   bottomToolbar: {
     position: "absolute",
@@ -703,34 +693,28 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     height: 92,
-    backgroundColor: "#0d1729",
+    backgroundColor: "#FBF6EE",
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "#223456",
+    borderTopColor: "#E8DFD2",
     flexDirection: "row",
     alignItems: "flex-start",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingTop: 12
+    paddingTop: 12,
   },
   toolbarItem: {
     flex: 1,
     alignItems: "center",
     gap: 6
   },
-  toolbarCenterSpacer: {
-    width: 76
-  },
-  toolbarGhostSpacer: {
-    flex: 1
-  },
   toolbarLabel: {
-    color: "#d2def5",
+    color: "#4A4239",
     fontSize: 12,
     fontWeight: "600"
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(2, 6, 14, 0.76)",
+    backgroundColor: "rgba(36, 31, 27, 0.38)",
     justifyContent: "flex-end"
   },
   modalAvoider: {
@@ -738,11 +722,11 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end"
   },
   modalSheet: {
-    backgroundColor: "#0f182a",
+    backgroundColor: "#FBF6EE",
     borderTopLeftRadius: 26,
     borderTopRightRadius: 26,
     borderTopWidth: 1,
-    borderColor: "#223456",
+    borderColor: "#E8DFD2",
     paddingHorizontal: 20,
     paddingTop: 18
   },
@@ -754,13 +738,13 @@ const styles = StyleSheet.create({
     marginBottom: 14
   },
   modalTitle: {
-    color: "#f8fbff",
+    color: "#241F1B",
     fontSize: 22,
     fontWeight: "800"
   },
   modalSubtitle: {
     marginTop: 6,
-    color: "#8ea4cf",
+    color: "#6B6156",
     fontSize: 13,
     lineHeight: 18,
     maxWidth: 280
@@ -769,7 +753,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: "#17223a",
+    backgroundColor: "#F3EBDE",
     alignItems: "center",
     justifyContent: "center"
   },
@@ -784,23 +768,23 @@ const styles = StyleSheet.create({
     gap: 10
   },
   fieldLabel: {
-    color: "#dce7ff",
+    color: "#4A4239",
     fontSize: 13,
     fontWeight: "700",
     letterSpacing: 0.4,
     textTransform: "uppercase"
   },
   fieldHelperText: {
-    color: "#7f93bb",
+    color: "#6B6156",
     fontSize: 12,
     lineHeight: 17
   },
   modalInput: {
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#233456",
-    backgroundColor: "#111d31",
-    color: "#f8fbff",
+    borderColor: "#E8DFD2",
+    backgroundColor: "#F3EBDE",
+    color: "#241F1B",
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 16
@@ -823,30 +807,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderWidth: 1,
-    borderColor: "#223456",
-    backgroundColor: "#111d31",
+    borderColor: "#E8DFD2",
+    backgroundColor: "#F3EBDE",
     alignItems: "center",
     justifyContent: "center"
   },
   choiceChipSelected: {
-    backgroundColor: "#1f3f76",
-    borderColor: "#2f80ff"
+    backgroundColor: "#EDE8FA",
+    borderColor: "#6B5BD2"
   },
   choiceChipText: {
-    color: "#c9d7f5",
+    color: "#4A4239",
     fontSize: 14,
     fontWeight: "700"
   },
   choiceChipTextSelected: {
-    color: "#f8fbff"
+    color: "#4E3FBC",
   },
   thumbnailPreviewCard: {
     height: 190,
     borderRadius: 22,
-    backgroundColor: "#14223a",
+    backgroundColor: "#F3EBDE",
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "#223456"
+    borderColor: "#E8DFD2"
   },
   thumbnailPreviewImage: {
     width: "100%",
@@ -859,12 +843,12 @@ const styles = StyleSheet.create({
     gap: 10
   },
   thumbnailPreviewPlaceholderText: {
-    color: "#8ea4cf"
+    color: "#6B6156"
   },
   inlineButton: {
     minHeight: 48,
     borderRadius: 14,
-    backgroundColor: "#2f80ff",
+    backgroundColor: "#6B5BD2",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 14,
@@ -882,8 +866,8 @@ const styles = StyleSheet.create({
   primaryAction: {
     flex: 1,
     minHeight: 52,
-    borderRadius: 16,
-    backgroundColor: "#2f80ff",
+    borderRadius: 999,
+    backgroundColor: "#6B5BD2",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 18
@@ -900,14 +884,14 @@ const styles = StyleSheet.create({
     minHeight: 52,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#6f2432",
-    backgroundColor: "#28131a",
+    borderColor: "#E7B6A8",
+    backgroundColor: "#FBECE6",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 18
   },
   deleteProjectButtonText: {
-    color: "#ff8ea2",
+    color: "#AD432F",
     fontSize: 14,
     fontWeight: "700"
   }

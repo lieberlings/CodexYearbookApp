@@ -18,6 +18,16 @@ const mockedStorage = AsyncStorage as unknown as {
   removeItem: jest.Mock;
 };
 
+it("persists hidden ZIP folder settings on pages", async () => {
+  const data: AppData = { projects: [], memories: [], photos: [], suggestions: [], pageSections: [
+    { id: "page", memoryId: "memory", order: 0, photoIds: [], exportToFolder: true, exportFolderName: "Beach photos" }
+  ] };
+  await saveAppData(data);
+  const saved = (mockedStorage.setItem as jest.Mock).mock.calls.at(-1)?.[1] as string;
+  (mockedStorage.getItem as jest.Mock).mockImplementation(async () => saved);
+  expect((await loadAppData()).pageSections[0]).toEqual(data.pageSections[0]);
+});
+
 describe("storage Milestone 2 foundations", () => {
   beforeEach(() => {
     mockedStorage.getItem.mockReset();
