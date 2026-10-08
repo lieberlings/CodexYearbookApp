@@ -1,6 +1,7 @@
 {
   "id": "school-days",
   "label": "School Days",
+  "order": 7,
   "pageFormat": "8x8",
   "assetSize": {
     "width": 2400,

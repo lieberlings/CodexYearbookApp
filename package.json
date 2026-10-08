@@ -4,13 +4,19 @@
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
+    "prestart": "node scripts/build-library.cjs",
     "start": "node scripts/start-development.cjs",
+    "preandroid": "node scripts/build-library.cjs",
     "android": "expo run:android --variant developmentDebug --app-id com.lieber.yearbookapp.dev",
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
+    "pretest": "node scripts/build-library.cjs",
     "test": "jest",
-    "build:android:preview": "eas build -p android --profile preview"
+    "build:android:preview": "eas build -p android --profile preview",
+    "library": "node scripts/build-library.cjs",
+    "library:check": "node scripts/build-library.cjs --check",
+    "eas-build-post-install": "node scripts/build-library.cjs"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",

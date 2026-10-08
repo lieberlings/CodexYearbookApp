@@ -1,6 +1,7 @@
 {
   "id": "winter-get-away",
   "label": "Winter Get Away",
+  "order": 2,
   "pageFormat": "8x8",
   "assetSize": {
     "width": 2400,

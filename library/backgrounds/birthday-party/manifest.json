@@ -1,8 +1,12 @@
-import { BackgroundPack } from "../backgroundTypes";
-
-export const birthdayPartyBackgroundPack: BackgroundPack = {
+{
   "id": "birthday-party",
   "label": "Birthday Party",
+  "order": 4,
+  "pageFormat": "8x8",
+  "assetSize": {
+    "width": 2400,
+    "height": 2400
+  },
   "backgrounds": [
     {
       "number": 1,
@@ -11,7 +15,7 @@ export const birthdayPartyBackgroundPack: BackgroundPack = {
       "theme": "birthday party",
       "kind": "gradient",
       "backgroundColor": "#FFF8EC",
-      "assetUri": "assets/birthday-party-01.svg",
+      "asset": "assets/birthday-party-01.svg",
       "palette": [
         "#7ECBEA",
         "#F06D8D",
@@ -42,7 +46,7 @@ export const birthdayPartyBackgroundPack: BackgroundPack = {
       "theme": "birthday party",
       "kind": "pattern",
       "backgroundColor": "#FFF8EC",
-      "assetUri": "assets/birthday-party-02.svg",
+      "asset": "assets/birthday-party-02.svg",
       "palette": [
         "#7ECBEA",
         "#F06D8D",
@@ -73,7 +77,7 @@ export const birthdayPartyBackgroundPack: BackgroundPack = {
       "theme": "birthday party",
       "kind": "illustration",
       "backgroundColor": "#FFF8EC",
-      "assetUri": "assets/birthday-party-03.svg",
+      "asset": "assets/birthday-party-03.svg",
       "palette": [
         "#7ECBEA",
         "#F06D8D",
@@ -104,7 +108,7 @@ export const birthdayPartyBackgroundPack: BackgroundPack = {
       "theme": "birthday party",
       "kind": "pattern",
       "backgroundColor": "#FFF8EC",
-      "assetUri": "assets/birthday-party-04.svg",
+      "asset": "assets/birthday-party-04.svg",
       "palette": [
         "#7ECBEA",
         "#F06D8D",
@@ -135,7 +139,7 @@ export const birthdayPartyBackgroundPack: BackgroundPack = {
       "theme": "birthday party",
       "kind": "pattern",
       "backgroundColor": "#FFF8EC",
-      "assetUri": "assets/birthday-party-05.svg",
+      "asset": "assets/birthday-party-05.svg",
       "palette": [
         "#7ECBEA",
         "#F06D8D",
@@ -166,7 +170,7 @@ export const birthdayPartyBackgroundPack: BackgroundPack = {
       "theme": "birthday party",
       "kind": "pattern",
       "backgroundColor": "#FFF8EC",
-      "assetUri": "assets/birthday-party-06.svg",
+      "asset": "assets/birthday-party-06.svg",
       "palette": [
         "#7ECBEA",
         "#F06D8D",
@@ -197,7 +201,7 @@ export const birthdayPartyBackgroundPack: BackgroundPack = {
       "theme": "birthday party",
       "kind": "illustration",
       "backgroundColor": "#FFF8EC",
-      "assetUri": "assets/birthday-party-07.svg",
+      "asset": "assets/birthday-party-07.svg",
       "palette": [
         "#7ECBEA",
         "#F06D8D",
@@ -228,7 +232,7 @@ export const birthdayPartyBackgroundPack: BackgroundPack = {
       "theme": "birthday party",
       "kind": "pattern",
       "backgroundColor": "#FFF8EC",
-      "assetUri": "assets/birthday-party-08.svg",
+      "asset": "assets/birthday-party-08.svg",
       "palette": [
         "#7ECBEA",
         "#F06D8D",
@@ -253,4 +257,4 @@ export const birthdayPartyBackgroundPack: BackgroundPack = {
       }
     }
   ]
-};
+}
