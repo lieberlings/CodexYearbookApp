@@ -1,3 +1,4 @@
+import { resolveShapeId } from "./objectShapes";
 import { z } from "zod";
 
 export const SlotRoleSchema = z.enum(["hero", "photo"]);
@@ -11,7 +12,12 @@ export const SlotFrameSchema = z.object({
   height: z.number().min(0).max(1)
 });
 
+export const ObjectShapeSchema = z.string().transform(resolveShapeId);
+
 export const LayoutSlotSchema = z.object({
+  rotation: z.number().optional(),
+  zIndex: z.number().optional(),
+  shape: ObjectShapeSchema.optional(),
   id: z.string(),
   role: SlotRoleSchema,
   fitMode: SlotFitModeSchema,
@@ -23,6 +29,10 @@ export const LayoutSlotSchema = z.object({
 });
 
 export const PageTextBoxSchema = z.object({
+  rotation: z.number().optional(),
+  zIndex: z.number().optional(),
+  shape: ObjectShapeSchema.optional(),
+  sticker: z.boolean().optional(),
   id: z.string(),
   text: z.string(),
   anchorSlotId: z.string().optional(),

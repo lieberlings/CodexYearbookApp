@@ -1,3 +1,13 @@
+import { CoverEditorStrip } from "../../src/components/CoverEditorStrip";
+import { CoverAwarePageBackground } from "../../src/components/CoverAwarePageBackground";
+import { getShapeTextLayout } from "../../src/layout/shapeText";
+import { usePageHistory } from "../../src/editor/usePageHistory";
+import { FreestylePhoto } from "../../src/editor/FreestylePhoto";
+import { ObjectHandles } from "../../src/editor/ObjectHandles";
+import { ObjectShape } from "../../src/components/ObjectShape";
+import { objectShapes, getShapeDefinition } from "../../src/layout/objectShapes";
+import { droppedPhoto, unlockPage, stepLayer } from "../../src/layout/freestyle";
+import { LayoutSlot } from "../../src/layout/schemas";
 import type { ComponentProps } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
@@ -155,7 +165,7 @@ function MiniTemplatePreview({ template, active }: { template: TemplateDefinitio
               left: `${slot.frame.x * 100}%`,
               top: `${slot.frame.y * 100}%`,
               width: `${slot.frame.width * 100}%`,
-              height: `${slot.frame.height * 100}%`
+              height: `${slot.frame.height * 100}%`,
             }
           ]}
         />
@@ -242,6 +252,8 @@ export default function MemoryDetailsScreen() {
   const { width, height } = useWindowDimensions();
   const {
     getProjectById,
+    getMemoriesByProjectId,
+    createMemory,
     getMemoryById,
     getPhotosByMemoryId,
     getPageSectionsByMemoryId,
@@ -256,8 +268,11 @@ export default function MemoryDetailsScreen() {
     updatePageTextBox,
     deletePageTextBox,
     setPageSectionTemplate,
-    updatePageSectionStyle,
-    updatePageSectionExport
+    updatePageSectionStyle: savePageSectionStyle,
+    updateProject,
+    updatePageSectionExport,
+    patchPageSection,
+    replaceMemoryPages
   } = useAppData();
   const setDocument = useEditorStore((state) => state.setDocument);
   const selectedPageId = useEditorStore((state) => state.selectedPageId);
@@ -271,10 +286,12 @@ export default function MemoryDetailsScreen() {
   const [adding, setAdding] = useState(false);
   const [mediaLibraryPickerVisible, setMediaLibraryPickerVisible] = useState(false);
   const [openInspector, setOpenInspector] = useState<{ pageId: string; kind: InspectorKind } | undefined>(undefined);
+  const [photoShapesOpen, setPhotoShapesOpen] = useState(false);
+  const textPressOrigin = useRef({ x: 0, y: 0 });
   const [photoEditor, setPhotoEditor] = useState<PhotoEditorState | undefined>(undefined);
   const [selectedTextBoxId, setSelectedTextBoxId] = useState<string | undefined>(undefined);
   const [editorHeight, setEditorHeight] = useState(0);
-  const [textControl, setTextControl] = useState<"font" | "color" | undefined>(undefined);
+  const [textControl, setTextControl] = useState<"font" | "color" | "border" | "fill" | undefined>(undefined);
   const [editingTextBoxId, setEditingTextBoxId] = useState<string | undefined>(undefined);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [galleryDeletePhotoId, setGalleryDeletePhotoId] = useState<string | undefined>(undefined);
@@ -287,6 +304,7 @@ export default function MemoryDetailsScreen() {
   const slotRectsRef = useRef<Record<string, Rect>>({});
   const galleryPhotoRectsRef = useRef<Record<string, Rect>>({});
   const stagingRef = useRef<View | null>(null);
+  const canvasRectRef = useRef<Rect | undefined>(undefined);
   const pageCanvasRef = useRef<View | null>(null);
   const removePhotoTileRef = useRef<View | null>(null);
   const stagingRectRef = useRef<Rect | undefined>(undefined);
@@ -368,7 +386,52 @@ export default function MemoryDetailsScreen() {
     [activePageId, pageSections]
   );
   const activeTextBoxes = useMemo(() => activeSection?.textBoxes ?? [], [activeSection]);
+  const initialInspectorMemory = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (activePageId && initialInspectorMemory.current !== memoryId) {
+      initialInspectorMemory.current = memoryId;
+      setOpenInspector({ pageId: activePageId, kind: "pages" });
+    }
+  }, [activePageId, memoryId]);
   const activeRenderedPage = activePageId ? renderedPageById[activePageId] : undefined;
+  const freestyle = activeSection?.templateId === "freestyle";
+  const unlocked = freestyle && !activeSection?.layoutLocked;
+  const historyOverrides = Object.fromEntries(pageSections.map(section => [section.id, slotOverridesByPage[section.id] ?? {}]));
+  const history = usePageHistory(memory?.id ?? "loading", { sections: pageSections, photos, overrides: historyOverrides }, snapshot => {
+    Keyboard.dismiss(); setSelectedTextBoxId(undefined); setPhotoEditor(undefined);
+    const restoredPage = snapshot.sections.find(section => JSON.stringify(section) !== JSON.stringify(pageSections.find(current => current.id === section.id)));
+    setSelection(restoredPage?.id ?? activeSection?.id ?? snapshot.sections[0]?.id, undefined);
+    replaceMemoryPages(memoryId, snapshot.sections, snapshot.photos);
+    const other = { ...useEditorStore.getState().slotOverridesByPage };
+    pageSections.forEach(section => delete other[section.id]);
+    useEditorStore.setState({ slotOverridesByPage: { ...other, ...snapshot.overrides } });
+  });
+  function enableFreestyle() {
+    if (!activeSection || !activeRenderedPage) return;
+    patchPageSection(activeSection.id, unlockPage(activeSection, activeRenderedPage));
+    clearPageOverrides(activeSection.id);
+    setSelection(activeSection.id, undefined);
+  }
+  function changeTemplate(templateId?: string) {
+    if (!activeSection) return;
+    clearPageOverrides(activeSection.id);
+    setPageSectionTemplate(activeSection.id, templateId);
+    setSelection(activeSection.id, undefined);
+  }
+  function changeFreeSlot(slot: LayoutSlot) {
+    if (!activeSection) return;
+    patchPageSection(activeSection.id, { freestyleSlots: (activeSection.freestyleSlots ?? []).map(old => old.id === slot.id ? slot : old) });
+  }
+  function orderObject(id: string, forward: boolean, text: boolean) {
+    if (!activeSection || !activeRenderedPage) return;
+    const layers = [...activeRenderedPage.slots.map(slot => ({ id: slot.id, text: false, z: slot.zIndex ?? 2 })), ...activeTextBoxes.map(box => ({ id: box.id, text: true, z: box.zIndex ?? 20 }))].sort((a, b) => a.z - b.z);
+    const moving = layers.find(layer => layer.id === id && layer.text === text);
+    if (!moving) return;
+    const ordered = stepLayer(layers, layers.indexOf(moving), forward);
+    const z = (objectId: string, isText: boolean) => ordered.findIndex(layer => layer.id === objectId && layer.text === isText) + 2;
+    patchPageSection(activeSection.id, { freestyleSlots: activeSection.freestyleSlots?.map(slot => ({ ...slot, zIndex: z(slot.id, false) })), textBoxes: activeTextBoxes.map(box => ({ ...box, zIndex: z(box.id, true) })) });
+  }
+
   const activeSlotTextBoxBySlotId = useMemo(
     () =>
       Object.fromEntries(
@@ -631,7 +694,7 @@ export default function MemoryDetailsScreen() {
     if (!wasSelected) Keyboard.dismiss();
     setSelectedTextBoxId(textBoxId);
     setEditingTextBoxId(wasSelected ? textBoxId : undefined);
-    if (activeSection) {
+    if (activeSection && (!activeTextBoxes.find(box => box.id === textBoxId)?.sticker || wasSelected)) {
       setOpenInspector({ pageId: activeSection.id, kind: "text" });
     }
   }
@@ -639,9 +702,7 @@ export default function MemoryDetailsScreen() {
   function clearTextBoxSelection() {
     setSelectedTextBoxId(undefined);
     setEditingTextBoxId(undefined);
-    if (openInspector?.kind === "text") {
-      setOpenInspector(undefined);
-    }
+    setTextControl(undefined);
   }
 
   function stepBackFromTextBox() {
@@ -699,6 +760,7 @@ export default function MemoryDetailsScreen() {
   }
 
   function beginTextBoxGesture(mode: "move" | "resize", textBox: PageTextBox, pageX: number, pageY: number) {
+    history.begin();
     Keyboard.dismiss();
     suppressTextTapRef.current = true;
     textBoxGestureRef.current = {
@@ -720,7 +782,7 @@ export default function MemoryDetailsScreen() {
     if (gesture.mode === "move") {
       const nextX = clamp(gesture.startBox.x + deltaX, 0, 1 - gesture.startBox.width);
       const nextY = clamp(gesture.startBox.y + deltaY, 0, 1 - gesture.startBox.height);
-      updatePageTextBox(activeSection.id, gesture.textBoxId, { x: nextX, y: nextY });
+      updatePageTextBox(activeSection.id, gesture.textBoxId, { x: nextX, y: nextY, anchorSlotId: undefined });
       return;
     }
     const nextWidth = clamp(gesture.startBox.width + deltaX, 0.14, 1 - gesture.startBox.x);
@@ -733,10 +795,19 @@ export default function MemoryDetailsScreen() {
   }
 
   function endTextBoxGesture() {
+    history.end();
     textBoxGestureRef.current = {
       startPageX: 0,
       startPageY: 0
     };
+  }
+
+  function updatePageSectionStyle(...args: Parameters<typeof savePageSectionStyle>) {
+    const panel = memory?.bookRole === "front-cover" ? "front" : memory?.bookRole === "back-cover" ? "back" : undefined;
+    if (panel && project?.coverDesign?.background && ("backgroundColor" in args[1] || "backgroundAssetId" in args[1])) {
+      updateProject(project.id, { coverDesign: { ...project.coverDesign, panelBackgrounds: { ...project.coverDesign.panelBackgrounds, [panel]: true } } });
+    }
+    savePageSectionStyle(...args);
   }
 
   function getSectionStyle(pageSectionId: string) {
@@ -760,6 +831,7 @@ export default function MemoryDetailsScreen() {
   }
 
   function beginEditorGesture(touches: readonly { pageX: number; pageY: number }[]) {
+    history.begin();
     if (!selectedSlot) {
       return;
     }
@@ -900,6 +972,7 @@ export default function MemoryDetailsScreen() {
   }
 
   async function primeDropGeometry() {
+    canvasRectRef.current = await measureNode(pageCanvasRef.current);
     const nextSlotRects: Record<string, Rect> = {};
     const nextGalleryPhotoRects: Record<string, Rect> = {};
 
@@ -928,7 +1001,8 @@ export default function MemoryDetailsScreen() {
   function buildDropTargets() {
     const targets: DropTarget[] = [];
 
-    if (activeRenderedPage) {
+    if (unlocked && activeSection && canvasRectRef.current) targets.push({ id: "freestyle-canvas", targetType: "page-canvas", rect: canvasRectRef.current, priority: 20, targetPageId: activeSection.id, hitSlop: 0, stickySlop: 0 });
+    if (activeRenderedPage && !unlocked) {
       activeRenderedPage.slots.forEach((slot) => {
         if (activeSlotTextBoxBySlotId[slot.id]) {
           return;
@@ -1008,6 +1082,13 @@ export default function MemoryDetailsScreen() {
   }
 
   function commitDropAction(resolution: DragResolution) {
+    if (resolution.action === "add-freestyle" && activeSection && activeRenderedPage) {
+      const slot = droppedPhoto(resolution.photoId, resolution.x ?? .5, resolution.y ?? .5, `free-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, Math.max(2, ...activeRenderedPage.slots.map(s => s.zIndex ?? 2), ...activeTextBoxes.map(t => t.zIndex ?? 20)) + 1);
+      patchPageSection(activeSection.id, { freestyleSlots: [...(activeSection.freestyleSlots ?? []), slot] });
+      assignPhotoToPageSlot(activeSection.id, slot.id, resolution.photoId);
+      setSelection(activeSection.id, slot.id);
+      return;
+    }
     if (resolution.action === "cancel") {
       return;
     }
@@ -1203,12 +1284,15 @@ export default function MemoryDetailsScreen() {
           </Text>
           <Text style={styles.topBarSubtitle}>{editingTextBoxId ? "Editing text" : topBarMeta}</Text>
         </View>
+        <Pressable accessibilityLabel="Undo" disabled={!history.canUndo} onPress={history.undo} style={{ padding: 8, opacity: history.canUndo ? 1 : .3 }}><Ionicons name="arrow-undo" size={22} color="#6B5BD2" /></Pressable>
+        <Pressable accessibilityLabel="Redo" disabled={!history.canRedo} onPress={history.redo} style={{ padding: 8, opacity: history.canRedo ? 1 : .3 }}><Ionicons name="arrow-redo" size={22} color="#6B5BD2" /></Pressable>
         {selectedTextBox ? (
           <Pressable accessibilityRole="button" style={styles.textDoneButton} onPress={saveTextEditing}>
             <Text style={styles.textDoneLabel}>Done</Text>
           </Pressable>
         ) : <View style={styles.topBarGhost} />}
       </View>
+      {(memory.bookRole === "front-cover" || memory.bookRole === "back-cover") && <CoverEditorStrip projectId={memory.projectId} panel={memory.bookRole === "front-cover" ? "front" : "back"} />}
       <View onLayout={(event) => setEditorHeight(event.nativeEvent.layout.height - insets.bottom - 24)} style={[styles.container, { paddingBottom: insets.bottom + 12 }]}>
         {activeSection && activeRenderedPage ? (() => {
           const section = activeSection;
@@ -1260,9 +1344,15 @@ export default function MemoryDetailsScreen() {
                 collapsable={false}
                 style={[styles.canvasWrap, styles.primaryCanvasWrap, { width: canvasSize, height: canvasSize }]}
               >
-                <PageBackground backgroundAssetId={pageStyle.backgroundAssetId} backgroundColor={pageStyle.backgroundColor} />
+                <CoverAwarePageBackground project={project} role={memory.bookRole} width={canvasSize} backgroundAssetId={pageStyle.backgroundAssetId} backgroundColor={pageStyle.backgroundColor} />
+                <Pressable accessibilityLabel="Deselect object" style={StyleSheet.absoluteFill} onPress={() => { stepBackFromTextBox(); setSelection(section.id, undefined); }} />
                 {renderedPage.slots.map((slot) => {
                   const photo = slot.photoId ? photosById[slot.photoId] : undefined;
+                  if (unlocked) return <FreestylePhoto key={slot.id} slot={slot} photo={photo} selected={selectedSlotId === slot.id && !selectedTextBoxId} size={canvasSize}
+                    borderColor={pageStyle.slotBorderColor} borderWidth={pageStyle.slotBorderWidth} cornerRadius={pageStyle.slotCornerRadius}
+                    onSelect={() => { setSelectedTextBoxId(undefined); setSelection(section.id, slot.id); }}
+                    onEdit={() => openSlotEditor(section.id, slot.id)} onChange={changeFreeSlot} onBegin={history.begin} onEnd={history.end} />;
+
                   const slotTextBox = activeSlotTextBoxBySlotId[slot.id];
                   const isSelected = selectedPageId === renderedPage.id && selectedSlotId === slot.id;
                   const photoMetrics = getPhotoRenderMetrics({
@@ -1310,7 +1400,8 @@ export default function MemoryDetailsScreen() {
                           left: `${slot.frame.x * 100}%`,
                           top: `${slot.frame.y * 100}%`,
                           width: `${slot.frame.width * 100}%`,
-                          height: `${slot.frame.height * 100}%`
+                          height: `${slot.frame.height * 100}%`,
+                          transform: [{ rotate: `${slot.rotation ?? 0}deg` }], zIndex: slot.zIndex ?? 2
                         }
                       ]}
                     >
@@ -1322,14 +1413,15 @@ export default function MemoryDetailsScreen() {
                           isSelected ? styles.slotSelected : null,
                           drag.session.payload?.dragType === "page-photo" && drag.session.payload.itemId === photo?.id ? styles.slotDragging : null,
                           {
+                            backgroundColor: slot.shape && slot.shape !== "rectangle" ? "transparent" : "#F3EBDE",
                             borderColor: pageStyle.slotBorderColor,
-                            borderWidth: pageStyle.slotBorderWidth,
+                            borderWidth: slot.shape && slot.shape !== "rectangle" ? 0 : pageStyle.slotBorderWidth,
                             borderRadius: pageStyle.slotCornerRadius
                           },
                           hoveredTarget?.targetPageId === renderedPage.id && hoveredTarget.targetSlotId === slot.id ? styles.slotDropTarget : null
                         ]}
                       >
-                        {photo ? (
+                        {slot.shape && slot.shape !== "rectangle" ? <ObjectShape shape={slot.shape} uri={photo?.uri} metrics={photoMetrics} border={pageStyle.slotBorderColor} borderWidth={pageStyle.slotBorderWidth} /> : photo ? (
                           <Image
                             source={{ uri: photo.uri }}
                             style={[
@@ -1341,7 +1433,7 @@ export default function MemoryDetailsScreen() {
                                 top: `${photoMetrics.topPercent}%`
                               }
                             ]}
-                            resizeMode="stretch"
+                            resizeMode="cover"
                           />
                         ) : null}
                       </Pressable>
@@ -1369,6 +1461,7 @@ export default function MemoryDetailsScreen() {
                     height: textBox.height
                   };
                   const isAnchoredTextBox = Boolean(anchorSlot);
+                  const shapeText = getShapeTextLayout(textBox.shape, textBox.text || "Tap to edit", textFrame.width * canvasSize, textFrame.height * canvasSize, textBox.sticker ? textFrame.height * canvasSize * .7 : textBox.fontSize ?? pageStyle.textSize, textBox.borderWidth);
                   return (
                     <View
                       key={textBox.id}
@@ -1378,7 +1471,8 @@ export default function MemoryDetailsScreen() {
                           left: `${textFrame.x * 100}%`,
                           top: `${textFrame.y * 100}%`,
                           width: `${textFrame.width * 100}%`,
-                          height: `${textFrame.height * 100}%`
+                          height: `${textFrame.height * 100}%`,
+                          transform: [{ rotate: `${textBox.rotation ?? 0}deg` }], zIndex: isSelectedTextBox ? 10001 : textBox.zIndex ?? 20
                         }
                       ]}
                       pointerEvents="box-none"
@@ -1389,15 +1483,18 @@ export default function MemoryDetailsScreen() {
                           isAnchoredTextBox ? styles.textBoxFrameAnchored : null,
                           isSelectedTextBox ? styles.textBoxFrameSelected : null,
                           {
-                            borderWidth: textBox.borderWidth ?? 0,
+                            paddingHorizontal: textBox.shape && textBox.shape !== "rectangle" ? 0 : textBox.sticker ? 0 : 10,
+                            paddingVertical: shapeText || textBox.sticker ? 0 : 6,
+                            borderWidth: textBox.shape && textBox.shape !== "rectangle" ? 0 : textBox.borderWidth ?? 0,
                             borderColor: textBox.borderColor ?? "#0f172a",
                             borderRadius: textBox.cornerRadius ?? 8,
-                            backgroundColor: isAnchoredTextBox
+                            backgroundColor: (isAnchoredTextBox || (textBox.shape && textBox.shape !== "rectangle"))
                               ? "transparent"
                               : applyColorOpacity(textBox.fillColor ?? "#ffffff", textBox.fillOpacity ?? 0)
                           }
                         ]}
-                        onPressIn={() => {
+                        onPressIn={(event) => {
+                          textPressOrigin.current = { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY };
                           suppressTextTapRef.current = false;
                           textTapWasSelectedRef.current = isSelectedTextBox;
                         }}
@@ -1408,19 +1505,21 @@ export default function MemoryDetailsScreen() {
                           selectTextBox(textBox.id, textTapWasSelectedRef.current);
                         }}
                         onLongPress={(event) => {
-                          if (isAnchoredTextBox || keyboardVisible) {
+                          if (keyboardVisible) {
                             return;
                           }
                           setSelectedTextBoxId(textBox.id);
                           setOpenInspector({ pageId: section.id, kind: "text" });
-                          beginTextBoxGesture("move", textBox, event.nativeEvent.pageX, event.nativeEvent.pageY);
+                          beginTextBoxGesture("move", { ...textBox, ...textFrame, anchorSlotId: undefined }, event.nativeEvent.pageX, event.nativeEvent.pageY);
                         }}
                         delayLongPress={180}
                         onTouchMove={(event) => {
-                          if (isAnchoredTextBox || keyboardVisible || textBoxGestureRef.current.mode !== "move") {
-                            return;
-                          }
                           const touch = event.nativeEvent.touches[0];
+                          if (keyboardVisible || !touch) return;
+                          if (isSelectedTextBox && !textBoxGestureRef.current.mode && Math.hypot(touch.pageX - textPressOrigin.current.x, touch.pageY - textPressOrigin.current.y) > 5) {
+                            beginTextBoxGesture("move", { ...textBox, ...textFrame, anchorSlotId: undefined }, textPressOrigin.current.x, textPressOrigin.current.y);
+                          }
+                          if (textBoxGestureRef.current.mode !== "move") return;
                           if (touch) {
                             updateTextBoxGesture(touch.pageX, touch.pageY);
                           }
@@ -1428,13 +1527,15 @@ export default function MemoryDetailsScreen() {
                         onTouchEnd={endTextBoxGesture}
                         onTouchCancel={endTextBoxGesture}
                       >
+                        {textBox.shape && textBox.shape !== "rectangle" && <ObjectShape shape={textBox.shape} fill={applyColorOpacity(textBox.fillColor ?? "#ffffff", textBox.fillOpacity ?? 0)} border={textBox.borderColor} borderWidth={textBox.borderWidth} />}
+                        <View style={shapeText ? { position: "absolute", left: shapeText.left, top: shapeText.top, width: shapeText.width, height: shapeText.height, overflow: "hidden", justifyContent: "center" } : { flex: 1, justifyContent: "center" }}>
                         {isEditingTextBox ? (
                           <TextInput
                             ref={textInputRef}
                             value={textBox.text}
                             onChangeText={(text) => updateTextBox(textBox, { text })}
                             onContentSizeChange={(event) =>
-                              updateTextBoxFromContentSize(
+                              !shapeText && updateTextBoxFromContentSize(
                                 textBox,
                                 event.nativeEvent.contentSize.width,
                                 event.nativeEvent.contentSize.height
@@ -1447,7 +1548,8 @@ export default function MemoryDetailsScreen() {
                               styles.textBoxInput,
                               {
                                 color: textBox.textColor ?? pageStyle.textColor,
-                                fontSize: textBox.fontSize ?? pageStyle.textSize,
+                                fontSize: shapeText?.fontSize ?? (textBox.sticker ? textFrame.height * canvasSize * .7 : textBox.fontSize ?? pageStyle.textSize),
+                                ...(shapeText ? { lineHeight: shapeText.lineHeight, includeFontPadding: false } : {}),
                                 fontFamily: textBox.fontFamily ?? pageStyle.textFontFamily,
                                 fontWeight: (textBox.fontWeight as "400" | "500" | "600" | "700") ?? "700",
                                 fontStyle: (textBox.fontStyle as "normal" | "italic") ?? "normal",
@@ -1458,11 +1560,15 @@ export default function MemoryDetailsScreen() {
                           />
                         ) : (
                           <Text
+                            adjustsFontSizeToFit={Boolean(shapeText)}
+                            numberOfLines={shapeText?.numberOfLines}
+                            minimumFontScale={0.01}
                             style={[
                               styles.textBoxText,
                               {
                                 color: textBox.textColor ?? pageStyle.textColor,
-                                fontSize: textBox.fontSize ?? pageStyle.textSize,
+                                fontSize: shapeText?.fontSize ?? (textBox.sticker ? textFrame.height * canvasSize * .7 : textBox.fontSize ?? pageStyle.textSize),
+                                ...(shapeText ? { lineHeight: shapeText.lineHeight, includeFontPadding: false } : {}),
                                 fontFamily: textBox.fontFamily ?? pageStyle.textFontFamily,
                                 fontWeight: (textBox.fontWeight as "400" | "500" | "600" | "700") ?? "700",
                                 fontStyle: (textBox.fontStyle as "normal" | "italic") ?? "normal",
@@ -1473,48 +1579,23 @@ export default function MemoryDetailsScreen() {
                             {textBox.text || "Tap to edit"}
                           </Text>
                         )}
-                        {isSelectedTextBox && !isEditingTextBox ? (
-                          <>
-                            {!isAnchoredTextBox ? (
-                              <Pressable
-                                style={styles.textBoxHandle}
-                                onPress={(event) => event.stopPropagation()}
-                                hitSlop={16}
-                                onTouchStart={(event) => beginTextBoxGesture("move", textBox, event.nativeEvent.pageX, event.nativeEvent.pageY)}
-                                onTouchMove={(event) => {
-                                  const touch = event.nativeEvent.touches[0];
-                                  if (touch) {
-                                    updateTextBoxGesture(touch.pageX, touch.pageY);
-                                  }
-                                }}
-                                onTouchEnd={endTextBoxGesture}
-                                onTouchCancel={endTextBoxGesture}
-                              />
-                            ) : null}
-                            {!isAnchoredTextBox ? (
-                              <Pressable
-                                style={styles.textBoxResizeHandle}
-                                onPress={(event) => event.stopPropagation()}
-                                hitSlop={16}
-                                onTouchStart={(event) => beginTextBoxGesture("resize", textBox, event.nativeEvent.pageX, event.nativeEvent.pageY)}
-                                onTouchMove={(event) => {
-                                  const touch = event.nativeEvent.touches[0];
-                                  if (touch) {
-                                    updateTextBoxGesture(touch.pageX, touch.pageY);
-                                  }
-                                }}
-                                onTouchEnd={endTextBoxGesture}
-                                onTouchCancel={endTextBoxGesture}
-                              />
-                            ) : null}
-                          </>
-                        ) : null}
+                        </View>
                       </Pressable>
+                      {isSelectedTextBox && !isEditingTextBox && <ObjectHandles onDelete={() => { deletePageTextBox(section.id, textBox.id); clearTextBoxSelection(); }} geometry={{ ...textFrame, rotation: textBox.rotation }} size={canvasSize} onBegin={history.begin} onEnd={history.end} onChange={patch => updateTextBox(textBox, { ...textFrame, ...patch, anchorSlotId: undefined, autoSize: false, ...(textBox.sticker && patch.height ? { fontSize: Math.min(72, patch.height * canvasSize * .7) } : {}) })} />}
                     </View>
                   );
                 })}
               </View>
 
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 6 }}>
+                <Pressable accessibilityLabel={unlocked ? "Lock layout" : "Unlock layout"} onPress={() => freestyle ? patchPageSection(section.id, { layoutLocked: !section.layoutLocked }) : enableFreestyle()} style={{ flexDirection: "row", alignItems: "center", gap: 5 }}><Ionicons name={unlocked ? "lock-open-outline" : "lock-closed-outline"} size={18} color="#6B5BD2" /><Text>{unlocked ? "Lock layout" : "Unlock layout"}</Text></Pressable>
+                {unlocked && selectedSlotId && !selectedTextBoxId && <>
+                  <Pressable accessibilityLabel="Photo order" onPress={() => Alert.alert("Photo order", "Choose a layer", [{ text: "Cancel", style: "cancel" }, { text: "Send forwards", onPress: () => orderObject(selectedSlotId, true, false) }, { text: "Send backwards", onPress: () => orderObject(selectedSlotId, false, false) }])}><Ionicons name="layers-outline" size={22} color="#6B5BD2" /></Pressable>
+                  <Pressable accessibilityLabel="Photo shape" onPress={() => setPhotoShapesOpen(!photoShapesOpen)}><Ionicons name="shapes-outline" size={22} color="#6B5BD2" /></Pressable>
+                  <Pressable accessibilityLabel="Remove photo frame" onPress={() => { patchPageSection(section.id, { freestyleSlots: (section.freestyleSlots ?? []).filter(s => s.id !== selectedSlotId) }); removePhotoFromPageSlot(section.id, selectedSlotId, renderedPage.slots.find(s => s.id === selectedSlotId)?.photoId); setSelection(section.id, undefined); }}><Ionicons name="remove-circle-outline" size={22} color="#6B5BD2" /></Pressable>
+                </>}
+              </View>
+              {unlocked && selectedSlotId && !selectedTextBoxId && photoShapesOpen && <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap", paddingBottom: 6 }}>{objectShapes.map(shape => <Pressable key={shape} style={styles.stepperButton} onPress={() => { const slot = renderedPage.slots.find(s => s.id === selectedSlotId); if (slot) changeFreeSlot({ ...slot, shape }); }}><Text>{getShapeDefinition(shape).label}</Text></Pressable>)}</View>}
               {inspectorOpen ? (
                 <View
                   style={styles.inspectorArea}
@@ -1527,6 +1608,7 @@ export default function MemoryDetailsScreen() {
                   </View>
                   {inspectorOpen === "pages" ? (
                     <ScrollView style={styles.pageRail} contentContainerStyle={{ gap: 14, paddingBottom: 12 }} keyboardShouldPersistTaps="handled">
+                    {memory.bookRole === "front-cover" && <Pressable style={styles.addTextBoxButton} onPress={async () => { const existing = getMemoriesByProjectId(memory.projectId).find(m => m.bookRole === "dedication"); const id = existing?.id ?? await createMemory(memory.projectId, "Dedication", { bookRole: "dedication" }); router.push({ pathname: "/memory/[id]", params: { id } }); }}><Ionicons name="heart-outline" size={22} color="#6B5BD2" /><Text>{getMemoriesByProjectId(memory.projectId).some(m => m.bookRole === "dedication") ? "Edit dedication page" : "Add dedication page"}</Text></Pressable>}
                     {/* Page reorder is owned by DraggableFlatList. Other editor drags still use the custom drag controller. */}
                     <DraggableFlatList
                       data={pageRailData}
@@ -1694,12 +1776,13 @@ export default function MemoryDetailsScreen() {
                       nestedScrollEnabled
                       contentContainerStyle={styles.layoutPicker}
                     >
+                      <Pressable style={[styles.addTextBoxButton, freestyle && styles.templateChoiceActive]} onPress={enableFreestyle}><Ionicons name="move" size={22} color="#6B5BD2" /><Text>Freestyle</Text></Pressable>
                       <View style={styles.controlGroup}>
                         <Text style={styles.controlGroupLabel}>Automatic</Text>
                         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.templateRow}>
                           <Pressable
                             style={[styles.templateChoice, !section.templateId ? styles.templateChoiceActive : null]}
-                            onPress={() => setPageSectionTemplate(section.id, undefined)}
+                            onPress={() => changeTemplate(undefined)}
                           >
                             <Text style={styles.templateChoiceLabel}>Auto</Text>
                           </Pressable>
@@ -1717,7 +1800,7 @@ export default function MemoryDetailsScreen() {
                                 <Pressable
                                   key={template.id}
                                   style={[styles.templateChoice, active ? styles.templateChoiceActive : null]}
-                                  onPress={() => setPageSectionTemplate(section.id, template.id)}
+                                  onPress={() => changeTemplate(template.id)}
                                 >
                                   <MiniTemplatePreview template={template} active={active} />
                                 </Pressable>
@@ -1858,11 +1941,15 @@ export default function MemoryDetailsScreen() {
 
                   {inspectorOpen === "text" ? (
                     <>
-                    <Pressable accessibilityRole="button" style={styles.addTextBoxButton} onPress={() => { Keyboard.dismiss(); handleAddTextBox(); }}>
-                      <Ionicons name="add" size={18} color="#FFFFFF" />
-                      <Text style={styles.addTextButtonText}>Add text box</Text>
-                    </Pressable>
-                    {selectedTextBox ? (
+                    {(!selectedTextBox || (selectedTextBox.sticker && !editingTextBoxId)) && <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
+                      <Pressable accessibilityRole="button" style={[styles.addTextBoxButton, styles.textAddAction]} onPress={() => { Keyboard.dismiss(); handleAddTextBox(); }}>
+                        <Ionicons name="add" size={18} color="#FFFFFF" /><Text style={styles.addTextButtonText}>Add text box</Text>
+                      </Pressable>
+                      <Pressable accessibilityRole="button" style={[styles.addTextBoxButton, styles.textAddAction]} onPress={() => { Keyboard.dismiss(); const id = addPageTextBox(section.id, { sticker: true, text: "😊", fontSize: 48, width: .25, height: .25, borderWidth: 0, autoSize: false }); if (id) { setSelectedTextBoxId(id); setEditingTextBoxId(undefined); } }}>
+                        <Text style={{ fontSize: 20 }}>😊</Text><Text style={styles.addTextButtonText}>Add emoji</Text>
+                      </Pressable>
+                    </View>}
+                    {selectedTextBox && (!selectedTextBox.sticker || editingTextBoxId) ? (
                       <ScrollView
                         style={styles.textCompactToolbarScroll}
                         contentContainerStyle={styles.textCompactToolbar}
@@ -1929,9 +2016,9 @@ export default function MemoryDetailsScreen() {
                         </View>
 
                         ) : null}
-                        {!editingTextBoxId ? <Pressable style={styles.addLineButton} onPress={() => setEditingTextBoxId(selectedTextBox.id)}>
-                          <Ionicons name="create-outline" size={16} color="#4E3FBC" /><Text style={styles.addLineLabel}>Edit text</Text>
-                        </Pressable> : null}
+                        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                          {objectShapes.map(shape => <Pressable key={shape} style={[styles.stepperButton, selectedTextBox.shape === shape && styles.templateChoiceActive]} onPress={() => updateSelectedTextBox({ shape })}><Text>{getShapeDefinition(shape).label}</Text></Pressable>)}
+                        </View>
                         <View style={styles.controlGroup}>
                           <Text style={styles.controlGroupLabel}>Border</Text>
                           <View style={styles.controlRow}>
@@ -1949,15 +2036,26 @@ export default function MemoryDetailsScreen() {
                               <Text style={styles.stepperButtonText}>+ Width</Text>
                             </Pressable>
                           </View>
-                          <View style={styles.paletteRow}>
-                            {BORDER_COLORS.map((color) => (
+                          <Pressable accessibilityRole="button" accessibilityLabel="Border color" accessibilityState={{ expanded: textControl === "border" }}
+                              style={styles.fontMenuButton} onPress={() => setTextControl(textControl === "border" ? undefined : "border")}>
+                              <View style={[styles.textColorDot, { backgroundColor: selectedTextBox.borderColor ?? "#0f172a" }]} />
+                              <Text style={styles.fontDropdownText}>Border color</Text>
+                              <Ionicons name={textControl === "border" ? "chevron-up" : "chevron-down"} size={12} color="#6B6156" />
+                            </Pressable>
+                            {textControl === "border" ? (
+                            <View style={styles.paletteRow}>
+                            {TEXT_COLORS.map((color) => (
                               <Pressable
                                 key={color}
+                                accessibilityRole="button"
+                                accessibilityLabel={`Border color ${color}`}
+                                accessibilityState={{ selected: selectedTextBox.borderColor === color }}
                                 style={[styles.colorSwatch, { backgroundColor: color }, selectedTextBox.borderColor === color ? styles.colorSwatchActive : null]}
                                 onPress={() => updateSelectedTextBox({ borderColor: color })}
                               />
                             ))}
                           </View>
+                            ) : null}
                           <View style={styles.shapeRow}>
                             {TEXT_BOX_CORNER_RADII.map((radius) => (
                               <Pressable
@@ -1980,15 +2078,26 @@ export default function MemoryDetailsScreen() {
                         {!selectedTextBox.anchorSlotId ? (
                           <View style={styles.controlGroup}>
                             <Text style={styles.controlGroupLabel}>Fill</Text>
+                            <Pressable accessibilityRole="button" accessibilityLabel="Fill color" accessibilityState={{ expanded: textControl === "fill" }}
+                              style={styles.fontMenuButton} onPress={() => setTextControl(textControl === "fill" ? undefined : "fill")}>
+                              <View style={[styles.textColorDot, { backgroundColor: selectedTextBox.fillColor ?? "#ffffff" }]} />
+                              <Text style={styles.fontDropdownText}>Fill color</Text>
+                              <Ionicons name={textControl === "fill" ? "chevron-up" : "chevron-down"} size={12} color="#6B6156" />
+                            </Pressable>
+                            {textControl === "fill" ? (
                             <View style={styles.paletteRow}>
-                              {COLOR_PALETTE.map((color) => (
+                              {TEXT_COLORS.map((color) => (
                                 <Pressable
                                   key={color}
+                                accessibilityRole="button"
+                                accessibilityLabel={`Fill color ${color}`}
+                                accessibilityState={{ selected: selectedTextBox.fillColor === color }}
                                   style={[styles.colorSwatch, { backgroundColor: color }, selectedTextBox.fillColor === color ? styles.colorSwatchActive : null]}
                                   onPress={() => updateSelectedTextBox({ fillColor: color })}
                                 />
                               ))}
                             </View>
+                            ) : null}
                             <View style={styles.controlRow}>
                               <Pressable
                                 style={styles.stepperButton}
@@ -2007,28 +2116,7 @@ export default function MemoryDetailsScreen() {
                           </View>
                         ) : null}
 
-                        <View style={styles.controlRow}>
-                          <Pressable style={styles.stepperButton} onPress={() => setEditingTextBoxId(selectedTextBox.id)}>
-                            <Text style={styles.stepperButtonText}>{editingTextBoxId ? "Editing..." : "Edit Text"}</Text>
-                          </Pressable>
-                          <Pressable style={[styles.stepperButton, styles.stepperButtonActive]} onPress={saveTextEditing}>
-                            <Text style={[styles.stepperButtonText, styles.stepperButtonTextActive]}>Save Text</Text>
-                          </Pressable>
-                          {selectedTextBox.anchorSlotId ? (
-                            <Pressable style={styles.stepperButton} onPress={revertSelectedTextSlotToPhotoSlot}>
-                              <Text style={styles.stepperButtonText}>Photo Slot</Text>
-                            </Pressable>
-                          ) : null}
-                          <Pressable
-                            style={styles.tinyButtonDanger}
-                            onPress={() => {
-                              deletePageTextBox(section.id, selectedTextBox.id);
-                              clearTextBoxSelection();
-                            }}
-                          >
-                            <Text style={styles.deleteText}>Delete Text</Text>
-                          </Pressable>
-                        </View>
+                        {selectedTextBox.anchorSlotId ? <Pressable style={styles.stepperButton} onPress={revertSelectedTextSlotToPhotoSlot}><Text style={styles.stepperButtonText}>Photo Slot</Text></Pressable> : null}
                       </ScrollView>
                     ) : (
                       <View style={styles.textInspector}>
@@ -2041,7 +2129,7 @@ export default function MemoryDetailsScreen() {
               ) : <View style={styles.idleToolSpace}>
                 {photos.length === 0 ? <Text style={styles.empty}>Add photos to start this page.</Text> : null}
               </View>}
-              <View style={styles.toolTray} onStartShouldSetResponder={() => Boolean(selectedTextBoxId)} onResponderGrant={stepBackFromTextBox}>
+              <View style={styles.toolTray} onStartShouldSetResponder={() => Boolean(selectedTextBoxId || (unlocked && selectedSlotId))} onResponderGrant={() => { stepBackFromTextBox(); setSelection(section.id, undefined); }}>
                 <ScrollView
                   horizontal
                   keyboardShouldPersistTaps="always"
@@ -2145,14 +2233,16 @@ export default function MemoryDetailsScreen() {
                 style={[styles.modalCanvas, { width: editorSize, height: editorSize }]}
                 onTouchStart={(event) => beginEditorGesture(event.nativeEvent.touches)}
                 onTouchMove={(event) => updateEditorGesture(event.nativeEvent.touches)}
-                onTouchEnd={() => {
-                  editorGestureRef.current.mode = undefined;
+                onTouchEnd={(event) => {
+                  if (event.nativeEvent.touches.length) beginEditorGesture(event.nativeEvent.touches);
+                  else { history.end(); editorGestureRef.current.mode = undefined; }
                 }}
                 onTouchCancel={() => {
+                  history.end();
                   editorGestureRef.current.mode = undefined;
                 }}
               >
-                <PageBackground
+                <CoverAwarePageBackground project={project} role={memory.bookRole} width={editorSize}
                   backgroundAssetId={getSectionStyle(selectedPage.id).backgroundAssetId}
                   backgroundColor={getSectionStyle(selectedPage.id).backgroundColor}
                 />
@@ -2193,7 +2283,7 @@ export default function MemoryDetailsScreen() {
                         top: `${photoMetrics.topPercent}%`
                       }
                     ]}
-                    resizeMode="stretch"
+                    resizeMode="cover"
                   />
                 </View>
                     </>
@@ -2209,7 +2299,8 @@ export default function MemoryDetailsScreen() {
 }
 
 const styles = StyleSheet.create({
-  textTapAwaySurface: { ...StyleSheet.absoluteFillObject, zIndex: 10 },
+  textTapAwaySurface: { ...StyleSheet.absoluteFillObject, zIndex: 9999 },
+  textAddAction: { flex: 1, height: 44, marginBottom: 0, paddingHorizontal: 10, paddingVertical: 0, justifyContent: "center" },
   addTextBoxButton: { flexDirection: "row", alignItems: "center", alignSelf: "flex-start", gap: 6, backgroundColor: "#6B5BD2", borderRadius: 999, paddingHorizontal: 14, paddingVertical: 9, marginBottom: 12 },
   idleToolSpace: { flex: 1, justifyContent: "center", alignItems: "center" },
   toolContentScroll: { flex: 1, minHeight: 0 },
@@ -3455,4 +3546,3 @@ const styles = StyleSheet.create({
     shadowRadius: 12
   }
 });
-

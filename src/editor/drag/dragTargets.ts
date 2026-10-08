@@ -38,6 +38,7 @@ function acceptsTarget(dragType: DragPayload["dragType"], targetType: DropTarget
     );
   }
   return (
+    targetType === "page-canvas" ||
     targetType === "page-slot" ||
     targetType === "page-photo"
   );

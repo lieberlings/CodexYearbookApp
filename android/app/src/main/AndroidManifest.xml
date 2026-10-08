@@ -29,8 +29,8 @@
         <action android:name="android.intent.action.VIEW"/>
         <category android:name="android.intent.category.DEFAULT"/>
         <category android:name="android.intent.category.BROWSABLE"/>
-        <data android:scheme="yearbookapp"/>
-        <data android:scheme="exp+yearbook-app-glieben"/>
+        <data android:scheme="${yearbookScheme}"/>
+        <data android:scheme="${yearbookExpoScheme}"/>
       </intent-filter>
     </activity>
   </application>

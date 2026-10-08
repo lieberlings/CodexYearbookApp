@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, jest } from "@jest/globals";
-import { getRecentMediaLibraryPhotoChoicesWithProbe, pickImagesFromLibrary } from "./photoService";
+import { getRecentMediaLibraryPhotoChoicesWithProbe, pickImagesFromLibrary, pickSingleImageFromLibrary } from "./photoService";
+
+jest.mock("react-native", () => ({ Platform: { OS: "android" } }));
 
 const mockGetPermissionsAsync: any = jest.fn();
 const mockRequestPermissionsAsync: any = jest.fn();
@@ -42,6 +44,27 @@ describe("getRecentMediaLibraryPhotoChoicesWithProbe", () => {
     mockGetAssetInfoAsync.mockReset();
     mockRequestMediaLibraryPermissionsAsync.mockReset();
     mockLaunchImageLibraryAsync.mockReset();
+  });
+
+  it("picks a thumbnail without requesting broad access or decoding base64", async () => {
+    const asset = { uri: "file:///thumbnail.jpg", width: 1200, height: 800 };
+    mockLaunchImageLibraryAsync.mockResolvedValue({ canceled: false, assets: [asset] });
+    expect(await pickSingleImageFromLibrary()).toEqual(asset);
+    expect(mockRequestMediaLibraryPermissionsAsync).not.toHaveBeenCalled();
+    expect(mockLaunchImageLibraryAsync).toHaveBeenCalledWith({ mediaTypes: ["images"], allowsMultipleSelection: false, quality: 1 });
+  });
+
+  it("falls back to the Android file chooser when the photo picker rejects", async () => {
+    mockLaunchImageLibraryAsync.mockRejectedValueOnce(new Error("launchImageLibraryAsync rejected"));
+    mockLaunchImageLibraryAsync.mockResolvedValueOnce({ canceled: false, assets: [{ uri: "file:///fallback.jpg" }] });
+    expect(await pickSingleImageFromLibrary()).toEqual({ uri: "file:///fallback.jpg" });
+    expect(mockLaunchImageLibraryAsync).toHaveBeenLastCalledWith(expect.objectContaining({ legacy: true }));
+  });
+
+  it("does not reopen a canceled thumbnail picker", async () => {
+    mockLaunchImageLibraryAsync.mockResolvedValue({ canceled: true, assets: null });
+    expect(await pickSingleImageFromLibrary()).toBeNull();
+    expect(mockLaunchImageLibraryAsync).toHaveBeenCalledTimes(1);
   });
 
   it("returns permission diagnostics when media access is blocked", async () => {

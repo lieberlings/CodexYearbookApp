@@ -2,310 +2,96 @@ import { Ionicons } from "@expo/vector-icons";
 import { router, Stack, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useMemo, useState } from "react";
-import { Image, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { PanResponder, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useAppData } from "../../../src/context/AppContext";
-import { PageBackground } from "../../../src/components/PageBackground";
-import { buildLayoutDocument } from "../../../src/layout/engine";
-import { applySlotOverridesToPage } from "../../../src/layout/overrides";
-import { getPhotoAspect, getPhotoRenderMetrics } from "../../../src/layout/photoMetrics";
-import { useEditorStore } from "../../../src/state/editorStore";
-
-function applyColorOpacity(color: string | undefined, opacity: number | undefined): string {
-  if (!color) {
-    return "transparent";
-  }
-  const normalizedOpacity = Math.max(0, Math.min(1, opacity ?? 1));
-  const hex = color.replace("#", "");
-  const safeHex = hex.length === 3 ? hex.split("").map((part) => part + part).join("") : hex;
-  const r = Number.parseInt(safeHex.slice(0, 2), 16);
-  const g = Number.parseInt(safeHex.slice(2, 4), 16);
-  const b = Number.parseInt(safeHex.slice(4, 6), 16);
-  if ([r, g, b].some((value) => Number.isNaN(value))) {
-    return color;
-  }
-  return `rgba(${r}, ${g}, ${b}, ${normalizedOpacity})`;
-}
+import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
+import { BookPageCanvas } from "../../../src/components/BookPageCanvas";
+import { CoverPanelPreview } from "../../../src/components/CoverSpread";
+import { useProjectBook } from "../../../src/components/useProjectBook";
+import { BookSpread, buildBookSpreads, spreadLabel } from "../../../src/layout/bookSpreads";
 
 export default function ProjectPreviewScreen() {
-  const params = useLocalSearchParams<{ id: string }>();
-  const projectId = Array.isArray(params.id) ? (params.id[0] ?? "") : (params.id ?? "");
-  const { width } = useWindowDimensions();
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const projectId = Array.isArray(id) ? id[0] : id;
+  const book = useProjectBook(projectId ?? "");
+  const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const [showAllPages, setShowAllPages] = useState(false);
-  const [selectedPageIndex, setSelectedPageIndex] = useState(0);
+  const [showAll, setShowAll] = useState(false);
+  const [index, setIndex] = useState(0);
+  const [landscape, setLandscape] = useState(false);
+  const spreads = useMemo(() => buildBookSpreads(book.pages, book.memories), [book.pages, book.memories]);
+  const current = Math.min(index, spreads.length - 1);
+  const availableWidth = width - insets.left - insets.right - 40;
+  const availableHeight = height - insets.top - insets.bottom - 156;
+  const pageSize = Math.max(40, Math.min(availableWidth / 2, availableHeight, 500));
+  const gridWidth = Math.min(availableWidth, 1000);
+  const gridColumns = gridWidth > 600 ? 2 : 1;
+  const thumbSize = Math.min(160, (gridWidth / gridColumns - 24) / 2);
+  const pan = useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponder: (_, gesture) => !showAll && Math.abs(gesture.dx) > 20 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5,
+    onPanResponderRelease: (_, gesture) => {
+      if (Math.abs(gesture.dx) < 45) return;
+      setIndex(value => Math.max(0, Math.min(spreads.length - 1, value + (gesture.dx < 0 ? 1 : -1))));
+    }
+  }), [showAll, spreads.length]);
 
-  const { getProjectById, getMemoriesByProjectId, getPhotosByMemoryId, getPageSectionsByMemoryId } = useAppData();
-  const slotOverridesByPage = useEditorStore((state) => state.slotOverridesByPage);
-  const project = getProjectById(projectId);
-  const memories = useMemo(() => getMemoriesByProjectId(projectId), [getMemoriesByProjectId, projectId]);
-  const photosByMemoryId = useMemo(
-    () => Object.fromEntries(memories.map((memory) => [memory.id, getPhotosByMemoryId(memory.id)])),
-    [getPhotosByMemoryId, memories]
-  );
-  const pageSectionsByMemoryId = useMemo(
-    () => Object.fromEntries(memories.map((memory) => [memory.id, getPageSectionsByMemoryId(memory.id)])),
-    [getPageSectionsByMemoryId, memories]
-  );
-  const document = useMemo(
-    () => (project ? buildLayoutDocument(project, memories, photosByMemoryId, pageSectionsByMemoryId, "portrait") : null),
-    [memories, pageSectionsByMemoryId, photosByMemoryId, project]
-  );
-  const photosById = useMemo(() => {
-    const pairs = Object.values(photosByMemoryId).flat().map((photo) => [photo.id, photo] as const);
-    return Object.fromEntries(pairs);
-  }, [photosByMemoryId]);
-  const renderedPages = useMemo(
-    () =>
-      (document?.pages ?? []).map((basePage) => ({
-        base: basePage,
-        applied: applySlotOverridesToPage(basePage, slotOverridesByPage[basePage.id])
-      })),
-    [document?.pages, slotOverridesByPage]
-  );
-
-  if (!project) {
-    return (
-      <View style={styles.centered}>
-        <Stack.Screen options={{ title: "Book preview", headerStyle: { backgroundColor: "#241F1B" }, headerTintColor: "#FBF6EE" }} />
-        <StatusBar style="light" />
-        <Text style={styles.empty}>Project not found.</Text>
+  function renderSpread(spread: BookSpread, size: number) {
+    if (!book.project) return null;
+    if (spread.kind !== "content") return <View style={styles.closedBook}>
+      <CoverPanelPreview project={book.project} panel={spread.kind} page={spread.kind === "front" ? spread.right : spread.left} photosById={book.photosById} size={size} />
+      <View pointerEvents="none" style={[styles.coverHinge, spread.kind === "back" ? { right: 4 } : { left: 4 }]} />
+    </View>;
+    return <View style={{ width: size * 2 }}>
+      <View style={[styles.openBook, { width: size * 2, height: size }]}>
+        {(["left", "right"] as const).map(side => <View key={side} style={{ width: size, height: size, backgroundColor: "#FCFAF4" }}>
+          {spread[side] && <BookPageCanvas page={spread[side]} photosById={book.photosById} size={size} />}
+        </View>)}
+        <Svg pointerEvents="none" style={StyleSheet.absoluteFill} width={size * 2} height={size}>
+          <Defs><LinearGradient id={`gutter-${spread.id}`} x1="0" y1="0" x2="1" y2="0">
+            <Stop offset="0" stopColor="#241F1B" stopOpacity="0" /><Stop offset=".46" stopColor="#241F1B" stopOpacity=".08" />
+            <Stop offset=".5" stopColor="#241F1B" stopOpacity=".3" /><Stop offset=".54" stopColor="#241F1B" stopOpacity=".13" /><Stop offset="1" stopColor="#241F1B" stopOpacity="0" />
+          </LinearGradient></Defs><Rect x={size - size * .07} y="0" width={size * .14} height={size} fill={`url(#gutter-${spread.id})`} />
+        </Svg>
+        <View pointerEvents="none" style={styles.pageEdges} />
       </View>
-    );
+      <View style={styles.numbers}><Text style={styles.pageNumber}>{spread.leftNumber ?? "Inside cover"}</Text><Text style={styles.pageNumber}>{spread.rightNumber ?? "Blank"}</Text></View>
+    </View>;
   }
 
-  const currentPageIndex = Math.min(selectedPageIndex, Math.max(0, renderedPages.length - 1));
-  const fullPageWidth = Math.min(width - 32, 520);
-  const pageWidth = showAllPages ? (fullPageWidth - 16) / 2 : fullPageWidth;
-  const previewScale = showAllPages ? (pageWidth - 20) / (fullPageWidth - 20) : 1;
-  const pageHeight = pageWidth;
-  const pageInnerWidth = pageWidth - 20;
-  const pageContentHeight = pageWidth - 20;
-
-  return (
-    <View style={[styles.screen, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-      <Stack.Screen options={{ headerShown: false }} />
-      <StatusBar style="light" />
-      <View style={styles.topBar}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Close preview" style={styles.iconButton} onPress={() => router.back()}>
-          <Ionicons name="close" size={23} color="#FBF6EE" />
-        </Pressable>
-        <View style={styles.header}>
-          <Text numberOfLines={1} style={styles.projectTitle}>{project.name}</Text>
-          <Text style={styles.projectType}>{showAllPages ? "All pages" : "Book preview"} · {renderedPages.length} pages</Text>
-        </View>
-        <Pressable accessibilityRole="button" accessibilityLabel={showAllPages ? "Show one page" : "Show all pages"} accessibilityState={{ selected: showAllPages }} style={[styles.iconButton, showAllPages && styles.iconButtonActive]} onPress={() => setShowAllPages((value) => !value)}>
-          <Ionicons name={showAllPages ? "book-outline" : "grid-outline"} size={21} color="#FBF6EE" />
-        </Pressable>
-      </View>
-      <ScrollView contentContainerStyle={styles.container}>
-      {document?.pages.length === 0 ? <Text style={styles.empty}>No pages to preview yet.</Text> : null}
-      <View style={[styles.pages, { width: fullPageWidth }]}>
-      {renderedPages.map((entry, index) => {
-        if (!showAllPages && index !== currentPageIndex) return null;
-        const page = entry.applied;
-        const textAnchorSlotIds = new Set(page.textBoxes.map((textBox) => textBox.anchorSlotId).filter(Boolean));
-        return (
-          <View key={page.id} style={{ width: pageWidth }}>
-          <Pressable disabled={!showAllPages} accessibilityRole={showAllPages ? "button" : undefined} accessibilityLabel={`Page ${index + 1}`} onPress={() => { setSelectedPageIndex(index); setShowAllPages(false); }} style={[styles.pageCard, { width: pageWidth, minHeight: pageHeight }]}>
-            <View style={[styles.canvasArea, { width: pageInnerWidth, height: pageContentHeight, borderRadius: 0 }]}>
-              <PageBackground backgroundAssetId={page.backgroundAssetId} backgroundColor={page.backgroundColor} />
-              {page.slots.map((slot) => {
-                const photo = slot.photoId ? photosById[slot.photoId] : undefined;
-                if (!photo && textAnchorSlotIds.has(slot.id)) {
-                  return null;
-                }
-                const photoMetrics = getPhotoRenderMetrics({
-                  containerAspect: slot.frame.width / Math.max(0.0001, slot.frame.height),
-                  imageAspect: getPhotoAspect(photo),
-                  fitMode: slot.fitMode,
-                  scale: slot.photoScale ?? 1,
-                  offsetX: slot.photoOffsetX ?? 0,
-                  offsetY: slot.photoOffsetY ?? 0
-                });
-                return (
-                  <View
-                    key={slot.id}
-                    style={[
-                      styles.slotFrame,
-                      {
-                        left: `${slot.frame.x * 100}%`,
-                        top: `${slot.frame.y * 100}%`,
-                        width: `${slot.frame.width * 100}%`,
-                        height: `${slot.frame.height * 100}%`,
-                        borderColor: page.slotBorderColor ?? "#e2e8f0",
-                        borderWidth: page.slotBorderWidth ?? 1,
-                        borderRadius: page.slotCornerRadius ?? 0
-                      }
-                    ]}
-                  >
-                    {photo ? (
-                      <Image
-                        source={{ uri: photo.uri }}
-                        style={[
-                          styles.slotImage,
-                          {
-                            width: `${photoMetrics.width * 100}%`,
-                            height: `${photoMetrics.height * 100}%`,
-                            left: `${photoMetrics.leftPercent}%`,
-                            top: `${photoMetrics.topPercent}%`
-                          }
-                        ]}
-                        resizeMode="stretch"
-                      />
-                    ) : null}
-                  </View>
-                );
-              })}
-              {page.textBoxes.map((textBox) => {
-                const anchorSlot = textBox.anchorSlotId
-                  ? page.slots.find((slot) => slot.id === textBox.anchorSlotId)
-                  : undefined;
-                const textFrame = anchorSlot?.frame ?? textBox;
-                return (
-                  <View
-                    key={textBox.id}
-                    style={[
-                      styles.textBox,
-                      {
-                        left: `${textFrame.x * 100}%`,
-                        top: `${textFrame.y * 100}%`,
-                        width: `${textFrame.width * 100}%`,
-                        height: `${textFrame.height * 100}%`,
-                        borderWidth: textBox.borderWidth ?? 0,
-                        paddingHorizontal: 10 * previewScale,
-                        paddingVertical: 6 * previewScale,
-                        borderColor: textBox.borderColor ?? "#0f172a",
-                        backgroundColor: anchorSlot
-                          ? "transparent"
-                          : applyColorOpacity(textBox.fillColor ?? "#ffffff", textBox.fillOpacity ?? 0)
-                      }
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.textBoxText,
-                        {
-                          color: textBox.textColor ?? page.textColor ?? "#0f172a",
-                          fontSize: (textBox.fontSize ?? page.textSize ?? 24) * previewScale,
-                          lineHeight: 28 * previewScale,
-                          fontWeight: (textBox.fontWeight as "400" | "500" | "600" | "700") ?? "700",
-                          fontStyle: (textBox.fontStyle as "normal" | "italic") ?? "normal",
-                          fontFamily: textBox.fontFamily ?? page.textFontFamily,
-                          textAlign: (textBox.textAlign ?? "center") as "left" | "center" | "right"
-                        }
-                      ]}
-                    >
-                      {textBox.text}
-                    </Text>
-                  </View>
-                );
-              })}
-            </View>
-
-          </Pressable>
-          <Text style={styles.pageNumber}>{index + 1}</Text>
-          </View>
-        );
-      })}
-      </View>
-      </ScrollView>
-      {!showAllPages && renderedPages.length > 0 ? (
-        <View style={styles.pageNavigation}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Previous page" disabled={currentPageIndex === 0} style={[styles.iconButton, currentPageIndex === 0 && styles.disabled]} onPress={() => setSelectedPageIndex(currentPageIndex - 1)}>
-            <Ionicons name="chevron-back" size={23} color="#FBF6EE" />
-          </Pressable>
-          <Text style={styles.pageCount}>Page {currentPageIndex + 1} of {renderedPages.length}</Text>
-          <Pressable accessibilityRole="button" accessibilityLabel="Next page" disabled={currentPageIndex === renderedPages.length - 1} style={[styles.iconButton, currentPageIndex === renderedPages.length - 1 && styles.disabled]} onPress={() => setSelectedPageIndex(currentPageIndex + 1)}>
-            <Ionicons name="chevron-forward" size={23} color="#FBF6EE" />
-          </Pressable>
-        </View>
-      ) : null}
-      <Text style={styles.helpText}>{showAllPages ? "Tap a page to take a closer look." : "Make changes to this page in its memory."}</Text>
+  return <View style={[styles.screen, { paddingTop: insets.top, paddingBottom: insets.bottom, paddingLeft: insets.left, paddingRight: insets.right }]}>
+    <Stack.Screen options={{ headerShown: false, orientation: landscape ? "landscape" : "all" }} />
+    <StatusBar style="light" />
+    <View style={styles.topBar}>
+      <Pressable accessibilityLabel="Close preview" style={styles.icon} onPress={() => router.back()}><Ionicons name="close" size={24} color="#FBF6EE" /></Pressable>
+      <View style={{ flex: 1 }}><Text numberOfLines={1} style={styles.title}>{book.project?.name ?? "Project not found"}</Text><Text style={styles.subtitle}>Book preview · {book.pages.filter(page => !book.memories.some(memory => memory.id === page.memoryId && (memory.bookRole === "front-cover" || memory.bookRole === "back-cover"))).length} interior pages</Text></View>
+      <Pressable accessibilityLabel={landscape ? "Use device rotation" : "Rotate preview to landscape"} accessibilityState={{ selected: landscape }} style={[styles.icon, landscape && styles.active]} onPress={() => setLandscape(value => !value)}><Ionicons name="phone-landscape-outline" size={23} color="#FBF6EE" /></Pressable>
+      <Pressable accessibilityLabel={showAll ? "Show open book" : "Show all spreads"} accessibilityState={{ selected: showAll }} style={[styles.icon, showAll && styles.active]} onPress={() => setShowAll(value => !value)}><Ionicons name={showAll ? "book-outline" : "grid-outline"} size={22} color="#FBF6EE" /></Pressable>
     </View>
-  );
+    {!book.project ? <View style={styles.stage}><Text style={styles.subtitle}>Project not found.</Text></View> : showAll ? <ScrollView contentContainerStyle={styles.gridScroll}>
+      <View style={[styles.grid, { width: gridWidth }]}>{spreads.map((spread, spreadIndex) => <Pressable key={spread.id} accessibilityRole="button" accessibilityLabel={`Open ${spreadLabel(spread)}`} onPress={() => { setIndex(spreadIndex); setShowAll(false); }} style={[styles.thumbnail, { width: gridWidth / gridColumns - 12 }]}>
+        {renderSpread(spread, thumbSize)}<Text style={styles.label}>{spreadLabel(spread)}</Text>
+      </Pressable>)}</View>
+    </ScrollView> : <View style={styles.stage} {...pan.panHandlers}>
+      {renderSpread(spreads[current], pageSize)}
+      {book.pages.length === 0 && <Text style={styles.empty}>Add memories and design your cover to fill this book.</Text>}
+    </View>}
+    {!showAll && <View style={styles.navigation}>
+      <Pressable accessibilityLabel="Previous spread" disabled={current === 0} style={[styles.icon, current === 0 && styles.disabled]} onPress={() => setIndex(Math.max(0, current - 1))}><Ionicons name="chevron-back" size={26} color="#FBF6EE" /></Pressable>
+      <View style={{ alignItems: "center" }}><Text style={styles.label}>{spreadLabel(spreads[current])}</Text><Text style={styles.subtitle}>Swipe to turn pages</Text></View>
+      <Pressable accessibilityLabel="Next spread" disabled={current === spreads.length - 1} style={[styles.icon, current === spreads.length - 1 && styles.disabled]} onPress={() => setIndex(Math.min(spreads.length - 1, current + 1))}><Ionicons name="chevron-forward" size={26} color="#FBF6EE" /></Pressable>
+    </View>}
+  </View>;
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#241F1B" },
-  topBar: { flexDirection: "row", alignItems: "center", gap: 10, padding: 12 },
-  iconButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: "#38312B", alignItems: "center", justifyContent: "center" },
-  iconButtonActive: { backgroundColor: "#6B5BD2" },
-  disabled: { opacity: 0.3 },
-  pages: { flexDirection: "row", flexWrap: "wrap", gap: 16, alignItems: "flex-start" },
-  pageNavigation: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 24, padding: 12 },
-  pageCount: { color: "#FBF6EE", fontSize: 14, fontWeight: "600" },
-  pageNumber: { color: "#D3C7B8", fontSize: 12, textAlign: "center", marginTop: 10 },
-  container: {
-    padding: 16,
-    flexGrow: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 14
-  },
-  centered: {
-    flex: 1,
-    backgroundColor: "#241F1B",
-    justifyContent: "center",
-    alignItems: "center"
-  },
-  header: {
-    flex: 1
-  },
-  projectTitle: {
-    fontSize: 17,
-    fontWeight: "700",
-    color: "#FBF6EE"
-  },
-  projectType: {
-    marginTop: 4,
-    color: "#D3C7B8",
-    fontSize: 12
-  },
-  helpText: {
-    textAlign: "center",
-    padding: 16,
-    color: "#D3C7B8",
-    fontSize: 12
-  },
-  pageCard: {
-    backgroundColor: "#ffffff",
-    borderRadius: 0,
-    padding: 10,
-    shadowColor: "#000000",
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 6
-  },
-  canvasArea: {
-    position: "relative"
-  },
-  slotFrame: {
-    position: "absolute",
-    borderRadius: 0,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    backgroundColor: "#f8fafc"
-  },
-  slotImage: {
-    position: "absolute"
-  },
-  textBox: {
-    position: "absolute",
-    justifyContent: "center",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    zIndex: 5
-  },
-  textBoxText: {
-    lineHeight: 28
-  },
-  empty: {
-    color: "#D3C7B8",
-    width: "100%",
-    maxWidth: 520
-  },
-  emptyPage: {}
+  screen: { flex: 1, backgroundColor: "#241F1B" }, topBar: { flexDirection: "row", alignItems: "center", padding: 10, gap: 8 },
+  icon: { minWidth: 44, minHeight: 44, justifyContent: "center", alignItems: "center", borderRadius: 12 }, active: { backgroundColor: "#514436" }, disabled: { opacity: .3 },
+  title: { color: "#FBF6EE", fontWeight: "700", fontSize: 17 }, subtitle: { color: "#C5B8A7", fontSize: 11, marginTop: 3 }, label: { color: "#FBF6EE", fontSize: 14, fontWeight: "600", marginTop: 8 },
+  stage: { flex: 1, justifyContent: "center", alignItems: "center", padding: 12 }, navigation: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 24, paddingBottom: 8 },
+  openBook: { flexDirection: "row", backgroundColor: "#FCFAF4", shadowColor: "#000", shadowOpacity: .5, shadowRadius: 16, shadowOffset: { width: 0, height: 10 }, elevation: 10 },
+  closedBook: { borderRadius: 3, overflow: "hidden", borderWidth: 2, borderColor: "#D9CDBD", elevation: 8, shadowColor: "#000", shadowOpacity: .4, shadowRadius: 12, shadowOffset: { width: 0, height: 8 } },
+  coverHinge: { position: "absolute", top: 0, bottom: 0, width: 2, backgroundColor: "#00000016" },
+  pageEdges: { position: "absolute", left: 1, right: 1, bottom: -3, height: 3, borderBottomWidth: 1, borderTopWidth: 1, borderColor: "#C8BFB2", backgroundColor: "#E9E2D7" },
+  numbers: { flexDirection: "row", justifyContent: "space-around", marginTop: 10 }, pageNumber: { color: "#C5B8A7", fontSize: 11 },
+  gridScroll: { alignItems: "center", paddingVertical: 18 }, grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 12 }, thumbnail: { alignItems: "center", justifyContent: "center", padding: 12, borderRadius: 12, backgroundColor: "#332C25", gap: 8 }, empty: { color: "#C5B8A7", marginTop: 16, maxWidth: 280, textAlign: "center" }
 });

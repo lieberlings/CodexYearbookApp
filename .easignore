@@ -1,0 +1,43 @@
+# EAS uses this file instead of .gitignore. Keep both root and Android
+# ignore rules here; retain android source for the custom native modules.
+node_modules/
+.git/
+.expo/
+SamplePhotos/
+AmplePhotos/
+dist/
+web-build/
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+*.log
+expo-env.d.ts
+
+# Local Android build outputs, caches, and machine-specific configuration.
+android/**/build/
+android/**/.gradle/
+android/**/.cxx/
+android/**/.idea/
+android/**/local.properties
+*.iml
+*.hprof
+*.jsbundle
+.DS_Store
+
+# Local editor files, documentation, and previously generated artifacts.
+.vscode/
+docs/
+AGENTS.md
+ARCHITECTURE.md
+README
+coverage/
+/*.zip
+/*.apk
+/*.aab
+
+# Local release credentials. The template debug keystore remains available
+# for Gradle configuration; EAS supplies managed release signing credentials.
+credentials.json
+*.jks
+*.keystore
+!android/app/debug.keystore

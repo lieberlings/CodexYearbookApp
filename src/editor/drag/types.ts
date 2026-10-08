@@ -62,6 +62,7 @@ export type DropTarget = {
 };
 
 export type DragResolution =
+  | { action: "add-freestyle"; targetPageId: string; photoId: string; x?: number; y?: number }
   | { action: "swap-page-photo"; sourcePageId: string; sourceSlotId: string; targetPageId: string; targetSlotId: string }
   | { action: "move-page-photo"; sourcePageId: string; sourceSlotId: string; targetPageId: string; targetSlotId: string }
   | { action: "remove-to-gallery"; sourcePageId: string; sourceSlotId: string }

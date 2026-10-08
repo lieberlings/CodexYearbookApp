@@ -11,13 +11,15 @@ export default function RootLayout() {
       <AppProvider>
         <Stack
           screenOptions={{
+            orientation: "portrait",
             headerStyle: { backgroundColor: "#f8fafc" },
             headerTintColor: "#0f172a"
           }}
         >
           <Stack.Screen name="index" options={{ title: "Projects" }} />
           <Stack.Screen name="project/[id]" options={{ title: "Project Details" }} />
-          <Stack.Screen name="project/[id]/preview" options={{ title: "Project Preview" }} />
+          <Stack.Screen name="project/[id]/preview" options={{ title: "Project Preview", orientation: "all" }} />
+          <Stack.Screen name="project/[id]/cover" options={{ title: "Design cover" }} />
           <Stack.Screen name="memory/[id]" options={{ title: "Memory Details" }} />
           <Stack.Screen name="prompts" options={{ title: "Prompts" }} />
           <Stack.Screen name="dev/block-layout-lab" options={{ title: "Block Layout Lab" }} />

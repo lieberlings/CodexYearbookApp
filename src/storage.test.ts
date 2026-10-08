@@ -28,6 +28,18 @@ it("persists hidden ZIP folder settings on pages", async () => {
   expect((await loadAppData()).pageSections[0]).toEqual(data.pageSections[0]);
 });
 
+it("round-trips freestyle geometry, text shapes, stickers and cover roles", async () => {
+  const data: AppData = { projects: [], memories: [{ id: "cover", projectId: "project", title: "Front cover", bookRole: "front-cover", kind: "event", status: "active", order: 0, createdAt: "", updatedAt: "" }], photos: [], suggestions: [], pageSections: [
+    { id: "page", memoryId: "cover", order: 0, photoIds: [], templateId: "freestyle", layoutLocked: true, freestyleSlots: [{ id: "frame", role: "photo", fitMode: "cover", photoScale: 1, photoOffsetX: 0, photoOffsetY: 0, rotation: 35, zIndex: 4, shape: "heart", frame: { x: .1, y: .2, width: .3, height: .4 } }], textBoxes: [{ id: "sticker", text: "😊", sticker: true, rotation: 10, zIndex: 5, shape: "thought", x: .1, y: .1, width: .2, height: .2 }] }
+  ] };
+  await saveAppData(data);
+  const saved = mockedStorage.setItem.mock.calls.at(-1)?.[1] as string;
+  mockedStorage.getItem.mockImplementation(async () => saved);
+  const loaded = await loadAppData();
+  expect(loaded.pageSections).toEqual(data.pageSections);
+  expect(loaded.memories[0].bookRole).toBe("front-cover");
+});
+
 describe("storage Milestone 2 foundations", () => {
   beforeEach(() => {
     mockedStorage.getItem.mockReset();

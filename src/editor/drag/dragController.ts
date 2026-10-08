@@ -1,4 +1,4 @@
-import { DragPayload, DragResolution, DropTarget, Rect } from "./types";
+import { DragPayload, DragResolution, DropTarget, Point, Rect } from "./types";
 
 export function resolveDropAction(payload: DragPayload, target?: DropTarget): DragResolution {
   if (!payload || !target) {
@@ -63,6 +63,10 @@ export function resolveDropAction(payload: DragPayload, target?: DropTarget): Dr
     return { action: "cancel" };
   }
 
+  if (target.targetType === "page-canvas" && target.targetPageId) {
+    return { action: "add-freestyle", targetPageId: target.targetPageId, photoId: payload.itemId };
+  }
+
   if (target.targetType === "page-photo" && target.targetPageId && target.targetSlotId) {
     return {
       action: "swap-with-page-photo",
@@ -89,4 +93,11 @@ export function getSettleRect(payload: DragPayload, target?: DropTarget): Rect {
     return payload.sourceRect;
   }
   return target.rect;
+}
+
+export function getPreviewCenterPoint(payload: DragPayload, point: Point, grabOffset: Point): Point {
+  return {
+    x: point.x - grabOffset.x + payload.sourceRect.width / 2,
+    y: point.y - grabOffset.y + payload.sourceRect.height / 2
+  };
 }

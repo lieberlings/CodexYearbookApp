@@ -1,3 +1,4 @@
+import { bookOrder } from "../layout/freestyle";
 import { PropsWithChildren, createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { makeId } from "../lib/id";
 import { normalizePhotoLocation } from "../lib/photoLocation";
@@ -77,6 +78,7 @@ type AppContextValue = {
     projectId: string,
     updates: {
       name?: string;
+      coverDesign?: Project["coverDesign"];
       projectType?: ProjectType;
       thumbnailUri?: string;
       timelineMode?: ProjectTimelineMode;
@@ -92,7 +94,7 @@ type AppContextValue = {
   createMemory: (
     projectId: string,
     title: string,
-    options?: { themeLabel?: string; themeTags?: string[]; kind?: Memory["kind"]; status?: Memory["status"] }
+    options?: { bookRole?: Memory["bookRole"]; themeLabel?: string; themeTags?: string[]; kind?: Memory["kind"]; status?: Memory["status"] }
   ) => Promise<string>;
   updateMemory: (
     memoryId: string,
@@ -127,6 +129,8 @@ type AppContextValue = {
   deletePageTextBox: (pageSectionId: string, textBoxId: string) => void;
   setPageHero: (pageSectionId: string, photoId: string) => void;
   setPageSectionTemplate: (pageSectionId: string, templateId?: string) => void;
+  replaceMemoryPages: (memoryId: string, sections: MemoryPageSection[], photos?: PhotoItem[]) => void;
+  patchPageSection: (id: string, patch: Partial<MemoryPageSection>) => void;
   updatePageSectionExport: (pageSectionId: string, updates: Pick<MemoryPageSection, "exportToFolder" | "exportFolderName">) => void;
   updatePageSectionStyle: (
     pageSectionId: string,
@@ -446,6 +450,7 @@ export function AppProvider({ children }: PropsWithChildren) {
       projectId: string,
       updates: {
         name?: string;
+        coverDesign?: Project["coverDesign"];
         projectType?: ProjectType;
         thumbnailUri?: string;
         timelineMode?: ProjectTimelineMode;
@@ -463,6 +468,7 @@ export function AppProvider({ children }: PropsWithChildren) {
             ? {
                 ...project,
                 name: updates.name !== undefined ? updates.name.trim() : project.name,
+                coverDesign: updates.coverDesign ?? project.coverDesign,
                 projectType: updates.projectType ?? project.projectType,
                 thumbnailUri: updates.thumbnailUri !== undefined ? updates.thumbnailUri : project.thumbnailUri,
                 timelineMode: updates.timelineMode ?? project.timelineMode,
@@ -523,19 +529,20 @@ export function AppProvider({ children }: PropsWithChildren) {
   const createMemory = useCallback(async (
     projectId: string,
     title: string,
-    options?: { themeLabel?: string; themeTags?: string[]; kind?: Memory["kind"]; status?: Memory["status"] }
+    options?: { bookRole?: Memory["bookRole"]; themeLabel?: string; themeTags?: string[]; kind?: Memory["kind"]; status?: Memory["status"] }
   ) => {
     const now = new Date().toISOString();
-    let createdMemoryId = "";
+    const createdMemoryId = makeId("memory");
     setMemories((prev) => {
       const nextOrder =
         prev
           .filter((memory) => memory.projectId === projectId)
           .reduce((maxOrder, memory) => Math.max(maxOrder, memory.order), -1) + 1;
       const memory: Memory = {
-        id: makeId("memory"),
+        id: createdMemoryId,
         projectId,
         title: title.trim(),
+        bookRole: options?.bookRole,
         kind: options?.kind ?? "event",
         status: options?.status ?? "active",
         themeLabel: options?.themeLabel?.trim() || undefined,
@@ -544,7 +551,6 @@ export function AppProvider({ children }: PropsWithChildren) {
         createdAt: now,
         updatedAt: now
       };
-      createdMemoryId = memory.id;
       return [...prev, memory];
     });
     if (createdMemoryId) {
@@ -668,7 +674,7 @@ export function AppProvider({ children }: PropsWithChildren) {
     const now = new Date().toISOString();
     setMemories((prev) => {
       const projectMemories = prev
-        .filter((memory) => memory.projectId === projectId)
+        .filter((memory) => memory.projectId === projectId && !memory.bookRole)
         .sort((a, b) => a.order - b.order);
       const fromIndex = projectMemories.findIndex((memory) => memory.id === memoryId);
       if (fromIndex < 0) {
@@ -1045,15 +1051,18 @@ export function AppProvider({ children }: PropsWithChildren) {
   );
 
   const addPageTextBox = useCallback((pageSectionId: string, initial?: Partial<PageTextBox>) => {
-    let createdId: string | undefined;
+    const createdId = makeId("textbox");
     setPageSections((prev) =>
       prev.map((section) => {
         if (section.id !== pageSectionId) {
           return section;
         }
-        createdId = makeId("textbox");
         const textBox: PageTextBox = {
           id: createdId,
+          rotation: initial?.rotation,
+          zIndex: initial?.zIndex,
+          shape: initial?.shape,
+          sticker: initial?.sticker,
           text: initial?.text ?? "",
           anchorSlotId: initial?.anchorSlotId,
           x: initial?.x ?? 0.18,
@@ -1129,11 +1138,22 @@ export function AppProvider({ children }: PropsWithChildren) {
         section.id === pageSectionId
           ? {
               ...section,
-              templateId
+              templateId,
+              freestyleSlots: undefined,
+              layoutLocked: undefined,
+              slotAssignments: undefined
             }
           : section
       )
     );
+  }, []);
+
+  const replaceMemoryPages = useCallback((memoryId: string, sections: MemoryPageSection[], restoredPhotos?: PhotoItem[]) => {
+    if (restoredPhotos) setPhotos(prev => [...prev.filter(photo => photo.memoryId !== memoryId), ...restoredPhotos]);
+    setPageSections(prev => [...prev.filter(section => section.memoryId !== memoryId), ...sections]);
+  }, []);
+  const patchPageSection = useCallback((id: string, patch: Partial<MemoryPageSection>) => {
+    setPageSections(prev => prev.map(section => section.id === id ? { ...section, ...patch } : section));
   }, []);
 
   const updatePageSectionExport = useCallback((pageSectionId: string, updates: Pick<MemoryPageSection, "exportToFolder" | "exportFolderName">) => {
@@ -1543,7 +1563,7 @@ export function AppProvider({ children }: PropsWithChildren) {
 
   const getMemoriesByProjectId = useCallback(
     (projectId: string) => {
-      return memories.filter((memory) => memory.projectId === projectId).sort((a, b) => a.order - b.order);
+      return memories.filter((memory) => memory.projectId === projectId).sort(bookOrder);
     },
     [memories]
   );
@@ -1659,6 +1679,8 @@ export function AppProvider({ children }: PropsWithChildren) {
       setPageSectionTemplate,
       updatePageSectionStyle,
       updatePageSectionExport,
+      replaceMemoryPages,
+      patchPageSection,
       getMemoriesByProjectId,
       getMemoryById,
       getPhotosByProjectId,
@@ -1724,6 +1746,8 @@ export function AppProvider({ children }: PropsWithChildren) {
       upsertSuggestions,
       updatePageSectionStyle,
       updatePageSectionExport,
+      replaceMemoryPages,
+      patchPageSection,
       updateMemory,
       updateProject
     ]

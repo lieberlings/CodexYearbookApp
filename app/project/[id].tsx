@@ -1,7 +1,9 @@
+import { ProjectCoverCard } from "../../src/components/ProjectCoverCard";
+import { BookPartPreview } from "../../src/components/BookPartPreview";
 import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
 import { router, Stack, useLocalSearchParams } from "expo-router";
-import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -686,6 +688,27 @@ export default function ProjectDetailsScreen() {
 
   const project = getProjectById(projectId);
   const memories = useMemo(() => getMemoriesByProjectId(projectId), [getMemoriesByProjectId, projectId]);
+  const regularMemories = useMemo(() => memories.filter(memory => !memory.bookRole), [memories]);
+  const openingBookPart = useRef(false);
+  async function openBookPart(role: NonNullable<Memory["bookRole"]>) {
+    if (openingBookPart.current) return;
+    openingBookPart.current = true;
+    try {
+      const existing = memories.find(memory => memory.bookRole === role);
+      const id = existing?.id ?? await createMemory(projectId, role === "front-cover" ? "Front cover" : role === "back-cover" ? "Back cover" : "Dedication", { bookRole: role });
+      router.push({ pathname: "/memory/[id]", params: { id } });
+    } finally { openingBookPart.current = false; }
+  }
+  function bookPartCard(role: NonNullable<Memory["bookRole"]>) {
+    const part = memories.find(memory => memory.bookRole === role);
+    const photos = part ? getPhotosByMemoryId(part.id) : [];
+    const populated = part && (photos.length > 0 || getPageSectionsByMemoryId(part.id).some(page => page.backgroundAssetId || page.backgroundColor || page.textBoxes?.some(box => box.text)));
+    const title = role === "front-cover" ? "Front cover" : role === "back-cover" ? "Back cover" : "Dedication";
+    return <Pressable key={role} onPress={() => void openBookPart(role)} onLongPress={() => { if (part) Alert.alert(`Remove ${title.toLowerCase()}?`, "This removes this book section and its imported photos.", [{ text: "Cancel", style: "cancel" }, { text: "Remove", style: "destructive", onPress: () => deleteMemory(part.id) }]); }} style={{ borderWidth: 1, borderStyle: populated ? "solid" : "dashed", borderColor: "#D8CFC2", backgroundColor: "#FBF6EE", borderRadius: 16, padding: 14, marginVertical: 8, gap: 8 }}>
+      {populated && part && getPageSectionsByMemoryId(part.id)[0] && <BookPartPreview memory={part} section={getPageSectionsByMemoryId(part.id)[0]} photos={photos} overrides={slotOverridesByPage[getPageSectionsByMemoryId(part.id)[0].id]} />}
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}><Ionicons name="book-outline" size={20} color="#6B5BD2" /><Text style={{ flex: 1, color: "#6B6156", fontWeight: "600" }}>{populated ? title : `Add ${title.toLowerCase()}`}</Text><Ionicons name="chevron-forward" size={18} color="#6B6156" /></View>
+    </Pressable>;
+  }
   const collectionMemories = useMemo(
     () => memories.filter((memory) => memory.kind === "collection"),
     [memories]
@@ -883,23 +906,23 @@ export default function ProjectDetailsScreen() {
   }, [analysisInspectorVisible, selectedInspectorPhoto]);
 
   useEffect(() => {
-    const contextOrder = orderKey(memories);
+    const contextOrder = orderKey(regularMemories);
     const localOrder = orderKey(memoryListData);
 
     if (pendingMemoryOrderKey) {
       if (contextOrder === pendingMemoryOrderKey) {
         setPendingMemoryOrderKey(undefined);
         if (localOrder !== contextOrder) {
-          setMemoryListData(memories);
+          setMemoryListData(regularMemories);
         }
       }
       return;
     }
 
     if (localOrder !== contextOrder) {
-      setMemoryListData(memories);
+      setMemoryListData(regularMemories);
     }
-  }, [memories, memoryListData, pendingMemoryOrderKey]);
+  }, [regularMemories, memoryListData, pendingMemoryOrderKey]);
 
   const projectStats = useMemo(() => {
     let pageCount = 0;
@@ -1487,7 +1510,7 @@ export default function ProjectDetailsScreen() {
     ]);
   }, [exporting, onExportPhotos]);
 
-  const onOrderProject = useCallback(async () => {
+  const onExportPdf = useCallback(async () => {
     if (!project || exporting) {
       return;
     }
@@ -1506,7 +1529,7 @@ export default function ProjectDetailsScreen() {
       );
       await sharePdf(pdfUri);
     } catch (error) {
-      Alert.alert("Unable to prepare order", (error as Error).message);
+      Alert.alert("Unable to export PDF", (error as Error).message);
     } finally {
       setExporting(false);
     }
@@ -2314,7 +2337,7 @@ export default function ProjectDetailsScreen() {
           }}
           ItemSeparatorComponent={() => <View style={{ height: 14 }} />}
           ListFooterComponent={
-            <Pressable style={styles.suggestionEntry} onPress={() => openProjectAddIntent("suggestions")}>
+            <View><Pressable style={styles.suggestionEntry} onPress={() => openProjectAddIntent("suggestions")}>
               <Ionicons name="sparkles-outline" size={26} color="#6B5BD2" />
               <View style={{ flex: 1, gap: 5 }}>
                 <Text style={styles.suggestionTitle}>
@@ -2323,10 +2346,12 @@ export default function ProjectDetailsScreen() {
                 <Text style={styles.suggestionMessage}>Find a few more stories for your book.</Text>
               </View>
               <Ionicons name="chevron-forward" size={20} color="#6B5BD2" />
-            </Pressable>
+            </Pressable></View>
           }
           ListHeaderComponent={
             <View style={styles.listHeader}>
+              <ProjectCoverCard projectId={project.id} />
+              {memories.some(memory => memory.bookRole === "dedication") && bookPartCard("dedication")}
               {DEV_TOOLS_ENABLED && devToolsExpanded ? (
                 <View style={styles.devToolsSection}>
                   <View style={styles.sectionHeaderRow}>
@@ -2918,9 +2943,9 @@ export default function ProjectDetailsScreen() {
           <Ionicons name="book-outline" size={22} color="#4A4239" />
           <Text style={styles.toolbarLabel}>Preview</Text>
         </Pressable>
-        <Pressable style={styles.toolbarItem} onPress={onOrderProject} disabled={exporting}>
-          {exporting ? <ActivityIndicator color="#4A4239" /> : <Ionicons name="cart-outline" size={22} color="#4A4239" />}
-          <Text style={styles.toolbarLabel}>Order</Text>
+        <Pressable style={styles.toolbarItem} onPress={onExportPdf} disabled={exporting}>
+          {exporting ? <ActivityIndicator color="#4A4239" /> : <Ionicons name="document-text-outline" size={22} color="#4A4239" />}
+          <Text style={styles.toolbarLabel}>Export PDF</Text>
         </Pressable>
         <Pressable style={styles.toolbarItem} onPress={() => router.push("/prompts")}>
           <Ionicons name="notifications-outline" size={22} color="#4A4239" />
@@ -2947,6 +2972,16 @@ export default function ProjectDetailsScreen() {
                 </Text>
               </Pressable>
             ) : null}
+            <Pressable
+              style={[styles.actionMenuButton, exporting ? styles.suggestionActionDisabled : null]}
+              onPress={onExportPdf}
+              disabled={exporting}
+              accessibilityRole="button"
+              accessibilityLabel="Export PDF"
+            >
+              {exporting && !zipProgress ? <ActivityIndicator color="#6B5BD2" /> : <Ionicons name="document-text-outline" size={20} color="#4A4239" />}
+              <Text style={styles.actionMenuButtonText}>{exporting && !zipProgress ? "Preparing PDF..." : "Export PDF"}</Text>
+            </Pressable>
             <Pressable style={[styles.actionMenuButton, exporting ? styles.suggestionActionDisabled : null]} onPress={choosePhotoExportScope} disabled={exporting}>
               {zipProgress ? <ActivityIndicator color="#6B5BD2" /> : <Ionicons name="download-outline" size={20} color="#4A4239" />}
               <Text style={styles.actionMenuButtonText}>{zipProgress ?? "Export photos (ZIP)"}</Text>
@@ -2957,7 +2992,7 @@ export default function ProjectDetailsScreen() {
               ) : (
                 <Ionicons name="image-outline" size={20} color="#4A4239" />
               )}
-              <Text style={styles.actionMenuButtonText}>Change Cover Photo</Text>
+              <Text style={styles.actionMenuButtonText}>Change Project Thumbnail</Text>
             </Pressable>
             <Pressable style={[styles.actionMenuButton, styles.actionMenuDanger]} onPress={onDeleteProjectFromMenu}>
               <Ionicons name="trash-outline" size={20} color="#AD432F" />

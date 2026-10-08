@@ -6,17 +6,21 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": { "APP_VARIANT": "development" },
+      "android": { "gradleCommand": ":app:assembleDevelopmentDebug" }
     },
     "preview": {
       "distribution": "internal",
       "android": {
-        "buildType": "apk"
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleProductionRelease"
       }
     },
     "production": {
       "android": {
-        "buildType": "app-bundle"
+        "buildType": "app-bundle",
+        "gradleCommand": ":app:bundleProductionRelease"
       }
     }
   }

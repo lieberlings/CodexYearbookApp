@@ -1,3 +1,7 @@
+import type { ObjectShape } from "./layout/objectShapes";
+import type { LayoutSlot } from "./layout/schemas";
+export type { ObjectShape } from "./layout/objectShapes";
+
 export type ProjectType =
   | "yearbook"
   | "baby-book"
@@ -11,7 +15,28 @@ export type ProjectAssistLevel = "quiet" | "balanced" | "proactive";
 export type ProjectStyleIntensity = "minimal" | "warm" | "playful" | "expressive";
 export type ProjectFinalizationStatus = "idle" | "in-progress" | "reviewed";
 
+export type CoverPanel = "back" | "spine" | "front";
+export type CoverBackground = {
+  kind: "color" | "library" | "photo";
+  color: string;
+  assetId?: string;
+  photoUri?: string;
+};
+export type CoverDesign = {
+  background?: CoverBackground;
+  panelBackgrounds?: Partial<Record<"front" | "back", boolean>>;
+  spineTitle?: string;
+  spineSubtitle?: string;
+  spineTextColor?: string;
+  spineColor?: string;
+  spineDirection?: "down" | "up";
+  // Set only from the selected printer template; never infer from page count.
+  panelWidthMm?: number;
+  spineWidthMm?: number;
+};
+
 export type Project = {
+  coverDesign?: CoverDesign;
   id: string;
   name: string;
   projectType: ProjectType;
@@ -33,6 +58,7 @@ export type MemoryKind = "event" | "collection" | "hybrid";
 export type MemoryStatus = "suggested" | "watching" | "active" | "finalized" | "archived";
 
 export type Memory = {
+  bookRole?: "front-cover" | "back-cover" | "dedication";
   id: string;
   projectId: string;
   title: string;
@@ -48,7 +74,12 @@ export type Memory = {
 
 export type TextBoxAlignment = "left" | "center" | "right";
 
+
 export type PageTextBox = {
+  rotation?: number;
+  zIndex?: number;
+  shape?: ObjectShape;
+  sticker?: boolean;
   id: string;
   text: string;
   anchorSlotId?: string;
@@ -71,6 +102,8 @@ export type PageTextBox = {
 };
 
 export type MemoryPageSection = {
+  freestyleSlots?: LayoutSlot[];
+  layoutLocked?: boolean;
   exportToFolder?: boolean;
   exportFolderName?: string;
   id: string;

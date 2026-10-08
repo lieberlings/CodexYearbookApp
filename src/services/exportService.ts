@@ -1,8 +1,11 @@
+import { getShapeTextLayout } from "../layout/shapeText";
+import { shapePath } from "../layout/objectShapes";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { applySlotOverridesToPage } from "../layout/overrides";
 import { buildLayoutDocument } from "../layout/engine";
+import { loadSvgAssetXml } from "./svgAssetService";
 import { getBackgroundAssetSourceUri } from "../layout/backgroundAssets";
 import { getPhotoAspect, getPhotoRenderMetrics } from "../layout/photoMetrics";
 import { SlotOverride } from "../state/editorStore";
@@ -92,8 +95,12 @@ export async function exportProjectToPdf(
 
   let pageHtml = "";
   for (const page of pages) {
+    const isBookPart = memories.some(memory => memory.id === page.memoryId && memory.bookRole);
     const pageTitle = page.pageCount > 1 ? `${page.memoryTitle} (${page.pageIndex + 1}/${page.pageCount})` : page.memoryTitle;
-    const backgroundSource = getBackgroundAssetSourceUri(page.backgroundAssetId);
+    const backgroundUri = getBackgroundAssetSourceUri(page.backgroundAssetId);
+    const backgroundSource = backgroundUri
+      ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(await loadSvgAssetXml(backgroundUri))}`
+      : undefined;
     let slotsHtml = "";
     let textBoxesHtml = "";
     const textAnchorSlotIds = new Set(page.textBoxes.map((textBox) => textBox.anchorSlotId).filter(Boolean));
@@ -116,17 +123,18 @@ export async function exportProjectToPdf(
         <div
           class="slot"
           style="
+            transform:rotate(${slot.rotation ?? 0}deg); z-index:${slot.zIndex ?? 2}; background:${slot.shape && slot.shape !== "rectangle" ? "transparent" : "#f8fafc"};
             left:${(slot.frame.x * 100).toFixed(4)}%;
             top:${(slot.frame.y * 100).toFixed(4)}%;
             width:${(slot.frame.width * 100).toFixed(4)}%;
             height:${(slot.frame.height * 100).toFixed(4)}%;
             border-color:${escapeAttr(page.slotBorderColor ?? "#e2e8f0")};
-            border-width:${(page.slotBorderWidth ?? 1).toFixed(2)}px;
+            border-width:${(slot.shape && slot.shape !== "rectangle" ? 0 : page.slotBorderWidth ?? 1).toFixed(2)}px;
             border-radius:${(page.slotCornerRadius ?? 0).toFixed(2)}px;
           "
         >
           ${
-            src
+            slot.shape && slot.shape !== "rectangle" ? `<svg viewBox="0 0 100 100" preserveAspectRatio="none" width="100%" height="100%"><defs><clipPath id="shape-${escapeAttr(page.id)}-${escapeAttr(slot.id)}"><path d="${shapePath(slot.shape)}" /></clipPath></defs>${src ? `<image href="${escapeAttr(src)}" x="${photoMetrics.leftPercent}" y="${photoMetrics.topPercent}" width="${photoMetrics.width * 100}" height="${photoMetrics.height * 100}" preserveAspectRatio="none" clip-path="url(#shape-${escapeAttr(page.id)}-${escapeAttr(slot.id)})" />` : ""}<path d="${shapePath(slot.shape)}" fill="none" stroke="${escapeAttr(page.slotBorderColor ?? "#e2e8f0")}" stroke-width="${page.slotBorderWidth ?? 1}" /></svg>` : src
               ? `<img class="fit-${slot.fitMode}" src="${escapeAttr(src)}" style="
                 width:${(photoMetrics.width * 100).toFixed(3)}%;
                 height:${(photoMetrics.height * 100).toFixed(3)}%;
@@ -144,41 +152,44 @@ export async function exportProjectToPdf(
         ? page.slots.find((slot) => slot.id === textBox.anchorSlotId)
         : undefined;
       const textFrame = anchorSlot?.frame ?? textBox;
+      const shapeText = getShapeTextLayout(textBox.shape, textBox.text, textFrame.width * 620, textFrame.height * 620, textBox.sticker ? textFrame.height * 620 * .7 : textBox.fontSize ?? page.textSize ?? 24, textBox.borderWidth);
       textBoxesHtml += `
         <div
           class="text-box"
           style="
+            transform:rotate(${textBox.rotation ?? 0}deg); z-index:${textBox.zIndex ?? 20};
             left:${(textFrame.x * 100).toFixed(4)}%;
             top:${(textFrame.y * 100).toFixed(4)}%;
             width:${(textFrame.width * 100).toFixed(4)}%;
             height:${(textFrame.height * 100).toFixed(4)}%;
-            border-width:${(textBox.borderWidth ?? 0).toFixed(2)}px;
+            border-width:${(textBox.shape && textBox.shape !== "rectangle" ? 0 : textBox.borderWidth ?? 0).toFixed(2)}px;
             border-color:${escapeAttr(textBox.borderColor ?? "#0f172a")};
             border-radius:${(textBox.cornerRadius ?? 0).toFixed(2)}px;
-            background:${escapeAttr(anchorSlot ? "transparent" : applyColorOpacity(textBox.fillColor ?? "#ffffff", textBox.fillOpacity ?? 0))};
+            background:${escapeAttr((anchorSlot || (textBox.shape && textBox.shape !== "rectangle")) ? "transparent" : applyColorOpacity(textBox.fillColor ?? "#ffffff", textBox.fillOpacity ?? 0))};
             color:${escapeAttr(textBox.textColor ?? page.textColor ?? "#0f172a")};
-            font-size:${(textBox.fontSize ?? page.textSize ?? 24).toFixed(0)}px;
+            font-size:${(textBox.sticker ? textFrame.height * 620 * .7 : textBox.fontSize ?? page.textSize ?? 24).toFixed(0)}px;
+            padding:${shapeText || textBox.sticker ? "0" : "8px 10px"};
             font-weight:${escapeAttr(textBox.fontWeight ?? "700")};
             font-style:${escapeAttr(textBox.fontStyle ?? "normal")};
             font-family:${escapeAttr(textBox.fontFamily ?? page.textFontFamily ?? "Arial, sans-serif")};
             text-align:${escapeAttr(textBox.textAlign ?? "center")};
           "
-        >${escapeHtml(textBox.text)}</div>
+        >${textBox.shape && textBox.shape !== "rectangle" ? `<svg viewBox="0 0 100 100" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%"><path d="${shapePath(textBox.shape)}" fill="${escapeAttr(applyColorOpacity(textBox.fillColor ?? "#ffffff", textBox.fillOpacity ?? 0))}" stroke="${escapeAttr(textBox.borderColor ?? "#0f172a")}" stroke-width="${textBox.borderWidth ?? 0}" /></svg>` : ""}<span style="${shapeText ? `position:absolute;left:${shapeText.left}px;top:${shapeText.top}px;width:${shapeText.width}px;height:${shapeText.height}px;font-size:${shapeText.fontSize}px;line-height:${shapeText.lineHeight}px;display:flex;align-items:center;overflow:hidden;` : "position:relative;"}"><span style="width:100%;overflow-wrap:anywhere;">${escapeHtml(textBox.text)}</span></span></div>
       `;
     }
 
     pageHtml += `
       <section class="page">
-        <div class="page-title" style="
+        ${isBookPart ? "" : `<div class="page-title" style="
           color:${escapeAttr(page.textColor ?? "#0f172a")};
           font-size:${(page.textSize ?? 22).toFixed(0)}px;
           font-weight:${escapeAttr(page.textWeight ?? "700")};
           font-family:${escapeAttr(page.textFontFamily ?? "Arial, sans-serif")};
-        ">${escapeHtml(pageTitle)}</div>
+        ">${escapeHtml(pageTitle)}</div>`}
         ${page.themeLabel ? `<div class="page-theme" style="color:${escapeAttr(page.textColor ?? "#64748b")};">${escapeHtml(page.themeLabel)}</div>` : ""}
         <div class="canvas" style="background:${escapeAttr(page.backgroundColor ?? "#ffffff")}; border-radius:0;">
           ${backgroundSource ? `<img class="background-image" src="${escapeAttr(backgroundSource)}" />` : ""}
-          ${slotsHtml || '<div class="empty">No photos on this page.</div>'}
+          ${slotsHtml || (textBoxesHtml ? '' : '<div class="empty">No photos on this page.</div>')}
           ${textBoxesHtml}
         </div>
       </section>
@@ -302,10 +313,7 @@ export async function exportProjectToPdf(
         </style>
       </head>
       <body>
-        <section class="project-cover">
-          <div class="project-title">${escapeHtml(project.name)}</div>
-          <div class="project-type">${escapeHtml(project.projectType)}</div>
-        </section>
+        ${memories.some(memory => memory.bookRole === "front-cover") ? "" : `<section class="project-cover"><div class="project-title">${escapeHtml(project.name)}</div><div class="project-type">${escapeHtml(project.projectType)}</div></section>`}
         ${pageHtml || '<section class="page"><div class="empty">No memories yet.</div></section>'}
       </body>
     </html>

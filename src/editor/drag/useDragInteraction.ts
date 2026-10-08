@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { Animated, Easing } from "react-native";
-import { getSettleRect, resolveDropAction } from "./dragController";
+import { getSettleRect, getPreviewCenterPoint, resolveDropAction } from "./dragController";
 import { resolveHoverTarget } from "./dragTargets";
 import { DragPayload, DragResolution, DragSession, DropTarget, Point } from "./types";
 
@@ -15,12 +15,6 @@ type OverlayAnimation = {
   opacity: Animated.Value;
 };
 
-function getPreviewCenterPoint(payload: DragPayload, point: Point, grabOffset: Point): Point {
-  return {
-    x: point.x - grabOffset.x + payload.sourceRect.width / 2,
-    y: point.y - grabOffset.y + payload.sourceRect.height / 2
-  };
-}
 
 export function useDragInteraction(options: UseDragInteractionOptions) {
   const [session, setSession] = useState<DragSession>({ lifecycle: "idle" });
@@ -126,10 +120,15 @@ export function useDragInteraction(options: UseDragInteractionOptions) {
     if (active.lifecycle !== "dragging" || !active.payload) {
       return;
     }
+    const targets = options.getTargets();
     const finalTarget = active.currentPoint && active.grabOffset
-      ? resolveHoverTarget(active.payload, getPreviewCenterPoint(active.payload, active.currentPoint, active.grabOffset), options.getTargets())
+      ? resolveHoverTarget(active.payload, getPreviewCenterPoint(active.payload, active.currentPoint, active.grabOffset), targets)
       : active.hoveredTarget;
-    const resolution = resolveDropAction(active.payload, finalTarget);
+    let resolution = resolveDropAction(active.payload, finalTarget);
+    if (resolution.action === "add-freestyle" && finalTarget && active.currentPoint && active.grabOffset) {
+      const center = getPreviewCenterPoint(active.payload, active.currentPoint, active.grabOffset);
+      resolution = { ...resolution, x: (center.x - finalTarget.rect.x) / finalTarget.rect.width, y: (center.y - finalTarget.rect.y) / finalTarget.rect.height };
+    }
     if (resolution.action === "cancel") {
       finalizeDrop("canceling", resolution, finalTarget);
       return;

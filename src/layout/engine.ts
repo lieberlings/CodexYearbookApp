@@ -1,3 +1,4 @@
+import { bookOrder } from "./freestyle";
 import { Memory, MemoryPageSection, PhotoItem, Project } from "../types";
 import { getDefaultPagePhotoCounts } from "./pagination";
 import { LayoutDocument, LayoutDocumentSchema, LayoutPage } from "./schemas";
@@ -78,8 +79,8 @@ export function buildLayoutPage(
     textBoxes: section.textBoxes ?? [],
     pageIndex,
     pageCount,
-    templateId: selected?.template.id ?? "empty",
-    slots: selected?.slots ?? []
+    templateId: section.templateId === "freestyle" ? "freestyle" : selected?.template.id ?? "empty",
+    slots: section.templateId === "freestyle" ? (section.freestyleSlots ?? []).map(slot => ({ ...slot, photoId: section.slotAssignments && Object.prototype.hasOwnProperty.call(section.slotAssignments, slot.id) ? section.slotAssignments[slot.id] : (section.photoIds.includes(slot.photoId ?? "") ? slot.photoId : undefined) })) : selected?.slots ?? []
   };
 }
 
@@ -91,7 +92,7 @@ export function buildLayoutDocument(
   orientation: "landscape" | "portrait" = "portrait"
 ): LayoutDocument {
   const pages: LayoutPage[] = [];
-  const sortedMemories = [...memories].sort((a, b) => a.order - b.order);
+  const sortedMemories = [...memories].sort(bookOrder);
 
   for (const memory of sortedMemories) {
     const memoryPhotos = photosByMemoryId[memory.id] ?? [];

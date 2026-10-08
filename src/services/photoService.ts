@@ -2,6 +2,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import * as MediaLibrary from "expo-media-library";
+import { Platform } from "react-native";
 import {
   ensureAndroidMediaLibraryPermission,
   getAndroidMediaLibraryPermissionProbe,
@@ -196,17 +197,21 @@ export async function pickImagesFromLibrary(): Promise<PickedPhotoAsset[]> {
 }
 
 export async function pickSingleImageFromLibrary(): Promise<ImagePicker.ImagePickerAsset | null> {
-  const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-  if (!permission.granted) {
-    throw new Error("Photo library permission was not granted.");
-  }
-
-  const result = await ImagePicker.launchImageLibraryAsync({
+  // The system picker grants access to the selected image without library permission.
+  const options: ImagePicker.ImagePickerOptions = {
     mediaTypes: ["images"],
     allowsMultipleSelection: false,
-    quality: 0.7,
-    base64: true
-  });
+    quality: 1
+  };
+  let result: ImagePicker.ImagePickerResult;
+  try {
+    result = await ImagePicker.launchImageLibraryAsync(options);
+  } catch (error) {
+    if (Platform.OS !== "android") throw error;
+    // Some Android photo providers reject the modern picker; use the system
+    // file chooser as a fallback. A normal cancellation must not reopen it.
+    result = await ImagePicker.launchImageLibraryAsync({ ...options, legacy: true });
+  }
 
   if (result.canceled || result.assets.length === 0) {
     return null;
