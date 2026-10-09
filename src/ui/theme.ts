@@ -4,6 +4,8 @@ export const colors = {
   brand: "#6B5BD2",
   brandSoft: "#EDE8FA",
   brandText: "#4E3FBC",
+  onBrand: "#FFFFFF",
+  danger: "#AD432F",
   canvas: "#FBF6EE",
   surface: "#FFFFFF",
   surfaceMuted: "#F3EBDE",
