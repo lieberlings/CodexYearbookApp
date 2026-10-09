@@ -1,8 +1,9 @@
 import { bookOrder } from "../layout/freestyle";
 import { PropsWithChildren, createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { Alert } from "react-native";
 import { makeId } from "../lib/id";
 import { normalizePhotoLocation } from "../lib/photoLocation";
-import { loadAppData, saveAppData } from "../storage";
+import { AppDataLoadError, loadAppData, saveAppData } from "../storage";
 import {
   applyPhotoAssignmentToMemory,
   buildMemorySeedFromSuggestion,
@@ -289,11 +290,31 @@ export function AppProvider({ children }: PropsWithChildren) {
   const [pageSections, setPageSections] = useState<MemoryPageSection[]>([]);
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  // Set when saved data exists but could not be loaded. Saving stays off for the
+  // session so the empty in-memory state never overwrites the user's projects.
+  const [persistenceBlocked, setPersistenceBlocked] = useState(false);
 
   useEffect(() => {
     let mounted = true;
     async function init() {
-      const data = await loadAppData();
+      let data: Awaited<ReturnType<typeof loadAppData>>;
+      try {
+        data = await loadAppData();
+      } catch (error) {
+        if (!mounted) {
+          return;
+        }
+        console.error(error);
+        setPersistenceBlocked(true);
+        setLoading(false);
+        Alert.alert(
+          "Couldn't open your projects",
+          error instanceof AppDataLoadError
+            ? "Your saved projects couldn't be loaded. They have not been deleted. Changes made now won't be saved until this is fixed."
+            : "Something went wrong while loading your projects. Changes made now won't be saved."
+        );
+        return;
+      }
       if (!mounted) {
         return;
       }
@@ -359,12 +380,12 @@ export function AppProvider({ children }: PropsWithChildren) {
   }, []);
 
   useEffect(() => {
-    if (loading) {
+    if (loading || persistenceBlocked) {
       return;
     }
     const normalizedSections = reconcilePageSections(memories, photos, pageSections);
     void saveAppData({ projects, memories, pageSections: normalizedSections, photos, suggestions }).catch(() => undefined);
-  }, [loading, memories, pageSections, photos, projects, suggestions]);
+  }, [loading, persistenceBlocked, memories, pageSections, photos, projects, suggestions]);
 
   const pickProjectThumbnail = useCallback(async (): Promise<string | undefined> => {
     const asset = await pickSingleImageFromLibrary();

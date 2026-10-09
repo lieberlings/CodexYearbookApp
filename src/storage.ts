@@ -17,19 +17,23 @@ const defaultData: AppData = {
   suggestions: []
 };
 
+// Thrown when saved data exists but cannot be read or parsed. The stored value is
+// left untouched so the user's projects can still be recovered.
+export class AppDataLoadError extends Error {
+  constructor(message: string, readonly cause?: unknown) {
+    super(message);
+    this.name = "AppDataLoadError";
+  }
+}
+
 export async function loadAppData(): Promise<AppData> {
   let raw: string | null = null;
   try {
     raw = await AsyncStorage.getItem(STORAGE_KEY);
-  } catch {
-    // Android CursorWindow overflow can make this key unreadable.
-    // Reset the oversized row so the app can recover.
-    try {
-      await AsyncStorage.removeItem(STORAGE_KEY);
-    } catch {
-      // no-op
-    }
-    return defaultData;
+  } catch (error) {
+    // Android CursorWindow overflow can make an oversized row unreadable.
+    // Never delete it: that would erase every project.
+    throw new AppDataLoadError("Saved data could not be read.", error);
   }
 
   if (!raw) {
@@ -53,8 +57,8 @@ export async function loadAppData(): Promise<AppData> {
         .filter((photo): photo is PhotoItem => Boolean(photo)),
       suggestions: (parsed.suggestions ?? []).map(normalizeSuggestionRecord)
     };
-  } catch {
-    return defaultData;
+  } catch (error) {
+    throw new AppDataLoadError("Saved data could not be parsed.", error);
   }
 }
 
