@@ -129,7 +129,7 @@ export default function CoverDesignScreen() {
 
       <View style={[styles.card, { width: pageWidth }]}>
         <Text style={styles.heading}>Shared cover background</Text><Text style={styles.hint}>One background flows across the back, spine and front. Panel layouts stay in place.</Text>
-        <View style={styles.row}><Button icon="image-outline" label="Choose photo" disabled={busy} onPress={() => void pickBackgroundPhoto()} /><Button icon="grid-outline" label={patterns ? "Hide patterns" : "Library patterns"} onPress={() => setPatterns(value => !value)} /></View>
+        <View style={styles.row}><Button icon="image-outline" label="Choose photo" style={{ flex: 1 }} disabled={busy} onPress={() => void pickBackgroundPhoto()} /><Button icon="grid-outline" label={patterns ? "Hide patterns" : "Patterns"} style={{ flex: 1 }} onPress={() => setPatterns(value => !value)} /></View>
         <ColorPicker label="Background color" value={design?.background?.kind === "color" ? design.background.color : undefined} themeColors={themeColors} themeLabel="Cover theme" onChange={color => change({ background: { kind: "color", color } })} />
         {patterns && <>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>{backgroundPacks.map(item => <Chip key={item.id} label={item.label} selected={item.id === packId} onPress={() => setPackId(item.id)} />)}</ScrollView>
