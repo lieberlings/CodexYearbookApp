@@ -40,6 +40,8 @@ import { useDragInteraction } from "../../src/editor/drag/useDragInteraction";
 import { DragPayload, DragResolution, DropTarget, Rect } from "../../src/editor/drag/types";
 import { buildLayoutDocument } from "../../src/layout/engine";
 import { backgroundPacks } from "../../src/library/backgrounds";
+import { getBackgroundAssetSelection } from "../../src/layout/backgroundAssets";
+import { ColorPicker } from "../../src/ui/ColorPicker";
 import { applySlotOverridesToPage } from "../../src/layout/overrides";
 import { clampPhotoOffset, getPhotoAspect, getPhotoRenderMetrics, getPhotoScaleBounds } from "../../src/layout/photoMetrics";
 import { listAllTemplates, TemplateDefinition } from "../../src/layout/templates";
@@ -64,26 +66,6 @@ type TextBoxGestureState = {
   startBox?: PageTextBox;
 };
 
-const COLOR_PALETTE = [
-  "#ffffff", "#f8fafc", "#e2e8f0", "#111827",
-  "#fff7ed", "#fde68a", "#fed7aa", "#fecdd3",
-  "#dcfce7", "#bbf7d0", "#ccfbf1", "#bae6fd",
-  "#dbeafe", "#e0e7ff", "#ede9fe", "#fce7f3"
-];
-const TEXT_COLORS = [
-  "#0f172a", "#334155", "#ffffff", "#991b1b", "#9a3412", "#854d0e",
-  "#166534", "#0f766e", "#075985", "#1d4ed8", "#6d28d9", "#be185d",
-  "#000000", "#241f1b", "#6b6156", "#64748b", "#94a3b8", "#cbd5e1",
-  "#ef4444", "#f97316", "#f59e0b", "#eab308", "#84cc16", "#22c55e",
-  "#14b8a6", "#06b6d4", "#38bdf8", "#3b82f6", "#6b5bd2", "#a855f7",
-  "#d946ef", "#ec4899", "#fb7185", "#e8734a", "#a16207", "#78350f",
-  "#fecaca", "#fed7aa", "#fde68a", "#fef9c3", "#d9f99d", "#bbf7d0",
-  "#99f6e4", "#a5f3fc", "#bae6fd", "#bfdbfe", "#ddd6fe", "#fbcfe8"
-];
-const BORDER_COLORS = [
-  "#ffffff", "#e2e8f0", "#94a3b8", "#334155", "#0f172a", "#dc2626",
-  "#ea580c", "#d97706", "#16a34a", "#0d9488", "#2563eb", "#7c3aed"
-];
 const TEXT_BOX_CORNER_RADII = [0, 8, 18, 32];
 const PHOTO_PICKER_SELECTION_LIMIT = 50;
 const ANDROID_PHOTO_PICKER_IMPORTS_ENABLED = true;
@@ -291,7 +273,7 @@ export default function MemoryDetailsScreen() {
   const [photoEditor, setPhotoEditor] = useState<PhotoEditorState | undefined>(undefined);
   const [selectedTextBoxId, setSelectedTextBoxId] = useState<string | undefined>(undefined);
   const [editorHeight, setEditorHeight] = useState(0);
-  const [textControl, setTextControl] = useState<"font" | "color" | "border" | "fill" | undefined>(undefined);
+  const [textControl, setTextControl] = useState<"font" | undefined>(undefined);
   const [editingTextBoxId, setEditingTextBoxId] = useState<string | undefined>(undefined);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [galleryDeletePhotoId, setGalleryDeletePhotoId] = useState<string | undefined>(undefined);
@@ -1298,6 +1280,7 @@ export default function MemoryDetailsScreen() {
           const section = activeSection;
           const renderedPage = activeRenderedPage;
           const pageStyle = getSectionStyle(section.id);
+          const themeColors = getBackgroundAssetSelection(section.backgroundAssetId)?.asset.palette ?? [];
           const inspectorOpen = openInspector?.pageId === section.id ? openInspector.kind : undefined;
           const textModeActive = inspectorOpen === "text";
           const templates = listAllTemplates();
@@ -1874,22 +1857,12 @@ export default function MemoryDetailsScreen() {
                       nestedScrollEnabled
                       contentContainerStyle={styles.backgroundPicker}
                     >
-                      <View style={styles.controlGroup}>
-                        <Text style={styles.controlGroupLabel}>Colors</Text>
-                        <View style={styles.paletteRow}>
-                          {COLOR_PALETTE.map((color) => (
-                            <Pressable
-                              key={color}
-                              style={[
-                                styles.colorSwatch,
-                                { backgroundColor: color },
-                                !section.backgroundAssetId && section.backgroundColor === color ? styles.colorSwatchActive : null
-                              ]}
-                              onPress={() => updatePageSectionStyle(section.id, { backgroundColor: color, backgroundAssetId: undefined })}
-                            />
-                          ))}
-                        </View>
-                      </View>
+                      <ColorPicker
+                        label="Page color"
+                        value={section.backgroundAssetId ? undefined : section.backgroundColor}
+                        themeColors={themeColors}
+                        onChange={(color) => updatePageSectionStyle(section.id, { backgroundColor: color, backgroundAssetId: undefined })}
+                      />
                       {backgroundPacks.map((pack) => (
                         <View key={pack.id} style={styles.controlGroup}>
                           <Text style={styles.controlGroupLabel}>{pack.label}</Text>
@@ -1917,15 +1890,12 @@ export default function MemoryDetailsScreen() {
 
                   {inspectorOpen === "border" ? (
                     <ScrollView style={styles.toolContentScroll} contentContainerStyle={styles.borderControls}>
-                      <Text style={styles.controlGroupLabel}>Color</Text>
-                      <View style={styles.paletteRow}>
-                        {BORDER_COLORS.map((color) => (
-                          <Pressable key={color} accessibilityRole="button" accessibilityLabel={`Border color ${color}`}
-                            accessibilityState={{ selected: pageStyle.slotBorderColor === color }}
-                            style={[styles.colorSwatch, { backgroundColor: color }, pageStyle.slotBorderColor === color && styles.colorSwatchActive]}
-                            onPress={() => updatePageSectionStyle(section.id, { slotBorderColor: color })} />
-                        ))}
-                      </View>
+                      <ColorPicker
+                        label="Border color"
+                        value={pageStyle.slotBorderColor}
+                        themeColors={themeColors}
+                        onChange={(slotBorderColor) => updatePageSectionStyle(section.id, { slotBorderColor })}
+                      />
                       <View style={styles.settingRow}>
                         <Text style={styles.settingLabel}>Width</Text>
                         <ValueStepper label="Border width" value={pageStyle.slotBorderWidth ?? 1} min={0} max={12} step={1}
@@ -1981,10 +1951,6 @@ export default function MemoryDetailsScreen() {
                             onPress={() => updateSelectedTextBox({ fontWeight: selectedTextBox.fontWeight === "700" ? "400" : "700" })}>
                             <Text style={[styles.toggleChipText, selectedTextBox.fontWeight === "700" && styles.formatSelectedText]}>B</Text>
                           </Pressable>
-                          <Pressable accessibilityRole="button" accessibilityLabel="Text color" accessibilityState={{ expanded: textControl === "color" }}
-                            style={styles.formatButton} onPress={() => setTextControl(textControl === "color" ? undefined : "color")}>
-                            <View style={[styles.textColorDot, { backgroundColor: selectedTextBox.textColor ?? pageStyle.textColor }]} />
-                          </Pressable>
                           <Pressable accessibilityRole="button" accessibilityLabel="Italic" accessibilityState={{ selected: selectedTextBox.fontStyle === "italic" }}
                             style={[styles.formatButton, selectedTextBox.fontStyle === "italic" && styles.formatButtonSelected]}
                             onPress={() => updateSelectedTextBox({ fontStyle: selectedTextBox.fontStyle === "italic" ? "normal" : "italic" })}>
@@ -2001,21 +1967,12 @@ export default function MemoryDetailsScreen() {
                             ))}
                           </View>
                         ) : null}
-                        {textControl === "color" ? (
-                        <View style={styles.controlGroup}>
-                          <Text style={styles.controlGroupLabel}>Text</Text>
-                          <View style={styles.paletteRow}>
-                            {TEXT_COLORS.map((color) => (
-                              <Pressable
-                                key={color}
-                                style={[styles.colorSwatch, { backgroundColor: color }, selectedTextBox.textColor === color ? styles.colorSwatchActive : null]}
-                                onPress={() => updateSelectedTextBox({ textColor: color })}
-                              />
-                            ))}
-                          </View>
-                        </View>
-
-                        ) : null}
+                        <ColorPicker
+                          label="Text color"
+                          value={selectedTextBox.textColor ?? pageStyle.textColor}
+                          themeColors={themeColors}
+                          onChange={(textColor) => updateSelectedTextBox({ textColor })}
+                        />
                         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
                           {objectShapes.map(shape => <Pressable key={shape} style={[styles.stepperButton, selectedTextBox.shape === shape && styles.templateChoiceActive]} onPress={() => updateSelectedTextBox({ shape })}><Text>{getShapeDefinition(shape).label}</Text></Pressable>)}
                         </View>
@@ -2036,26 +1993,12 @@ export default function MemoryDetailsScreen() {
                               <Text style={styles.stepperButtonText}>+ Width</Text>
                             </Pressable>
                           </View>
-                          <Pressable accessibilityRole="button" accessibilityLabel="Border color" accessibilityState={{ expanded: textControl === "border" }}
-                              style={styles.fontMenuButton} onPress={() => setTextControl(textControl === "border" ? undefined : "border")}>
-                              <View style={[styles.textColorDot, { backgroundColor: selectedTextBox.borderColor ?? "#0f172a" }]} />
-                              <Text style={styles.fontDropdownText}>Border color</Text>
-                              <Ionicons name={textControl === "border" ? "chevron-up" : "chevron-down"} size={12} color="#6B6156" />
-                            </Pressable>
-                            {textControl === "border" ? (
-                            <View style={styles.paletteRow}>
-                            {TEXT_COLORS.map((color) => (
-                              <Pressable
-                                key={color}
-                                accessibilityRole="button"
-                                accessibilityLabel={`Border color ${color}`}
-                                accessibilityState={{ selected: selectedTextBox.borderColor === color }}
-                                style={[styles.colorSwatch, { backgroundColor: color }, selectedTextBox.borderColor === color ? styles.colorSwatchActive : null]}
-                                onPress={() => updateSelectedTextBox({ borderColor: color })}
-                              />
-                            ))}
-                          </View>
-                            ) : null}
+                          <ColorPicker
+                            label="Border color"
+                            value={selectedTextBox.borderColor ?? "#0f172a"}
+                            themeColors={themeColors}
+                            onChange={(borderColor) => updateSelectedTextBox({ borderColor })}
+                          />
                           <View style={styles.shapeRow}>
                             {TEXT_BOX_CORNER_RADII.map((radius) => (
                               <Pressable
@@ -2078,26 +2021,12 @@ export default function MemoryDetailsScreen() {
                         {!selectedTextBox.anchorSlotId ? (
                           <View style={styles.controlGroup}>
                             <Text style={styles.controlGroupLabel}>Fill</Text>
-                            <Pressable accessibilityRole="button" accessibilityLabel="Fill color" accessibilityState={{ expanded: textControl === "fill" }}
-                              style={styles.fontMenuButton} onPress={() => setTextControl(textControl === "fill" ? undefined : "fill")}>
-                              <View style={[styles.textColorDot, { backgroundColor: selectedTextBox.fillColor ?? "#ffffff" }]} />
-                              <Text style={styles.fontDropdownText}>Fill color</Text>
-                              <Ionicons name={textControl === "fill" ? "chevron-up" : "chevron-down"} size={12} color="#6B6156" />
-                            </Pressable>
-                            {textControl === "fill" ? (
-                            <View style={styles.paletteRow}>
-                              {TEXT_COLORS.map((color) => (
-                                <Pressable
-                                  key={color}
-                                accessibilityRole="button"
-                                accessibilityLabel={`Fill color ${color}`}
-                                accessibilityState={{ selected: selectedTextBox.fillColor === color }}
-                                  style={[styles.colorSwatch, { backgroundColor: color }, selectedTextBox.fillColor === color ? styles.colorSwatchActive : null]}
-                                  onPress={() => updateSelectedTextBox({ fillColor: color })}
-                                />
-                              ))}
-                            </View>
-                            ) : null}
+                            <ColorPicker
+                              label="Fill color"
+                              value={selectedTextBox.fillColor ?? "#ffffff"}
+                              themeColors={themeColors}
+                              onChange={(fillColor) => updateSelectedTextBox({ fillColor })}
+                            />
                             <View style={styles.controlRow}>
                               <Pressable
                                 style={styles.stepperButton}
@@ -2317,7 +2246,6 @@ const styles = StyleSheet.create({
   formatButtonSelected: { backgroundColor: "#241F1B" },
   formatSelectedText: { color: "#FBF6EE" },
   fontMenuButton: { flexDirection: "row", gap: 6, height: 36, paddingHorizontal: 10, borderRadius: 10, backgroundColor: "#F5EFE4", alignItems: "center" },
-  textColorDot: { width: 19, height: 19, borderRadius: 10, borderWidth: 2, borderColor: "#FFFFFF" },
   addLineButton: { flexDirection: "row", gap: 5, alignItems: "center", paddingVertical: 10, borderBottomWidth: 1, borderStyle: "dashed", borderColor: "#C9BCF0" },
   addLineLabel: { fontSize: 12, fontWeight: "700", color: "#4E3FBC" },
   textDoneButton: { borderRadius: 999, backgroundColor: "#241F1B", paddingHorizontal: 16, paddingVertical: 9 },
@@ -2848,11 +2776,6 @@ const styles = StyleSheet.create({
     color: "#4A4239",
     alignSelf: "center"
   },
-  paletteRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10
-  },
   shapeRow: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -2916,16 +2839,6 @@ const styles = StyleSheet.create({
   },
   backgroundChoiceLabelActive: {
     color: "#4E3FBC",
-  },
-  colorSwatch: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: "transparent"
-  },
-  colorSwatchActive: {
-    borderColor: "#6B5BD2"
   },
   controlRow: {
     flexDirection: "row",
