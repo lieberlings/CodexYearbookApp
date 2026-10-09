@@ -1,0 +1,14 @@
+# Store text with LF in git so Windows checkouts don't show every file as changed.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.jar binary
+*.keystore binary
+*.zip binary
+*.ttf binary
+*.otf binary
