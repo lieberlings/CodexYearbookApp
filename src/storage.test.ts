@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { beforeEach, describe, expect, it, jest } from "@jest/globals";
-import { loadAppData, saveAppData } from "./storage";
+import { AppDataLoadError, loadAppData, saveAppData } from "./storage";
 import { AppData } from "./types";
 
 jest.mock("@react-native-async-storage/async-storage", () => ({
@@ -192,5 +192,34 @@ describe("storage Milestone 2 foundations", () => {
       }
     });
     expect("exportDataUri" in (persisted.photos[0] as Record<string, unknown>)).toBe(false);
+  });
+});
+
+describe("loading never erases saved data", () => {
+  beforeEach(() => {
+    mockedStorage.getItem.mockReset();
+    mockedStorage.setItem.mockReset();
+    mockedStorage.removeItem.mockReset();
+  });
+
+  it("starts empty on a fresh install", async () => {
+    mockedStorage.getItem.mockImplementation(async () => null);
+    await expect(loadAppData()).resolves.toEqual({ projects: [], memories: [], pageSections: [], photos: [], suggestions: [] });
+  });
+
+  it("reports an unreadable row instead of deleting it", async () => {
+    mockedStorage.getItem.mockImplementation(async () => {
+      throw new Error("Row too big to fit into CursorWindow");
+    });
+    await expect(loadAppData()).rejects.toBeInstanceOf(AppDataLoadError);
+    expect(mockedStorage.removeItem).not.toHaveBeenCalled();
+    expect(mockedStorage.setItem).not.toHaveBeenCalled();
+  });
+
+  it("reports corrupt JSON instead of returning empty data", async () => {
+    mockedStorage.getItem.mockImplementation(async () => '{"projects": [');
+    await expect(loadAppData()).rejects.toBeInstanceOf(AppDataLoadError);
+    expect(mockedStorage.removeItem).not.toHaveBeenCalled();
+    expect(mockedStorage.setItem).not.toHaveBeenCalled();
   });
 });
