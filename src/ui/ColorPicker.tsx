@@ -11,11 +11,13 @@ type ColorPickerProps = {
   onChange: (color: string) => void;
   // Palette of the page's background, offered first so text and borders match the design.
   themeColors?: readonly string[];
+  // Heading for those colors in the expanded picker, e.g. "Cover theme".
+  themeLabel?: string;
 };
 
 // The one color control used across the app: the current color plus a few
 // suggestions, and "More" for the full palette, in the same place every time.
-export function ColorPicker({ label, value, onChange, themeColors = [] }: ColorPickerProps) {
+export function ColorPicker({ label, value, onChange, themeColors = [], themeLabel }: ColorPickerProps) {
   const [expanded, setExpanded] = useState(false);
   const recent = useRecentColors();
 
@@ -31,9 +33,12 @@ export function ColorPicker({ label, value, onChange, themeColors = [] }: ColorP
         {value ? <Swatch color={value} selected label={`${label}: current color ${value}`} /> : null}
       </View>
       <View style={styles.row}>
-        {quickColors(value, themeColors, recent).map((color) => (
-          <Swatch key={color} color={color} label={`${label} ${color}`} onPress={() => choose(color)} />
-        ))}
+        {/* The expanded sections below already show these colors, so the quick row hides. */}
+        {expanded
+          ? null
+          : quickColors(value, themeColors, recent).map((color) => (
+              <Swatch key={color} color={color} label={`${label} ${color}`} onPress={() => choose(color)} />
+            ))}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`${expanded ? "Fewer" : "More"} ${label.toLowerCase()} options`}
@@ -46,7 +51,7 @@ export function ColorPicker({ label, value, onChange, themeColors = [] }: ColorP
         </Pressable>
       </View>
       {expanded
-        ? buildColorSections(themeColors, recent).map((section) => (
+        ? buildColorSections(themeColors, recent, themeLabel).map((section) => (
             <View key={section.id} style={styles.section}>
               <Text style={type.caption}>{section.label}</Text>
               <View style={styles.row}>

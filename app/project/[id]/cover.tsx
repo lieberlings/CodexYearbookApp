@@ -115,8 +115,8 @@ export default function CoverDesignScreen() {
           <Pressable onPress={() => change({ spineTitle: undefined })}><Text style={styles.link}>Use project name</Text></Pressable>
           <Text style={styles.label}>Author / year (optional)</Text><TextInput accessibilityLabel="Spine author or year" style={styles.input} value={design?.spineSubtitle ?? ""} onChangeText={spineSubtitle => change({ spineSubtitle })} placeholder="e.g. Our family · 2026" />
           <View style={styles.row}>{(["down", "up"] as const).map(direction => <Pressable key={direction} style={[styles.tab, (design?.spineDirection ?? "down") === direction && styles.activeTab]} onPress={() => change({ spineDirection: direction })}><Text style={styles.body}>{direction === "down" ? "Top to bottom" : "Bottom to top"}</Text></Pressable>)}</View>
-          <ColorPicker label="Text color" value={design?.spineTextColor} themeColors={themeColors} onChange={spineTextColor => change({ spineTextColor })} />
-          <ColorPicker label="Spine background" value={design?.spineColor} themeColors={themeColors} onChange={spineColor => change({ spineColor })} />
+          <ColorPicker label="Text color" value={design?.spineTextColor} themeColors={themeColors} themeLabel="Cover theme" onChange={spineTextColor => change({ spineTextColor })} />
+          <ColorPicker label="Spine background" value={design?.spineColor} themeColors={themeColors} themeLabel="Cover theme" onChange={spineColor => change({ spineColor })} />
           <Pressable onPress={() => change({ spineColor: undefined })}><Text style={styles.link}>Match shared background</Text></Pressable>
         </>}
       </View>
@@ -124,7 +124,7 @@ export default function CoverDesignScreen() {
       <View style={[styles.card, { width: pageWidth }]}>
         <Text style={styles.heading}>Shared cover background</Text><Text style={styles.hint}>One background flows across the back, spine and front. Panel layouts stay in place.</Text>
         <View style={styles.row}><Pressable style={styles.secondary} disabled={busy} onPress={() => void pickBackgroundPhoto()}><Text style={styles.link}>Choose photo</Text></Pressable><Pressable style={styles.secondary} onPress={() => setPatterns(value => !value)}><Text style={styles.link}>{patterns ? "Hide patterns" : "Library patterns"}</Text></Pressable></View>
-        <ColorPicker label="Background color" value={design?.background?.kind === "color" ? design.background.color : undefined} themeColors={themeColors} onChange={color => change({ background: { kind: "color", color } })} />
+        <ColorPicker label="Background color" value={design?.background?.kind === "color" ? design.background.color : undefined} themeColors={themeColors} themeLabel="Cover theme" onChange={color => change({ background: { kind: "color", color } })} />
         {patterns && <>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>{backgroundPacks.map(item => <Pressable key={item.id} style={[styles.pack, item.id === packId && styles.activeTab]} onPress={() => setPackId(item.id)}><Text style={styles.body}>{item.label}</Text></Pressable>)}</ScrollView>
           <View style={styles.swatches}>{pack.backgrounds.map(asset => <Pressable key={asset.id} accessibilityLabel={`${pack.label} background ${asset.number}`} style={[styles.pattern, design?.background?.assetId === asset.id && styles.selectedSwatch]} onPress={() => change({ background: { kind: "library", color: asset.backgroundColor, assetId: asset.id } })}><PageBackground backgroundAssetId={asset.id} backgroundColor={asset.backgroundColor} /><Text style={styles.number}>{asset.number}</Text></Pressable>)}</View>

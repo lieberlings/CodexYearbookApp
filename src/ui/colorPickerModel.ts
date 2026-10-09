@@ -39,9 +39,13 @@ function unique(colors: readonly (string | undefined)[]): string[] {
 export type ColorSection = { id: "theme" | "recent" | "standard"; label: string; colors: string[] };
 
 // Sections of the expanded picker. Empty sections are left out.
-export function buildColorSections(themeColors: readonly string[] = [], recentColors: readonly string[] = []): ColorSection[] {
+export function buildColorSections(
+  themeColors: readonly string[] = [],
+  recentColors: readonly string[] = [],
+  themeLabel = "Page theme"
+): ColorSection[] {
   const sections: ColorSection[] = [
-    { id: "theme", label: "Page theme", colors: unique(themeColors) },
+    { id: "theme", label: themeLabel, colors: unique(themeColors) },
     { id: "recent", label: "Recent", colors: unique(recentColors) },
     { id: "standard", label: "Standard", colors: unique(STANDARD_COLORS) }
   ];

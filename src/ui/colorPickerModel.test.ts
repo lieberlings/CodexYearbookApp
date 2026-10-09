@@ -27,6 +27,7 @@ describe("colorPickerModel", () => {
     const sections = buildColorSections(["#9fb8b6", "#9FB8B6"], ["#123456"]);
     expect(sections.map((section) => section.id)).toEqual(["theme", "recent", "standard"]);
     expect(sections[0].colors).toEqual(["#9FB8B6"]);
+    expect(buildColorSections(["#9FB8B6"], [], "Cover theme")[0].label).toBe("Cover theme");
   });
 
   it("builds a short quick row without the current value", () => {
