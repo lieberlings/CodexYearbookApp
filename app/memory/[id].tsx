@@ -40,6 +40,12 @@ import { useDragInteraction } from "../../src/editor/drag/useDragInteraction";
 import { DragPayload, DragResolution, DropTarget, Rect } from "../../src/editor/drag/types";
 import { buildLayoutDocument } from "../../src/layout/engine";
 import { backgroundPacks } from "../../src/library/backgrounds";
+import { getBackgroundAssetSelection } from "../../src/layout/backgroundAssets";
+import { Button } from "../../src/ui/Button";
+import { Chip } from "../../src/ui/Chip";
+import { ColorPicker } from "../../src/ui/ColorPicker";
+import { SettingRow, Stepper } from "../../src/ui/Stepper";
+import { colors } from "../../src/ui/theme";
 import { applySlotOverridesToPage } from "../../src/layout/overrides";
 import { clampPhotoOffset, getPhotoAspect, getPhotoRenderMetrics, getPhotoScaleBounds } from "../../src/layout/photoMetrics";
 import { listAllTemplates, TemplateDefinition } from "../../src/layout/templates";
@@ -64,26 +70,6 @@ type TextBoxGestureState = {
   startBox?: PageTextBox;
 };
 
-const COLOR_PALETTE = [
-  "#ffffff", "#f8fafc", "#e2e8f0", "#111827",
-  "#fff7ed", "#fde68a", "#fed7aa", "#fecdd3",
-  "#dcfce7", "#bbf7d0", "#ccfbf1", "#bae6fd",
-  "#dbeafe", "#e0e7ff", "#ede9fe", "#fce7f3"
-];
-const TEXT_COLORS = [
-  "#0f172a", "#334155", "#ffffff", "#991b1b", "#9a3412", "#854d0e",
-  "#166534", "#0f766e", "#075985", "#1d4ed8", "#6d28d9", "#be185d",
-  "#000000", "#241f1b", "#6b6156", "#64748b", "#94a3b8", "#cbd5e1",
-  "#ef4444", "#f97316", "#f59e0b", "#eab308", "#84cc16", "#22c55e",
-  "#14b8a6", "#06b6d4", "#38bdf8", "#3b82f6", "#6b5bd2", "#a855f7",
-  "#d946ef", "#ec4899", "#fb7185", "#e8734a", "#a16207", "#78350f",
-  "#fecaca", "#fed7aa", "#fde68a", "#fef9c3", "#d9f99d", "#bbf7d0",
-  "#99f6e4", "#a5f3fc", "#bae6fd", "#bfdbfe", "#ddd6fe", "#fbcfe8"
-];
-const BORDER_COLORS = [
-  "#ffffff", "#e2e8f0", "#94a3b8", "#334155", "#0f172a", "#dc2626",
-  "#ea580c", "#d97706", "#16a34a", "#0d9488", "#2563eb", "#7c3aed"
-];
 const TEXT_BOX_CORNER_RADII = [0, 8, 18, 32];
 const PHOTO_PICKER_SELECTION_LIMIT = 50;
 const ANDROID_PHOTO_PICKER_IMPORTS_ENABLED = true;
@@ -140,8 +126,11 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+// Shown in an empty text box. New boxes are sized to fit it.
+const TEXT_PLACEHOLDER = "Tap to edit";
+
 function estimateTextBoxSize(text: string, fontSize: number, canvasSize: number) {
-  const lines = (text || "Text").split("\n");
+  const lines = (text || TEXT_PLACEHOLDER).split("\n");
   const longestLineLength = Math.max(...lines.map((line) => line.trim().length), 4);
   const safeCanvasSize = Math.max(canvasSize, 1);
   const widthPx = clamp(longestLineLength * fontSize * 0.56 + 28, fontSize * 3.2, safeCanvasSize * 0.88);
@@ -197,22 +186,6 @@ function IconOrb({
       <Text style={[styles.iconOrbLabel, active ? styles.iconOrbLabelActive : null]}>{label}</Text>
     </Pressable>
   );
-}
-
-function ValueStepper({ label, value, min, max, step, onChange }: {
-  label: string; value: number; min: number; max: number; step: number; onChange: (value: number) => void;
-}) {
-  return <View style={styles.valueStepper}>
-    <Pressable accessibilityRole="button" accessibilityLabel={`Decrease ${label}`} disabled={value <= min}
-      style={[styles.valueStepButton, value <= min && styles.valueStepDisabled]} onPress={() => onChange(Math.max(min, value - step))}>
-      <Ionicons name="remove" size={16} color="#4A4239" />
-    </Pressable>
-    <Text accessibilityLabel={`${label}: ${value}`} style={styles.valueStepText}>{value}</Text>
-    <Pressable accessibilityRole="button" accessibilityLabel={`Increase ${label}`} disabled={value >= max}
-      style={[styles.valueStepButton, value >= max && styles.valueStepDisabled]} onPress={() => onChange(Math.min(max, value + step))}>
-      <Ionicons name="add" size={16} color="#4A4239" />
-    </Pressable>
-  </View>;
 }
 
 function BackgroundThumbnail({
@@ -291,7 +264,7 @@ export default function MemoryDetailsScreen() {
   const [photoEditor, setPhotoEditor] = useState<PhotoEditorState | undefined>(undefined);
   const [selectedTextBoxId, setSelectedTextBoxId] = useState<string | undefined>(undefined);
   const [editorHeight, setEditorHeight] = useState(0);
-  const [textControl, setTextControl] = useState<"font" | "color" | "border" | "fill" | undefined>(undefined);
+  const [textControl, setTextControl] = useState<"font" | undefined>(undefined);
   const [editingTextBoxId, setEditingTextBoxId] = useState<string | undefined>(undefined);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [galleryDeletePhotoId, setGalleryDeletePhotoId] = useState<string | undefined>(undefined);
@@ -1287,9 +1260,7 @@ export default function MemoryDetailsScreen() {
         <Pressable accessibilityLabel="Undo" disabled={!history.canUndo} onPress={history.undo} style={{ padding: 8, opacity: history.canUndo ? 1 : .3 }}><Ionicons name="arrow-undo" size={22} color="#6B5BD2" /></Pressable>
         <Pressable accessibilityLabel="Redo" disabled={!history.canRedo} onPress={history.redo} style={{ padding: 8, opacity: history.canRedo ? 1 : .3 }}><Ionicons name="arrow-redo" size={22} color="#6B5BD2" /></Pressable>
         {selectedTextBox ? (
-          <Pressable accessibilityRole="button" style={styles.textDoneButton} onPress={saveTextEditing}>
-            <Text style={styles.textDoneLabel}>Done</Text>
-          </Pressable>
+          <Button variant="primary" size="sm" label="Done" onPress={saveTextEditing} />
         ) : <View style={styles.topBarGhost} />}
       </View>
       {(memory.bookRole === "front-cover" || memory.bookRole === "back-cover") && <CoverEditorStrip projectId={memory.projectId} panel={memory.bookRole === "front-cover" ? "front" : "back"} />}
@@ -1298,6 +1269,7 @@ export default function MemoryDetailsScreen() {
           const section = activeSection;
           const renderedPage = activeRenderedPage;
           const pageStyle = getSectionStyle(section.id);
+          const themeColors = getBackgroundAssetSelection(section.backgroundAssetId)?.asset.palette ?? [];
           const inspectorOpen = openInspector?.pageId === section.id ? openInspector.kind : undefined;
           const textModeActive = inspectorOpen === "text";
           const templates = listAllTemplates();
@@ -1461,7 +1433,7 @@ export default function MemoryDetailsScreen() {
                     height: textBox.height
                   };
                   const isAnchoredTextBox = Boolean(anchorSlot);
-                  const shapeText = getShapeTextLayout(textBox.shape, textBox.text || "Tap to edit", textFrame.width * canvasSize, textFrame.height * canvasSize, textBox.sticker ? textFrame.height * canvasSize * .7 : textBox.fontSize ?? pageStyle.textSize, textBox.borderWidth);
+                  const shapeText = getShapeTextLayout(textBox.shape, textBox.text || TEXT_PLACEHOLDER, textFrame.width * canvasSize, textFrame.height * canvasSize, textBox.sticker ? textFrame.height * canvasSize * .7 : textBox.fontSize ?? pageStyle.textSize, textBox.borderWidth);
                   return (
                     <View
                       key={textBox.id}
@@ -1576,7 +1548,7 @@ export default function MemoryDetailsScreen() {
                               }
                             ]}
                           >
-                            {textBox.text || "Tap to edit"}
+                            {textBox.text || TEXT_PLACEHOLDER}
                           </Text>
                         )}
                         </View>
@@ -1595,7 +1567,7 @@ export default function MemoryDetailsScreen() {
                   <Pressable accessibilityLabel="Remove photo frame" onPress={() => { patchPageSection(section.id, { freestyleSlots: (section.freestyleSlots ?? []).filter(s => s.id !== selectedSlotId) }); removePhotoFromPageSlot(section.id, selectedSlotId, renderedPage.slots.find(s => s.id === selectedSlotId)?.photoId); setSelection(section.id, undefined); }}><Ionicons name="remove-circle-outline" size={22} color="#6B5BD2" /></Pressable>
                 </>}
               </View>
-              {unlocked && selectedSlotId && !selectedTextBoxId && photoShapesOpen && <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap", paddingBottom: 6 }}>{objectShapes.map(shape => <Pressable key={shape} style={styles.stepperButton} onPress={() => { const slot = renderedPage.slots.find(s => s.id === selectedSlotId); if (slot) changeFreeSlot({ ...slot, shape }); }}><Text>{getShapeDefinition(shape).label}</Text></Pressable>)}</View>}
+              {unlocked && selectedSlotId && !selectedTextBoxId && photoShapesOpen && <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap", paddingBottom: 6 }}>{objectShapes.map(shape => <Chip key={shape} label={getShapeDefinition(shape).label} selected={(renderedPage.slots.find(s => s.id === selectedSlotId)?.shape ?? "rectangle") === shape} onPress={() => { const slot = renderedPage.slots.find(s => s.id === selectedSlotId); if (slot) changeFreeSlot({ ...slot, shape }); }} />)}</View>}
               {inspectorOpen ? (
                 <View
                   style={styles.inspectorArea}
@@ -1608,7 +1580,7 @@ export default function MemoryDetailsScreen() {
                   </View>
                   {inspectorOpen === "pages" ? (
                     <ScrollView style={styles.pageRail} contentContainerStyle={{ gap: 14, paddingBottom: 12 }} keyboardShouldPersistTaps="handled">
-                    {memory.bookRole === "front-cover" && <Pressable style={styles.addTextBoxButton} onPress={async () => { const existing = getMemoriesByProjectId(memory.projectId).find(m => m.bookRole === "dedication"); const id = existing?.id ?? await createMemory(memory.projectId, "Dedication", { bookRole: "dedication" }); router.push({ pathname: "/memory/[id]", params: { id } }); }}><Ionicons name="heart-outline" size={22} color="#6B5BD2" /><Text>{getMemoriesByProjectId(memory.projectId).some(m => m.bookRole === "dedication") ? "Edit dedication page" : "Add dedication page"}</Text></Pressable>}
+                    {memory.bookRole === "front-cover" && <Button icon="heart-outline" style={{ alignSelf: "flex-start" }} label={getMemoriesByProjectId(memory.projectId).some(m => m.bookRole === "dedication") ? "Edit dedication page" : "Add dedication page"} onPress={async () => { const existing = getMemoriesByProjectId(memory.projectId).find(m => m.bookRole === "dedication"); const id = existing?.id ?? await createMemory(memory.projectId, "Dedication", { bookRole: "dedication" }); router.push({ pathname: "/memory/[id]", params: { id } }); }} />}
                     {/* Page reorder is owned by DraggableFlatList. Other editor drags still use the custom drag controller. */}
                     <DraggableFlatList
                       data={pageRailData}
@@ -1776,7 +1748,7 @@ export default function MemoryDetailsScreen() {
                       nestedScrollEnabled
                       contentContainerStyle={styles.layoutPicker}
                     >
-                      <Pressable style={[styles.addTextBoxButton, freestyle && styles.templateChoiceActive]} onPress={enableFreestyle}><Ionicons name="move" size={22} color="#6B5BD2" /><Text>Freestyle</Text></Pressable>
+                      <Button variant={freestyle ? "primary" : "secondary"} icon="move" label="Freestyle" style={{ alignSelf: "flex-start" }} onPress={enableFreestyle} />
                       <View style={styles.controlGroup}>
                         <Text style={styles.controlGroupLabel}>Automatic</Text>
                         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.templateRow}>
@@ -1874,22 +1846,12 @@ export default function MemoryDetailsScreen() {
                       nestedScrollEnabled
                       contentContainerStyle={styles.backgroundPicker}
                     >
-                      <View style={styles.controlGroup}>
-                        <Text style={styles.controlGroupLabel}>Colors</Text>
-                        <View style={styles.paletteRow}>
-                          {COLOR_PALETTE.map((color) => (
-                            <Pressable
-                              key={color}
-                              style={[
-                                styles.colorSwatch,
-                                { backgroundColor: color },
-                                !section.backgroundAssetId && section.backgroundColor === color ? styles.colorSwatchActive : null
-                              ]}
-                              onPress={() => updatePageSectionStyle(section.id, { backgroundColor: color, backgroundAssetId: undefined })}
-                            />
-                          ))}
-                        </View>
-                      </View>
+                      <ColorPicker
+                        label="Page color"
+                        value={section.backgroundAssetId ? undefined : section.backgroundColor}
+                        themeColors={themeColors}
+                        onChange={(color) => updatePageSectionStyle(section.id, { backgroundColor: color, backgroundAssetId: undefined })}
+                      />
                       {backgroundPacks.map((pack) => (
                         <View key={pack.id} style={styles.controlGroup}>
                           <Text style={styles.controlGroupLabel}>{pack.label}</Text>
@@ -1917,37 +1879,28 @@ export default function MemoryDetailsScreen() {
 
                   {inspectorOpen === "border" ? (
                     <ScrollView style={styles.toolContentScroll} contentContainerStyle={styles.borderControls}>
-                      <Text style={styles.controlGroupLabel}>Color</Text>
-                      <View style={styles.paletteRow}>
-                        {BORDER_COLORS.map((color) => (
-                          <Pressable key={color} accessibilityRole="button" accessibilityLabel={`Border color ${color}`}
-                            accessibilityState={{ selected: pageStyle.slotBorderColor === color }}
-                            style={[styles.colorSwatch, { backgroundColor: color }, pageStyle.slotBorderColor === color && styles.colorSwatchActive]}
-                            onPress={() => updatePageSectionStyle(section.id, { slotBorderColor: color })} />
-                        ))}
-                      </View>
-                      <View style={styles.settingRow}>
-                        <Text style={styles.settingLabel}>Width</Text>
-                        <ValueStepper label="Border width" value={pageStyle.slotBorderWidth ?? 1} min={0} max={12} step={1}
+                      <ColorPicker
+                        label="Border color"
+                        value={pageStyle.slotBorderColor}
+                        themeColors={themeColors}
+                        onChange={(slotBorderColor) => updatePageSectionStyle(section.id, { slotBorderColor })}
+                      />
+                      <SettingRow label="Width">
+                        <Stepper label="Border width" value={pageStyle.slotBorderWidth ?? 1} min={0} max={12} step={1}
                           onChange={(slotBorderWidth) => updatePageSectionStyle(section.id, { slotBorderWidth })} />
-                      </View>
-                      <View style={styles.settingRow}>
-                        <Text style={styles.settingLabel}>Corners</Text>
-                        <ValueStepper label="Corner radius" value={pageStyle.slotCornerRadius ?? 0} min={0} max={28} step={2}
+                      </SettingRow>
+                      <SettingRow label="Corners">
+                        <Stepper label="Corner radius" value={pageStyle.slotCornerRadius ?? 0} min={0} max={28} step={2}
                           onChange={(slotCornerRadius) => updatePageSectionStyle(section.id, { slotCornerRadius })} />
-                      </View>
+                      </SettingRow>
                     </ScrollView>
                   ) : null}
 
                   {inspectorOpen === "text" ? (
                     <>
                     {(!selectedTextBox || (selectedTextBox.sticker && !editingTextBoxId)) && <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
-                      <Pressable accessibilityRole="button" style={[styles.addTextBoxButton, styles.textAddAction]} onPress={() => { Keyboard.dismiss(); handleAddTextBox(); }}>
-                        <Ionicons name="add" size={18} color="#FFFFFF" /><Text style={styles.addTextButtonText}>Add text box</Text>
-                      </Pressable>
-                      <Pressable accessibilityRole="button" style={[styles.addTextBoxButton, styles.textAddAction]} onPress={() => { Keyboard.dismiss(); const id = addPageTextBox(section.id, { sticker: true, text: "😊", fontSize: 48, width: .25, height: .25, borderWidth: 0, autoSize: false }); if (id) { setSelectedTextBoxId(id); setEditingTextBoxId(undefined); } }}>
-                        <Text style={{ fontSize: 20 }}>😊</Text><Text style={styles.addTextButtonText}>Add emoji</Text>
-                      </Pressable>
+                      <Button variant="primary" icon="add" label="Add text box" style={{ flex: 1 }} onPress={() => { Keyboard.dismiss(); handleAddTextBox(); }} />
+                      <Button label="Add emoji" leading={<Text style={{ fontSize: 18 }}>😊</Text>} style={{ flex: 1 }} onPress={() => { Keyboard.dismiss(); const id = addPageTextBox(section.id, { sticker: true, text: "😊", fontSize: 48, width: .25, height: .25, borderWidth: 0, autoSize: false }); if (id) { setSelectedTextBoxId(id); setEditingTextBoxId(undefined); } }} />
                     </View>}
                     {selectedTextBox && (!selectedTextBox.sticker || editingTextBoxId) ? (
                       <ScrollView
@@ -1964,26 +1917,22 @@ export default function MemoryDetailsScreen() {
                             <Text style={styles.fontDropdownText}>{FONT_FAMILIES.find((font) => font.id === selectedTextBox.fontFamily)?.label ?? "Sans"}</Text>
                             <Ionicons name="chevron-down" size={12} color="#6B6156" />
                           </Pressable>
-                          <ValueStepper label="Text size" value={selectedTextBox.fontSize ?? 26} min={10} max={72} step={2}
+                          <Stepper label="Text size" value={selectedTextBox.fontSize ?? 26} min={10} max={72} step={2}
                             onChange={(fontSize) => updateSelectedTextBox({ fontSize })} />
                           <Pressable accessibilityRole="button" accessibilityLabel={`Alignment ${selectedTextBox.textAlign ?? "center"}; tap to change`}
-                            style={[styles.formatButton, styles.formatButtonSelected]}
+                            style={styles.formatButton}
                             onPress={() => {
                               const alignments: TextBoxAlignment[] = ["left", "center", "right"];
                               updateSelectedTextBox({ textAlign: alignments[(alignments.indexOf(selectedTextBox.textAlign ?? "center") + 1) % 3] });
                             }}>
                             <View style={{ gap: 3, width: 18, alignItems: selectedTextBox.textAlign === "left" ? "flex-start" : selectedTextBox.textAlign === "right" ? "flex-end" : "center" }}>
-                              {[18, 12, 18].map((lineWidth, index) => <View key={index} style={{ width: lineWidth, height: 2, backgroundColor: "#FBF6EE" }} />)}
+                              {[18, 12, 18].map((lineWidth, index) => <View key={index} style={{ width: lineWidth, height: 2, backgroundColor: colors.textBody }} />)}
                             </View>
                           </Pressable>
                           <Pressable accessibilityRole="button" accessibilityLabel="Bold" accessibilityState={{ selected: selectedTextBox.fontWeight === "700" }}
                             style={[styles.formatButton, selectedTextBox.fontWeight === "700" && styles.formatButtonSelected]}
                             onPress={() => updateSelectedTextBox({ fontWeight: selectedTextBox.fontWeight === "700" ? "400" : "700" })}>
                             <Text style={[styles.toggleChipText, selectedTextBox.fontWeight === "700" && styles.formatSelectedText]}>B</Text>
-                          </Pressable>
-                          <Pressable accessibilityRole="button" accessibilityLabel="Text color" accessibilityState={{ expanded: textControl === "color" }}
-                            style={styles.formatButton} onPress={() => setTextControl(textControl === "color" ? undefined : "color")}>
-                            <View style={[styles.textColorDot, { backgroundColor: selectedTextBox.textColor ?? pageStyle.textColor }]} />
                           </Pressable>
                           <Pressable accessibilityRole="button" accessibilityLabel="Italic" accessibilityState={{ selected: selectedTextBox.fontStyle === "italic" }}
                             style={[styles.formatButton, selectedTextBox.fontStyle === "italic" && styles.formatButtonSelected]}
@@ -2001,61 +1950,27 @@ export default function MemoryDetailsScreen() {
                             ))}
                           </View>
                         ) : null}
-                        {textControl === "color" ? (
-                        <View style={styles.controlGroup}>
-                          <Text style={styles.controlGroupLabel}>Text</Text>
-                          <View style={styles.paletteRow}>
-                            {TEXT_COLORS.map((color) => (
-                              <Pressable
-                                key={color}
-                                style={[styles.colorSwatch, { backgroundColor: color }, selectedTextBox.textColor === color ? styles.colorSwatchActive : null]}
-                                onPress={() => updateSelectedTextBox({ textColor: color })}
-                              />
-                            ))}
-                          </View>
-                        </View>
-
-                        ) : null}
+                        <ColorPicker
+                          label="Text color"
+                          value={selectedTextBox.textColor ?? pageStyle.textColor}
+                          themeColors={themeColors}
+                          onChange={(textColor) => updateSelectedTextBox({ textColor })}
+                        />
                         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-                          {objectShapes.map(shape => <Pressable key={shape} style={[styles.stepperButton, selectedTextBox.shape === shape && styles.templateChoiceActive]} onPress={() => updateSelectedTextBox({ shape })}><Text>{getShapeDefinition(shape).label}</Text></Pressable>)}
+                          {objectShapes.map(shape => <Chip key={shape} label={getShapeDefinition(shape).label} selected={(selectedTextBox.shape ?? "rectangle") === shape} onPress={() => updateSelectedTextBox({ shape })} />)}
                         </View>
                         <View style={styles.controlGroup}>
                           <Text style={styles.controlGroupLabel}>Border</Text>
-                          <View style={styles.controlRow}>
-                            <Pressable
-                              style={styles.stepperButton}
-                              onPress={() => updateSelectedTextBox({ borderWidth: clamp((selectedTextBox.borderWidth ?? 0) - 1, 0, 12) })}
-                            >
-                              <Text style={styles.stepperButtonText}>- Width</Text>
-                            </Pressable>
-                            <Text style={styles.metricText}>{selectedTextBox.borderWidth ?? 0}</Text>
-                            <Pressable
-                              style={styles.stepperButton}
-                              onPress={() => updateSelectedTextBox({ borderWidth: clamp((selectedTextBox.borderWidth ?? 0) + 1, 0, 12) })}
-                            >
-                              <Text style={styles.stepperButtonText}>+ Width</Text>
-                            </Pressable>
-                          </View>
-                          <Pressable accessibilityRole="button" accessibilityLabel="Border color" accessibilityState={{ expanded: textControl === "border" }}
-                              style={styles.fontMenuButton} onPress={() => setTextControl(textControl === "border" ? undefined : "border")}>
-                              <View style={[styles.textColorDot, { backgroundColor: selectedTextBox.borderColor ?? "#0f172a" }]} />
-                              <Text style={styles.fontDropdownText}>Border color</Text>
-                              <Ionicons name={textControl === "border" ? "chevron-up" : "chevron-down"} size={12} color="#6B6156" />
-                            </Pressable>
-                            {textControl === "border" ? (
-                            <View style={styles.paletteRow}>
-                            {TEXT_COLORS.map((color) => (
-                              <Pressable
-                                key={color}
-                                accessibilityRole="button"
-                                accessibilityLabel={`Border color ${color}`}
-                                accessibilityState={{ selected: selectedTextBox.borderColor === color }}
-                                style={[styles.colorSwatch, { backgroundColor: color }, selectedTextBox.borderColor === color ? styles.colorSwatchActive : null]}
-                                onPress={() => updateSelectedTextBox({ borderColor: color })}
-                              />
-                            ))}
-                          </View>
-                            ) : null}
+                          <SettingRow label="Width">
+                            <Stepper label="Text box border width" value={selectedTextBox.borderWidth ?? 0} min={0} max={12} step={1}
+                              onChange={(borderWidth) => updateSelectedTextBox({ borderWidth })} />
+                          </SettingRow>
+                          <ColorPicker
+                            label="Border color"
+                            value={selectedTextBox.borderColor ?? "#0f172a"}
+                            themeColors={themeColors}
+                            onChange={(borderColor) => updateSelectedTextBox({ borderColor })}
+                          />
                           <View style={styles.shapeRow}>
                             {TEXT_BOX_CORNER_RADII.map((radius) => (
                               <Pressable
@@ -2078,45 +1993,20 @@ export default function MemoryDetailsScreen() {
                         {!selectedTextBox.anchorSlotId ? (
                           <View style={styles.controlGroup}>
                             <Text style={styles.controlGroupLabel}>Fill</Text>
-                            <Pressable accessibilityRole="button" accessibilityLabel="Fill color" accessibilityState={{ expanded: textControl === "fill" }}
-                              style={styles.fontMenuButton} onPress={() => setTextControl(textControl === "fill" ? undefined : "fill")}>
-                              <View style={[styles.textColorDot, { backgroundColor: selectedTextBox.fillColor ?? "#ffffff" }]} />
-                              <Text style={styles.fontDropdownText}>Fill color</Text>
-                              <Ionicons name={textControl === "fill" ? "chevron-up" : "chevron-down"} size={12} color="#6B6156" />
-                            </Pressable>
-                            {textControl === "fill" ? (
-                            <View style={styles.paletteRow}>
-                              {TEXT_COLORS.map((color) => (
-                                <Pressable
-                                  key={color}
-                                accessibilityRole="button"
-                                accessibilityLabel={`Fill color ${color}`}
-                                accessibilityState={{ selected: selectedTextBox.fillColor === color }}
-                                  style={[styles.colorSwatch, { backgroundColor: color }, selectedTextBox.fillColor === color ? styles.colorSwatchActive : null]}
-                                  onPress={() => updateSelectedTextBox({ fillColor: color })}
-                                />
-                              ))}
-                            </View>
-                            ) : null}
-                            <View style={styles.controlRow}>
-                              <Pressable
-                                style={styles.stepperButton}
-                                onPress={() => updateSelectedTextBox({ fillOpacity: clamp((selectedTextBox.fillOpacity ?? 0) - 0.1, 0, 1) })}
-                              >
-                                <Text style={styles.stepperButtonText}>- Opacity</Text>
-                              </Pressable>
-                              <Text style={styles.metricText}>{Math.round((selectedTextBox.fillOpacity ?? 0) * 100)}%</Text>
-                              <Pressable
-                                style={styles.stepperButton}
-                                onPress={() => updateSelectedTextBox({ fillOpacity: clamp((selectedTextBox.fillOpacity ?? 0) + 0.1, 0, 1) })}
-                              >
-                                <Text style={styles.stepperButtonText}>+ Opacity</Text>
-                              </Pressable>
-                            </View>
+                            <ColorPicker
+                              label="Fill color"
+                              value={selectedTextBox.fillColor ?? "#ffffff"}
+                              themeColors={themeColors}
+                              onChange={(fillColor) => updateSelectedTextBox({ fillColor })}
+                            />
+                            <SettingRow label="Opacity">
+                              <Stepper label="Fill opacity" value={Math.round((selectedTextBox.fillOpacity ?? 0) * 100)} min={0} max={100} step={10}
+                                format={(percent) => `${percent}%`} onChange={(percent) => updateSelectedTextBox({ fillOpacity: percent / 100 })} />
+                            </SettingRow>
                           </View>
                         ) : null}
 
-                        {selectedTextBox.anchorSlotId ? <Pressable style={styles.stepperButton} onPress={revertSelectedTextSlotToPhotoSlot}><Text style={styles.stepperButtonText}>Photo Slot</Text></Pressable> : null}
+                        {selectedTextBox.anchorSlotId ? <Button size="sm" icon="image-outline" label="Turn back into photo slot" style={{ alignSelf: "flex-start" }} onPress={revertSelectedTextSlotToPhotoSlot} /> : null}
                       </ScrollView>
                     ) : (
                       <View style={styles.textInspector}>
@@ -2169,20 +2059,17 @@ export default function MemoryDetailsScreen() {
             <Text style={styles.deleteTitle}>Delete photo?</Text>
             <Text style={styles.deleteCopy}>This removes it from the memory entirely.</Text>
             <View style={styles.deleteActions}>
-              <Pressable style={styles.deleteCancelButton} onPress={() => setGalleryDeletePhotoId(undefined)}>
-                <Text style={styles.deleteCancelText}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                style={styles.deleteConfirmButton}
+              <Button label="Cancel" onPress={() => setGalleryDeletePhotoId(undefined)} />
+              <Button
+                variant="danger"
+                label="Delete"
                 onPress={() => {
                   if (galleryDeletePhotoId) {
                     deletePhotos([galleryDeletePhotoId]);
                   }
                   setGalleryDeletePhotoId(undefined);
                 }}
-              >
-                <Text style={styles.deleteConfirmText}>Delete</Text>
-              </Pressable>
+              />
             </View>
           </Pressable>
         </Pressable>
@@ -2300,28 +2187,19 @@ export default function MemoryDetailsScreen() {
 
 const styles = StyleSheet.create({
   textTapAwaySurface: { ...StyleSheet.absoluteFillObject, zIndex: 9999 },
-  textAddAction: { flex: 1, height: 44, marginBottom: 0, paddingHorizontal: 10, paddingVertical: 0, justifyContent: "center" },
-  addTextBoxButton: { flexDirection: "row", alignItems: "center", alignSelf: "flex-start", gap: 6, backgroundColor: "#6B5BD2", borderRadius: 999, paddingHorizontal: 14, paddingVertical: 9, marginBottom: 12 },
   idleToolSpace: { flex: 1, justifyContent: "center", alignItems: "center" },
   toolContentScroll: { flex: 1, minHeight: 0 },
   borderControls: { gap: 14, paddingBottom: 12 },
   settingRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
   settingLabel: { color: "#4A4239", fontSize: 14, fontWeight: "600" },
-  valueStepper: { flexDirection: "row", alignItems: "center", backgroundColor: "#F5EFE4", borderRadius: 10 },
-  valueStepButton: { width: 32, height: 36, alignItems: "center", justifyContent: "center" },
-  valueStepText: { color: "#241F1B", minWidth: 26, textAlign: "center", fontSize: 13, fontWeight: "700" },
-  valueStepDisabled: { opacity: 0.3 },
   formatBar: { flexDirection: "row", alignItems: "center", gap: 7 },
   formatBarScroll: { height: 36, minHeight: 36, flexGrow: 0, flexShrink: 0 },
   formatButton: { width: 36, height: 36, borderRadius: 10, backgroundColor: "#F5EFE4", alignItems: "center", justifyContent: "center" },
-  formatButtonSelected: { backgroundColor: "#241F1B" },
-  formatSelectedText: { color: "#FBF6EE" },
+  formatButtonSelected: { backgroundColor: colors.brand },
+  formatSelectedText: { color: colors.onBrand },
   fontMenuButton: { flexDirection: "row", gap: 6, height: 36, paddingHorizontal: 10, borderRadius: 10, backgroundColor: "#F5EFE4", alignItems: "center" },
-  textColorDot: { width: 19, height: 19, borderRadius: 10, borderWidth: 2, borderColor: "#FFFFFF" },
   addLineButton: { flexDirection: "row", gap: 5, alignItems: "center", paddingVertical: 10, borderBottomWidth: 1, borderStyle: "dashed", borderColor: "#C9BCF0" },
   addLineLabel: { fontSize: 12, fontWeight: "700", color: "#4E3FBC" },
-  textDoneButton: { borderRadius: 999, backgroundColor: "#241F1B", paddingHorizontal: 16, paddingVertical: 9 },
-  textDoneLabel: { color: "#FBF6EE", fontSize: 13, fontWeight: "600" },
   inspectorHeading: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
   inspectorTitle: { color: "#241F1B", fontSize: 17, fontWeight: "600", textTransform: "capitalize", letterSpacing: -0.2 },
   screen: {
@@ -2827,10 +2705,6 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: "#6B5BD2"
   },
-  addTextButtonText: {
-    color: "#ffffff",
-    fontWeight: "700"
-  },
   controlGroup: {
     gap: 8
   },
@@ -2840,18 +2714,6 @@ const styles = StyleSheet.create({
     color: "#6B6156",
     textTransform: "uppercase",
     letterSpacing: 0.6
-  },
-  metricText: {
-    minWidth: 42,
-    textAlign: "center",
-    fontWeight: "700",
-    color: "#4A4239",
-    alignSelf: "center"
-  },
-  paletteRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10
   },
   shapeRow: {
     flexDirection: "row",
@@ -2917,36 +2779,9 @@ const styles = StyleSheet.create({
   backgroundChoiceLabelActive: {
     color: "#4E3FBC",
   },
-  colorSwatch: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: "transparent"
-  },
-  colorSwatchActive: {
-    borderColor: "#6B5BD2"
-  },
-  controlRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8
-  },
-  stepperButton: {
-    borderWidth: 1,
-    borderColor: "#E8DFD2",
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    backgroundColor: "#F3EBDE"
-  },
   stepperButtonActive: {
     borderColor: "#6B5BD2",
     backgroundColor: "#EDE8FA"
-  },
-  stepperButtonText: {
-    color: "#4A4239",
-    fontWeight: "600"
   },
   stepperButtonTextActive: {
     color: "#4E3FBC",
@@ -3456,28 +3291,6 @@ const styles = StyleSheet.create({
   deleteActions: {
     flexDirection: "row",
     gap: 10
-  },
-  deleteCancelButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#E8DFD2",
-    backgroundColor: "#F3EBDE"
-  },
-  deleteCancelText: {
-    color: "#4A4239",
-    fontWeight: "600"
-  },
-  deleteConfirmButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: "#AD432F"
-  },
-  deleteConfirmText: {
-    color: "#ffffff",
-    fontWeight: "700"
   },
   modalSheet: {
     backgroundColor: "#FBF6EE",

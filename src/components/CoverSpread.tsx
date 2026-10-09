@@ -45,3 +45,20 @@ export function CoverSpread({ project, front, back, photosById, width, selected,
     </Pressable>)}
   </View>;
 }
+
+// The spine enlarged, with a strip of the back and front cover on each side so
+// the shared background reads as it will on the printed book.
+export function SpineCloseUp({ project, front, back, photosById, height }: {
+  project: Project; front?: LayoutPage; back?: LayoutPage; photosById: Record<string, PhotoItem>; height: number;
+}) {
+  const geometry = coverGeometry(project.coverDesign);
+  const width = height * geometry.total / geometry.panel;
+  const spine = width - height * 2;
+  const strip = Math.min(height * .3, 60);
+  return <View style={{ width: spine + strip * 2, height, overflow: "hidden", borderRadius: 8 }}>
+    <View style={{ position: "absolute", left: strip - height, top: 0 }}>
+      <CoverSpread project={project} front={front} back={back} photosById={photosById} width={width} />
+    </View>
+    <View pointerEvents="none" style={{ position: "absolute", left: strip, width: spine, top: 0, bottom: 0, borderLeftWidth: 1, borderRightWidth: 1, borderColor: "#00000033" }} />
+  </View>;
+}

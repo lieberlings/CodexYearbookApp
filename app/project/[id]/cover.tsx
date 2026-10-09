@@ -1,18 +1,23 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router, Stack, useLocalSearchParams } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { CoverPanelPreview, CoverSpread, SpinePreview } from "../../../src/components/CoverSpread";
+import { CoverPanelPreview, CoverSpread, SpineCloseUp } from "../../../src/components/CoverSpread";
 import { PageBackground } from "../../../src/components/PageBackground";
 import { useProjectBook } from "../../../src/components/useProjectBook";
 import { useAppData } from "../../../src/context/AppContext";
 import { backgroundPacks } from "../../../src/library/backgrounds";
+import { getBackgroundAssetSelection } from "../../../src/layout/backgroundAssets";
 import { coverGeometry } from "../../../src/layout/bookSpreads";
 import { useEditorStore } from "../../../src/state/editorStore";
+import { Button } from "../../../src/ui/Button";
+import { Chip } from "../../../src/ui/Chip";
+import { ColorPicker } from "../../../src/ui/ColorPicker";
+import { SegmentedControl } from "../../../src/ui/SegmentedControl";
+import { colors } from "../../../src/ui/theme";
 import type { CoverDesign, CoverPanel } from "../../../src/types";
 
-const colors = ["#FBF6EE", "#FFFFFF", "#241F1B", "#6B5BD2", "#166534", "#075985", "#991B1B", "#FDE68A", "#FECACA", "#BFDBFE", "#DDD6FE", "#D9F99D"];
 
 export default function CoverDesignScreen() {
   const { id, panel: requestedPanel } = useLocalSearchParams<{ id: string; panel?: string }>();
@@ -84,6 +89,7 @@ export default function CoverDesignScreen() {
   const geometry = coverGeometry(design);
   const selectedPage = selected === "front" ? book.front : book.back;
   const pack = backgroundPacks.find(item => item.id === packId)!;
+  const themeColors = getBackgroundAssetSelection(design?.background?.assetId)?.asset.palette ?? [];
   const extraCoverPages = [book.front, book.back].some(page => page && page.pageCount > 1);
   return <View style={[styles.screen, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
     <Stack.Screen options={{ headerShown: false }} />
@@ -95,9 +101,10 @@ export default function CoverDesignScreen() {
     </View>
     <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
       <View style={styles.paper}><CoverSpread {...book} project={project} width={pageWidth} selected={selected} onSelect={setSelected} guides={guides} /></View>
-      <View style={[styles.row, { width: pageWidth }]}>{(["back", "spine", "front"] as const).map(panel => <Pressable key={panel} accessibilityRole="button" accessibilityState={{ selected: selected === panel }} style={[styles.tab, selected === panel && styles.activeTab]} onPress={() => setSelected(panel)}><Text style={selected === panel ? styles.activeText : styles.body}>{panel === "spine" ? "Spine" : `${panel === "front" ? "Front" : "Back"} cover`}</Text></Pressable>)}</View>
+      <SegmentedControl accessibilityLabel="Cover part" style={{ width: pageWidth }} value={selected} onChange={setSelected}
+        options={[{ value: "back", label: "Back cover" }, { value: "spine", label: "Spine" }, { value: "front", label: "Front cover" }]} />
       <Text style={styles.hint}>{geometry.confirmed ? "Outside cover · Back – Spine – Front" : "Cover layout preview · Spine width awaits print settings"}</Text>
-      <View style={[styles.row, { width: pageWidth }]}><Text style={[styles.body, { flex: 1 }]}>Design guides</Text><Switch accessibilityLabel="Show design guides" value={guides} onValueChange={setGuides} trackColor={{ true: "#6B5BD2" }} /></View>
+      <View style={[styles.row, { width: pageWidth }]}><Text style={[styles.body, { flex: 1 }]}>Design guides</Text><Switch accessibilityLabel="Show design guides" value={guides} onValueChange={setGuides} trackColor={{ true: colors.brand }} /></View>
       {guides && <Text style={styles.hint}>Dashed lines are composition guides, not the printer’s trim or bleed boundaries.</Text>}
       {extraCoverPages && <Text style={styles.hint}>Your existing cover sections have extra pages. They are preserved in the editor; the first page of each is shown on this cover.</Text>}
 
@@ -105,32 +112,33 @@ export default function CoverDesignScreen() {
         <Text style={styles.heading}>{selected === "spine" ? "Spine" : `${selected === "front" ? "Front" : "Back"} cover`}</Text>
         {selected !== "spine" ? <>
           <View style={{ alignSelf: "center" }}><CoverPanelPreview project={project} panel={selected} page={selectedPage} photosById={book.photosById} size={Math.min(pageWidth - 32, 300)} /></View>
-          <Pressable style={styles.primary} disabled={busy} onPress={() => void editPanel(selected)}>{busy ? <ActivityIndicator color="white" /> : <Text style={styles.primaryText}>Edit layout, photos & text</Text>}</Pressable>
+          <Button variant="primary" busy={busy} label="Edit layout, photos & text" onPress={() => void editPanel(selected)} />
           {design?.background && <View style={styles.row}><Text style={[styles.body, { flex: 1 }]}>Use a separate background here</Text><Switch accessibilityLabel={`Use separate ${selected} background`} value={Boolean(design.panelBackgrounds?.[selected])} onValueChange={value => change({ panelBackgrounds: { ...design.panelBackgrounds, [selected]: value } })} /></View>}
         </> : <>
-          <View style={{ alignSelf: "center" }}><SpinePreview project={project} height={200} width={36} /></View>
+          <View style={{ alignSelf: "center" }}><SpineCloseUp {...book} project={project} height={200} /></View>
           <Text style={styles.label}>Title</Text><TextInput accessibilityLabel="Spine title" style={styles.input} value={design?.spineTitle ?? project.name} onChangeText={spineTitle => change({ spineTitle })} placeholder="Book title" />
-          <Pressable onPress={() => change({ spineTitle: undefined })}><Text style={styles.link}>Use project name</Text></Pressable>
+          <Button variant="link" size="sm" label="Use project name" onPress={() => change({ spineTitle: undefined })} />
           <Text style={styles.label}>Author / year (optional)</Text><TextInput accessibilityLabel="Spine author or year" style={styles.input} value={design?.spineSubtitle ?? ""} onChangeText={spineSubtitle => change({ spineSubtitle })} placeholder="e.g. Our family · 2026" />
-          <View style={styles.row}>{(["down", "up"] as const).map(direction => <Pressable key={direction} style={[styles.tab, (design?.spineDirection ?? "down") === direction && styles.activeTab]} onPress={() => change({ spineDirection: direction })}><Text style={styles.body}>{direction === "down" ? "Top to bottom" : "Bottom to top"}</Text></Pressable>)}</View>
-          <Text style={styles.label}>Text color</Text><View style={styles.swatches}>{colors.map(color => <Pressable key={color} accessibilityLabel={`Spine text ${color}`} onPress={() => change({ spineTextColor: color })} style={[styles.swatch, { backgroundColor: color }, design?.spineTextColor === color && styles.selectedSwatch]} />)}</View>
-          <Text style={styles.label}>Spine background</Text><View style={styles.swatches}>{colors.map(color => <Pressable key={color} accessibilityLabel={`Spine background ${color}`} onPress={() => change({ spineColor: color })} style={[styles.swatch, { backgroundColor: color }, design?.spineColor === color && styles.selectedSwatch]} />)}</View>
-          <Pressable onPress={() => change({ spineColor: undefined })}><Text style={styles.link}>Match shared background</Text></Pressable>
+          <SegmentedControl accessibilityLabel="Spine text direction" value={design?.spineDirection ?? "down"} onChange={spineDirection => change({ spineDirection })}
+            options={[{ value: "down", label: "Top to bottom" }, { value: "up", label: "Bottom to top" }]} />
+          <ColorPicker label="Text color" value={design?.spineTextColor} themeColors={themeColors} themeLabel="Cover theme" onChange={spineTextColor => change({ spineTextColor })} />
+          <ColorPicker label="Spine background" value={design?.spineColor} themeColors={themeColors} themeLabel="Cover theme" onChange={spineColor => change({ spineColor })} />
+          <Button variant="link" size="sm" label="Match shared background" onPress={() => change({ spineColor: undefined })} />
         </>}
       </View>
 
       <View style={[styles.card, { width: pageWidth }]}>
         <Text style={styles.heading}>Shared cover background</Text><Text style={styles.hint}>One background flows across the back, spine and front. Panel layouts stay in place.</Text>
-        <View style={styles.row}><Pressable style={styles.secondary} disabled={busy} onPress={() => void pickBackgroundPhoto()}><Text style={styles.link}>Choose photo</Text></Pressable><Pressable style={styles.secondary} onPress={() => setPatterns(value => !value)}><Text style={styles.link}>{patterns ? "Hide patterns" : "Library patterns"}</Text></Pressable></View>
-        <View style={styles.swatches}>{colors.map(color => <Pressable key={color} accessibilityLabel={`Shared background ${color}`} onPress={() => change({ background: { kind: "color", color } })} style={[styles.swatch, { backgroundColor: color }, design?.background?.kind === "color" && design.background.color === color && styles.selectedSwatch]} />)}</View>
+        <View style={styles.row}><Button icon="image-outline" label="Choose photo" style={{ flex: 1 }} disabled={busy} onPress={() => void pickBackgroundPhoto()} /><Button icon="grid-outline" label={patterns ? "Hide patterns" : "Patterns"} style={{ flex: 1 }} onPress={() => setPatterns(value => !value)} /></View>
+        <ColorPicker label="Background color" value={design?.background?.kind === "color" ? design.background.color : undefined} themeColors={themeColors} themeLabel="Cover theme" onChange={color => change({ background: { kind: "color", color } })} />
         {patterns && <>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>{backgroundPacks.map(item => <Pressable key={item.id} style={[styles.pack, item.id === packId && styles.activeTab]} onPress={() => setPackId(item.id)}><Text style={styles.body}>{item.label}</Text></Pressable>)}</ScrollView>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>{backgroundPacks.map(item => <Chip key={item.id} label={item.label} selected={item.id === packId} onPress={() => setPackId(item.id)} />)}</ScrollView>
           <View style={styles.swatches}>{pack.backgrounds.map(asset => <Pressable key={asset.id} accessibilityLabel={`${pack.label} background ${asset.number}`} style={[styles.pattern, design?.background?.assetId === asset.id && styles.selectedSwatch]} onPress={() => change({ background: { kind: "library", color: asset.backgroundColor, assetId: asset.id } })}><PageBackground backgroundAssetId={asset.id} backgroundColor={asset.backgroundColor} /><Text style={styles.number}>{asset.number}</Text></Pressable>)}</View>
         </>}
-        {design?.background && <Pressable onPress={() => change({ background: undefined })}><Text style={styles.link}>Remove shared background</Text></Pressable>}
+        {design?.background && <Button variant="link" size="sm" label="Remove shared background" onPress={() => change({ background: undefined })} />}
       </View>
-      <Pressable style={[styles.secondary, { width: pageWidth }]} disabled={busy} onPress={() => void editPanel("dedication")}><Text style={styles.link}>{book.memories.some(memory => memory.bookRole === "dedication") ? "Edit dedication page" : "Add dedication page"}</Text></Pressable>
-      <Pressable style={[styles.primary, { width: pageWidth }]} onPress={() => router.push({ pathname: "/project/[id]/preview", params: { id: project.id } })}><Text style={styles.primaryText}>Preview book</Text></Pressable>
+      <Button icon="heart-outline" style={{ width: pageWidth }} disabled={busy} label={book.memories.some(memory => memory.bookRole === "dedication") ? "Edit dedication page" : "Add dedication page"} onPress={() => void editPanel("dedication")} />
+      <Button variant="primary" style={{ width: pageWidth }} label="Preview book" onPress={() => router.push({ pathname: "/project/[id]/preview", params: { id: project.id } })} />
     </ScrollView>
   </View>;
 }
@@ -138,8 +146,7 @@ export default function CoverDesignScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: "#FBF6EE" }, header: { flexDirection: "row", alignItems: "center", padding: 12 }, icon: { padding: 10 }, title: { color: "#241F1B", fontSize: 21, fontWeight: "700" },
   content: { alignItems: "center", paddingVertical: 16, gap: 14, paddingBottom: 36 }, paper: { elevation: 3, shadowOpacity: .15, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } }, row: { flexDirection: "row", alignItems: "center", gap: 8 },
-  tab: { flex: 1, paddingVertical: 12, paddingHorizontal: 6, borderRadius: 12, alignItems: "center", backgroundColor: "#EFE7DB" }, activeTab: { backgroundColor: "#E3DDF8" }, activeText: { color: "#5142B4", fontWeight: "700" },
   body: { color: "#4A4239", fontSize: 13 }, hint: { color: "#796E61", fontSize: 12, lineHeight: 18, paddingHorizontal: 4 }, card: { padding: 16, gap: 14, backgroundColor: "#FFFFFF", borderRadius: 16, borderWidth: 1, borderColor: "#E5DACD" }, heading: { fontSize: 17, fontWeight: "700", color: "#241F1B" }, label: { fontSize: 13, fontWeight: "600", color: "#4A4239" },
-  input: { borderWidth: 1, borderColor: "#D8CFC2", borderRadius: 10, padding: 12, color: "#241F1B" }, primary: { backgroundColor: "#6B5BD2", borderRadius: 12, padding: 14, alignItems: "center" }, primaryText: { color: "white", fontWeight: "700" }, secondary: { padding: 12, borderRadius: 12, backgroundColor: "#EFE7DB", alignItems: "center" }, link: { color: "#6B5BD2", fontWeight: "600", fontSize: 13 },
-  swatches: { flexDirection: "row", flexWrap: "wrap", gap: 10 }, swatch: { width: 32, height: 32, borderRadius: 16, borderWidth: 1, borderColor: "#D8CFC2" }, selectedSwatch: { borderWidth: 3, borderColor: "#6B5BD2" }, pack: { padding: 10, borderRadius: 10, marginRight: 6 }, pattern: { width: 64, height: 64, overflow: "hidden", borderRadius: 10, borderWidth: 1, borderColor: "#D8CFC2" }, number: { position: "absolute", bottom: 2, left: 3, backgroundColor: "#FFFFFFDD", borderRadius: 6, paddingHorizontal: 5, fontSize: 11 }, disabled: { opacity: .3 }
+  input: { borderWidth: 1, borderColor: "#D8CFC2", borderRadius: 10, padding: 12, color: "#241F1B" },
+  swatches: { flexDirection: "row", flexWrap: "wrap", gap: 10 }, selectedSwatch: { borderWidth: 3, borderColor: colors.brand }, pattern: { width: 64, height: 64, overflow: "hidden", borderRadius: 10, borderWidth: 1, borderColor: "#D8CFC2" }, number: { position: "absolute", bottom: 2, left: 3, backgroundColor: "#FFFFFFDD", borderRadius: 6, paddingHorizontal: 5, fontSize: 11 }, disabled: { opacity: .3 }
 });
