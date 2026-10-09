@@ -39,7 +39,7 @@ import { DragTargetRegistry } from "../../src/editor/drag/dragTargets";
 import { useDragInteraction } from "../../src/editor/drag/useDragInteraction";
 import { DragPayload, DragResolution, DropTarget, Rect } from "../../src/editor/drag/types";
 import { buildLayoutDocument } from "../../src/layout/engine";
-import { backgroundPacks } from "../../src/layout/backgroundPacks";
+import { backgroundPacks } from "../../src/library/backgrounds";
 import { applySlotOverridesToPage } from "../../src/layout/overrides";
 import { clampPhotoOffset, getPhotoAspect, getPhotoRenderMetrics, getPhotoScaleBounds } from "../../src/layout/photoMetrics";
 import { listAllTemplates, TemplateDefinition } from "../../src/layout/templates";

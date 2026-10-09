@@ -1,8 +1,12 @@
-import { BackgroundPack } from "../backgroundTypes";
-
-export const summerVacationBackgroundPack: BackgroundPack = {
+{
   "id": "summer-vacation",
   "label": "Summer Vacation",
+  "order": 1,
+  "pageFormat": "8x8",
+  "assetSize": {
+    "width": 2400,
+    "height": 2400
+  },
   "backgrounds": [
     {
       "number": 1,
@@ -11,7 +15,7 @@ export const summerVacationBackgroundPack: BackgroundPack = {
       "theme": "summer vacation",
       "kind": "gradient",
       "backgroundColor": "#FFF7E6",
-      "assetUri": "assets/summer-vacation-01.svg",
+      "asset": "assets/summer-vacation-01.svg",
       "palette": [
         "#F9D66E",
         "#58C4D8",
@@ -42,7 +46,7 @@ export const summerVacationBackgroundPack: BackgroundPack = {
       "theme": "summer vacation",
       "kind": "gradient",
       "backgroundColor": "#FFF7E6",
-      "assetUri": "assets/summer-vacation-02.svg",
+      "asset": "assets/summer-vacation-02.svg",
       "palette": [
         "#F9D66E",
         "#58C4D8",
@@ -73,7 +77,7 @@ export const summerVacationBackgroundPack: BackgroundPack = {
       "theme": "summer vacation",
       "kind": "pattern",
       "backgroundColor": "#FFF7E6",
-      "assetUri": "assets/summer-vacation-03.svg",
+      "asset": "assets/summer-vacation-03.svg",
       "palette": [
         "#F9D66E",
         "#58C4D8",
@@ -104,7 +108,7 @@ export const summerVacationBackgroundPack: BackgroundPack = {
       "theme": "summer vacation",
       "kind": "pattern",
       "backgroundColor": "#FFF7E6",
-      "assetUri": "assets/summer-vacation-04.svg",
+      "asset": "assets/summer-vacation-04.svg",
       "palette": [
         "#F9D66E",
         "#58C4D8",
@@ -135,7 +139,7 @@ export const summerVacationBackgroundPack: BackgroundPack = {
       "theme": "summer vacation",
       "kind": "illustration",
       "backgroundColor": "#FFF7E6",
-      "assetUri": "assets/summer-vacation-05.svg",
+      "asset": "assets/summer-vacation-05.svg",
       "palette": [
         "#F9D66E",
         "#58C4D8",
@@ -166,7 +170,7 @@ export const summerVacationBackgroundPack: BackgroundPack = {
       "theme": "summer vacation",
       "kind": "photo-texture",
       "backgroundColor": "#FFF7E6",
-      "assetUri": "assets/summer-vacation-06.svg",
+      "asset": "assets/summer-vacation-06.svg",
       "palette": [
         "#F9D66E",
         "#58C4D8",
@@ -197,7 +201,7 @@ export const summerVacationBackgroundPack: BackgroundPack = {
       "theme": "summer vacation",
       "kind": "gradient",
       "backgroundColor": "#FFF7E6",
-      "assetUri": "assets/summer-vacation-07.svg",
+      "asset": "assets/summer-vacation-07.svg",
       "palette": [
         "#F9D66E",
         "#58C4D8",
@@ -228,7 +232,7 @@ export const summerVacationBackgroundPack: BackgroundPack = {
       "theme": "summer vacation",
       "kind": "pattern",
       "backgroundColor": "#FFF7E6",
-      "assetUri": "assets/summer-vacation-08.svg",
+      "asset": "assets/summer-vacation-08.svg",
       "palette": [
         "#F9D66E",
         "#58C4D8",
@@ -253,4 +257,4 @@ export const summerVacationBackgroundPack: BackgroundPack = {
       }
     }
   ]
-};
+}

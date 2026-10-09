@@ -1,6 +1,7 @@
 {
   "id": "fall-cozy",
   "label": "Fall Cozy",
+  "order": 8,
   "pageFormat": "8x8",
   "assetSize": {
     "width": 2400,

@@ -42,6 +42,12 @@ The repository root is `C:\Users\Lieber\Documents\YearBookApp\CodexYearbookApp`.
 - Picker fallback photos may not have canonical MediaStore asset ids or GPS metadata; do not require those fields for manual picker imports.
 - Do not gate manual memory or theme imports on `ACCESS_MEDIA_LOCATION`, canonical asset ids, or unredacted EXIF availability.
 
+## Design Library
+
+- Backgrounds live in `library/backgrounds/<pack>/manifest.json` and are discovered by `scripts/build-library.cjs`, which writes `src/library/generated.ts` (do not edit it by hand). See `library/README.md`.
+- Read packs through `src/library/backgrounds.ts`; never import pack files directly or keep hand-written asset lists.
+- Retire shipped background ids with `"retired": true` instead of deleting or renaming them.
+
 ## Working Agreements
 
 - Prefer small, focused changes that match the existing Expo Router and service/context layout.

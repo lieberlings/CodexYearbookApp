@@ -1,6 +1,7 @@
 {
   "id": "everyday-clean",
   "label": "Everyday Clean",
+  "order": 3,
   "pageFormat": "8x8",
   "assetSize": {
     "width": 2400,

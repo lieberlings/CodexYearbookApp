@@ -7,7 +7,7 @@ import { CoverPanelPreview, CoverSpread, SpinePreview } from "../../../src/compo
 import { PageBackground } from "../../../src/components/PageBackground";
 import { useProjectBook } from "../../../src/components/useProjectBook";
 import { useAppData } from "../../../src/context/AppContext";
-import { backgroundPacks } from "../../../src/layout/backgroundPacks";
+import { backgroundPacks } from "../../../src/library/backgrounds";
 import { coverGeometry } from "../../../src/layout/bookSpreads";
 import { useEditorStore } from "../../../src/state/editorStore";
 import type { CoverDesign, CoverPanel } from "../../../src/types";

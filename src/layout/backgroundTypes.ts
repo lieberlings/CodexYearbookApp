@@ -13,6 +13,7 @@ export type BackgroundAsset = {
   textColor: string;
   slotBorderColor?: string;
   safeArea: { x: number; y: number; width: number; height: number };
+  retired?: boolean;
 };
 
 export type BackgroundPack = {

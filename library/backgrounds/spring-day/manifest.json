@@ -1,8 +1,12 @@
-import { BackgroundPack } from "../backgroundTypes";
-
-export const springDayBackgroundPack: BackgroundPack = {
+{
   "id": "spring-day",
   "label": "Spring Day",
+  "order": 6,
+  "pageFormat": "8x8",
+  "assetSize": {
+    "width": 2400,
+    "height": 2400
+  },
   "backgrounds": [
     {
       "number": 1,
@@ -11,7 +15,7 @@ export const springDayBackgroundPack: BackgroundPack = {
       "theme": "spring day",
       "kind": "gradient",
       "backgroundColor": "#F7FCFF",
-      "assetUri": "assets/spring-day-01.svg",
+      "asset": "assets/spring-day-01.svg",
       "palette": [
         "#B9DDF2",
         "#8ED3F4",
@@ -43,7 +47,7 @@ export const springDayBackgroundPack: BackgroundPack = {
       "theme": "spring day",
       "kind": "illustration",
       "backgroundColor": "#FFF3F4",
-      "assetUri": "assets/spring-day-02.svg",
+      "asset": "assets/spring-day-02.svg",
       "palette": [
         "#B7D978",
         "#8ED3F4",
@@ -75,7 +79,7 @@ export const springDayBackgroundPack: BackgroundPack = {
       "theme": "spring day",
       "kind": "pattern",
       "backgroundColor": "#EEF7EA",
-      "assetUri": "assets/spring-day-03.svg",
+      "asset": "assets/spring-day-03.svg",
       "palette": [
         "#8CBC78",
         "#D9EBC9",
@@ -107,7 +111,7 @@ export const springDayBackgroundPack: BackgroundPack = {
       "theme": "spring day",
       "kind": "pattern",
       "backgroundColor": "#FFFFFF",
-      "assetUri": "assets/spring-day-04.svg",
+      "asset": "assets/spring-day-04.svg",
       "palette": [
         "#B7D978",
         "#8ED3F4",
@@ -139,7 +143,7 @@ export const springDayBackgroundPack: BackgroundPack = {
       "theme": "spring day",
       "kind": "illustration",
       "backgroundColor": "#EAF6FC",
-      "assetUri": "assets/spring-day-05.svg",
+      "asset": "assets/spring-day-05.svg",
       "palette": [
         "#C8E1EF",
         "#8ED3F4",
@@ -171,7 +175,7 @@ export const springDayBackgroundPack: BackgroundPack = {
       "theme": "spring day",
       "kind": "pattern",
       "backgroundColor": "#F2F6F7",
-      "assetUri": "assets/spring-day-06.svg",
+      "asset": "assets/spring-day-06.svg",
       "palette": [
         "#B7D978",
         "#6EB6D6",
@@ -203,7 +207,7 @@ export const springDayBackgroundPack: BackgroundPack = {
       "theme": "spring day",
       "kind": "illustration",
       "backgroundColor": "#FFF6F0",
-      "assetUri": "assets/spring-day-07.svg",
+      "asset": "assets/spring-day-07.svg",
       "palette": [
         "#B7D978",
         "#F48C8C",
@@ -235,7 +239,7 @@ export const springDayBackgroundPack: BackgroundPack = {
       "theme": "spring day",
       "kind": "pattern",
       "backgroundColor": "#E9F6E8",
-      "assetUri": "assets/spring-day-08.svg",
+      "asset": "assets/spring-day-08.svg",
       "palette": [
         "#7FBF88",
         "#B7D978",
@@ -261,4 +265,4 @@ export const springDayBackgroundPack: BackgroundPack = {
       }
     }
   ]
-};
+}
