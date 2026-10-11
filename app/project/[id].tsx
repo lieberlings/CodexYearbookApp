@@ -4,19 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
 import { router, Stack, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  Image,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  Pressable,
-  ScrollView,
-  Text,
-  TextInput,
-  View
-} from "react-native";
+import { ActivityIndicator, Alert, Platform, Pressable, Text, View } from "react-native";
 import DraggableFlatList, { ScaleDecorator } from "react-native-draggable-flatlist";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MediaLibrarySelectionModal } from "../../src/components/MediaLibrarySelectionModal";
@@ -73,9 +61,17 @@ import {
   resolveThumbnailPhotoId,
   StagedAsset,
   StatusCard,
-  SUGGESTED_THEME_PAGE_LABELS,
   ThumbnailChoice
 } from "../../src/features/projectScreen/helpers";
+import { AddMenuModal } from "../../src/features/projectScreen/modals/AddMenuModal";
+import { CandidateReviewModal } from "../../src/features/projectScreen/modals/CandidateReviewModal";
+import { FinalizationReviewModal } from "../../src/features/projectScreen/modals/FinalizationReviewModal";
+import { MemoryComposerModal } from "../../src/features/projectScreen/modals/MemoryComposerModal";
+import { ProjectMenuModal } from "../../src/features/projectScreen/modals/ProjectMenuModal";
+import { SuggestionReviewModal } from "../../src/features/projectScreen/modals/SuggestionReviewModal";
+import { SuggestionsModal } from "../../src/features/projectScreen/modals/SuggestionsModal";
+import { ThemePickerModal } from "../../src/features/projectScreen/modals/ThemePickerModal";
+import { ThemeTargetModal } from "../../src/features/projectScreen/modals/ThemeTargetModal";
 import { styles } from "../../src/features/projectScreen/styles";
 
 const INLINE_PROJECT_SECTIONS_ENABLED = false;
@@ -1779,559 +1775,88 @@ export default function ProjectDetailsScreen() {
         </Pressable>
       </View>
 
-      <Modal transparent animationType="fade" visible={projectMenuVisible} onRequestClose={() => setProjectMenuVisible(false)}>
-        <View style={styles.centerModalBackdrop}>
-          <View style={styles.actionMenuCard}>
-            <Text style={styles.modalTitle}>{project.name}</Text>
-            <Text style={styles.modalSubtitle}>Project options</Text>
-            {DEV_TOOLS_ENABLED ? (
-              <Pressable
-                style={styles.actionMenuButton}
-                onPress={() => {
-                  setDevToolsExpanded((prev) => !prev);
-                  setProjectMenuVisible(false);
-                }}
-              >
-                <Ionicons name="construct-outline" size={20} color="#4A4239" />
-                <Text style={styles.actionMenuButtonText}>
-                  {devToolsExpanded ? "Hide Developer Tools" : "Show Developer Tools"}
-                </Text>
-              </Pressable>
-            ) : null}
-            <Pressable
-              style={[styles.actionMenuButton, exporting ? styles.suggestionActionDisabled : null]}
-              onPress={onExportPdf}
-              disabled={exporting}
-              accessibilityRole="button"
-              accessibilityLabel="Export PDF"
-            >
-              {exporting && !zipProgress ? <ActivityIndicator color="#6B5BD2" /> : <Ionicons name="document-text-outline" size={20} color="#4A4239" />}
-              <Text style={styles.actionMenuButtonText}>{exporting && !zipProgress ? "Preparing PDF..." : "Export PDF"}</Text>
-            </Pressable>
-            <Pressable style={[styles.actionMenuButton, exporting ? styles.suggestionActionDisabled : null]} onPress={choosePhotoExportScope} disabled={exporting}>
-              {zipProgress ? <ActivityIndicator color="#6B5BD2" /> : <Ionicons name="download-outline" size={20} color="#4A4239" />}
-              <Text style={styles.actionMenuButtonText}>{zipProgress ?? "Export photos (ZIP)"}</Text>
-            </Pressable>
-            <Pressable style={styles.actionMenuButton} onPress={onChangeProjectCover} disabled={projectMenuBusy}>
-              {projectMenuBusy ? (
-                <ActivityIndicator color="#4A4239" />
-              ) : (
-                <Ionicons name="image-outline" size={20} color="#4A4239" />
-              )}
-              <Text style={styles.actionMenuButtonText}>Change Project Thumbnail</Text>
-            </Pressable>
-            <Pressable style={[styles.actionMenuButton, styles.actionMenuDanger]} onPress={onDeleteProjectFromMenu}>
-              <Ionicons name="trash-outline" size={20} color="#AD432F" />
-              <Text style={styles.actionMenuDangerText}>Delete Project</Text>
-            </Pressable>
-            <Pressable style={styles.secondaryButtonLike} onPress={() => setProjectMenuVisible(false)}>
-              <Text style={styles.secondaryButtonLikeText}>Close</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
+      <ProjectMenuModal
+        project={project}
+        projectMenuVisible={projectMenuVisible}
+        setProjectMenuVisible={setProjectMenuVisible}
+        devToolsExpanded={devToolsExpanded}
+        setDevToolsExpanded={setDevToolsExpanded}
+        exporting={exporting}
+        zipProgress={zipProgress}
+        onExportPdf={onExportPdf}
+        choosePhotoExportScope={choosePhotoExportScope}
+        onChangeProjectCover={onChangeProjectCover}
+        projectMenuBusy={projectMenuBusy}
+        onDeleteProjectFromMenu={onDeleteProjectFromMenu}
+      />
 
-      <Modal transparent animationType="fade" visible={addMenuVisible} onRequestClose={() => setAddMenuVisible(false)}>
-        <View style={styles.centerModalBackdrop}>
-          <View style={styles.actionMenuCard}>
-            <Text style={styles.modalTitle}>Add to Project</Text>
-            <Text style={styles.modalSubtitle}>Choose what you want to create or review.</Text>
-            <Pressable style={styles.actionMenuButton} onPress={() => openProjectAddIntent("memory")}>
-              <Ionicons name="images-outline" size={20} color="#4A4239" />
-              <View style={styles.actionMenuTextBlock}>
-                <Text style={styles.actionMenuButtonText}>Memory</Text>
-                <Text style={styles.actionMenuHint}>Create an event memory and add photos.</Text>
-              </View>
-            </Pressable>
-            <Pressable style={styles.actionMenuButton} onPress={() => openProjectAddIntent("collection")}>
-              <Ionicons name="albums-outline" size={20} color="#4A4239" />
-              <View style={styles.actionMenuTextBlock}>
-                <Text style={styles.actionMenuButtonText}>Collection</Text>
-                <Text style={styles.actionMenuHint}>Create a theme collection with selected photos.</Text>
-              </View>
-            </Pressable>
-            <Pressable style={styles.actionMenuButton} onPress={() => openProjectAddIntent("suggestions")}>
-              <Ionicons name="sparkles-outline" size={20} color="#4A4239" />
-              <View style={styles.actionMenuTextBlock}>
-                <Text style={styles.actionMenuButtonText}>Review Suggestions</Text>
-                <Text style={styles.actionMenuHint}>Scan, review, snooze, or dismiss suggested memories.</Text>
-              </View>
-            </Pressable>
-            <Pressable style={styles.secondaryButtonLike} onPress={() => setAddMenuVisible(false)}>
-              <Text style={styles.secondaryButtonLikeText}>Cancel</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
+      <AddMenuModal
+        addMenuVisible={addMenuVisible}
+        setAddMenuVisible={setAddMenuVisible}
+        openProjectAddIntent={openProjectAddIntent}
+      />
 
-      <Modal transparent animationType="fade" visible={themePickerVisible} onRequestClose={() => setThemePickerVisible(false)}>
-        <View style={styles.centerModalBackdrop}>
-          <View style={styles.actionMenuCard}>
-            <Text style={styles.modalTitle}>Choose Theme</Text>
-            <Text style={styles.modalSubtitle}>
-              Pick a suggested theme or enter your own. The next step lets you choose exact photos.
-            </Text>
-            <View style={styles.themeChipRow}>
-              {SUGGESTED_THEME_PAGE_LABELS.map((label) => (
-                <Pressable key={label} style={styles.themeChip} onPress={() => void openThemePhotoPicker(label)}>
-                  <Text style={styles.themeChipText}>{label}</Text>
-                </Pressable>
-              ))}
-            </View>
-            <Text style={styles.fieldLabel}>Custom Theme</Text>
-            <TextInput
-              value={customThemeLabel}
-              onChangeText={setCustomThemeLabel}
-              placeholder="Examples: Christmas, desserts, grandparents"
-              placeholderTextColor="#6B6156"
-              style={styles.modalInput}
-            />
-            <Pressable
-              style={[styles.primaryAction, !customThemeLabel.trim() ? styles.primaryActionDisabled : null]}
-              onPress={() => void openThemePhotoPicker(customThemeLabel)}
-              disabled={!customThemeLabel.trim()}
-            >
-              <Text style={styles.primaryActionText}>Select Photos</Text>
-            </Pressable>
-            <Pressable
-              style={styles.secondaryButtonLike}
-              onPress={() => {
-                setThemePickerVisible(false);
-                openCreateComposer("collection");
-              }}
-            >
-              <Text style={styles.secondaryButtonLikeText}>Blank Collection</Text>
-            </Pressable>
-            <Pressable style={styles.secondaryButtonLike} onPress={() => setThemePickerVisible(false)}>
-              <Text style={styles.secondaryButtonLikeText}>Cancel</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
+      <ThemePickerModal
+        themePickerVisible={themePickerVisible}
+        setThemePickerVisible={setThemePickerVisible}
+        openThemePhotoPicker={openThemePhotoPicker}
+        customThemeLabel={customThemeLabel}
+        setCustomThemeLabel={setCustomThemeLabel}
+        openCreateComposer={openCreateComposer}
+      />
 
-      <Modal transparent animationType="fade" visible={themeTargetVisible} onRequestClose={resetThemeFlow}>
-        <View style={styles.centerModalBackdrop}>
-          <View style={styles.actionMenuCard}>
-            <Text style={styles.modalTitle}>{themeSelectionLabel ?? "Theme Photos"}</Text>
-            <Text style={styles.modalSubtitle}>
-              {pluralize(themeStagedAssets.length, "selected photo")} ready. Create a new collection or add them to an existing collection.
-            </Text>
-            {themeStagedAssets.length > 0 ? (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.thumbnailPickerRow}>
-                {themeStagedAssets.slice(0, 8).map((asset) => (
-                  <View key={asset.key} style={styles.thumbnailOption}>
-                    <Image source={{ uri: asset.uri }} style={styles.thumbnailOptionImage} />
-                  </View>
-                ))}
-              </ScrollView>
-            ) : null}
-            <Pressable
-              style={[styles.actionMenuButton, themeSelectionBusy ? styles.suggestionActionDisabled : null]}
-              onPress={createNewThemeCollection}
-              disabled={themeSelectionBusy || themeStagedAssets.length === 0}
-            >
-              <Ionicons name="albums-outline" size={20} color="#4A4239" />
-              <View style={styles.actionMenuTextBlock}>
-                <Text style={styles.actionMenuButtonText}>Create New Collection</Text>
-                <Text style={styles.actionMenuHint}>Name it, confirm the thumbnail, then save.</Text>
-              </View>
-            </Pressable>
-            {collectionMemories.length > 0 ? (
-              <>
-                <Text style={styles.fieldLabel}>Add to Existing</Text>
-                {collectionMemories.map((memory) => (
-                  <Pressable
-                    key={memory.id}
-                    style={[styles.actionMenuButton, themeSelectionBusy ? styles.suggestionActionDisabled : null]}
-                    onPress={() => void addThemePhotosToCollection(memory.id)}
-                    disabled={themeSelectionBusy}
-                  >
-                    <Ionicons name="add-circle-outline" size={20} color="#4A4239" />
-                    <View style={styles.actionMenuTextBlock}>
-                      <Text style={styles.actionMenuButtonText}>{memory.title}</Text>
-                      <Text style={styles.actionMenuHint}>
-                        {memory.themeTags && memory.themeTags.length > 0 ? memory.themeTags.join(" | ") : "Collection"}
-                      </Text>
-                    </View>
-                  </Pressable>
-                ))}
-              </>
-            ) : null}
-            <Pressable style={styles.secondaryButtonLike} onPress={resetThemeFlow} disabled={themeSelectionBusy}>
-              <Text style={styles.secondaryButtonLikeText}>Cancel</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
+      <ThemeTargetModal
+        themeTargetVisible={themeTargetVisible}
+        resetThemeFlow={resetThemeFlow}
+        themeSelectionLabel={themeSelectionLabel}
+        themeStagedAssets={themeStagedAssets}
+        themeSelectionBusy={themeSelectionBusy}
+        createNewThemeCollection={createNewThemeCollection}
+        collectionMemories={collectionMemories}
+        addThemePhotosToCollection={addThemePhotosToCollection}
+      />
 
-      <Modal transparent animationType="slide" visible={suggestionsModalVisible} onRequestClose={() => setSuggestionsModalVisible(false)}>
-        <View style={styles.modalBackdrop}>
-          <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : undefined}
-            style={styles.modalAvoider}
-          >
-            <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 18 }]}>
-              <View style={styles.modalHeader}>
-                <View>
-                  <Text style={styles.modalTitle}>Suggested Memories</Text>
-                  <Text style={styles.modalSubtitle}>
-                    Scan for local suggestions, then review photos before creating a memory or collection.
-                  </Text>
-                </View>
-                <Pressable style={styles.modalCloseButton} onPress={() => setSuggestionsModalVisible(false)}>
-                  <Ionicons name="close" size={22} color="#4A4239" />
-                </Pressable>
-              </View>
+      <SuggestionsModal
+        suggestionsModalVisible={suggestionsModalVisible}
+        setSuggestionsModalVisible={setSuggestionsModalVisible}
+        scanningSuggestions={scanningSuggestions}
+        onScanSuggestions={onScanSuggestions}
+        suggestionStateCard={suggestionStateCard}
+        suggestionScanState={suggestionScanState}
+        newSuggestions={newSuggestions}
+        watchingSuggestions={watchingSuggestions}
+        snoozedSuggestions={snoozedSuggestions}
+        acceptedSuggestions={acceptedSuggestions}
+        renderSuggestionCard={renderSuggestionCard}
+      />
 
-              <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
-                <View style={styles.sectionHeaderRow}>
-                  <Text style={styles.sectionHeading}>Suggestions</Text>
-                  <Pressable
-                    style={[styles.scanButton, scanningSuggestions ? styles.scanButtonDisabled : null]}
-                    onPress={onScanSuggestions}
-                    disabled={scanningSuggestions}
-                  >
-                    {scanningSuggestions ? (
-                      <ActivityIndicator color="#4A4239" size="small" />
-                    ) : (
-                      <>
-                        <Ionicons name="search-outline" size={15} color="#4A4239" />
-                        <Text style={styles.scanButtonText}>Scan</Text>
-                      </>
-                    )}
-                  </Pressable>
-                </View>
+      <SuggestionReviewModal
+        suggestionReview={suggestionReview}
+        closeSuggestionReview={closeSuggestionReview}
+        suggestionReviewCandidateRefs={suggestionReviewCandidateRefs}
+        suggestionReviewPhotos={suggestionReviewPhotos}
+        suggestionSelectedPhotoIds={suggestionSelectedPhotoIds}
+        setSuggestionSelectedPhotoIds={setSuggestionSelectedPhotoIds}
+        onSnoozeSuggestion={onSnoozeSuggestion}
+        onDismissSuggestion={onDismissSuggestion}
+        activeSuggestionId={activeSuggestionId}
+        createMemoryFromReviewedSuggestion={createMemoryFromReviewedSuggestion}
+      />
 
-                {suggestionStateCard ? (
-                  <View
-                    style={[
-                      styles.suggestionsStateCard,
-                      suggestionStateCard.tone === "error" ? styles.suggestionsStateCardError : null,
-                      suggestionStateCard.tone === "info" ? styles.suggestionsStateCardInfo : null,
-                      suggestionStateCard.tone === "success" ? styles.suggestionsStateCardSuccess : null
-                    ]}
-                  >
-                    {suggestionScanState === "scanning" ? (
-                      <ActivityIndicator color="#4A4239" />
-                    ) : (
-                      <Ionicons
-                        name={suggestionStateCard.icon}
-                        size={24}
-                        color={
-                          suggestionStateCard.tone === "error"
-                            ? "#AD432F"
-                            : suggestionStateCard.tone === "success"
-                              ? "#327558"
-                              : "#6B5BD2"
-                        }
-                      />
-                    )}
-                    <Text style={styles.emptyTitle}>{suggestionStateCard.title}</Text>
-                    <Text style={styles.emptyText}>{suggestionStateCard.message}</Text>
-                  </View>
-                ) : null}
+      <CandidateReviewModal
+        candidateReviewMemory={candidateReviewMemory}
+        closeCandidateReview={closeCandidateReview}
+        candidateReviewPhotos={candidateReviewPhotos}
+        candidateSelectedPhotoIds={candidateSelectedPhotoIds}
+        setCandidateSelectedPhotoIds={setCandidateSelectedPhotoIds}
+        onApplyCandidatePhotos={onApplyCandidatePhotos}
+      />
 
-                {newSuggestions.length > 0 ? (
-                  <View style={styles.suggestionGroup}>
-                    <Text style={styles.suggestionGroupTitle}>New</Text>
-                    <View style={styles.suggestionList}>{newSuggestions.map(renderSuggestionCard)}</View>
-                  </View>
-                ) : null}
-                {watchingSuggestions.length > 0 ? (
-                  <View style={styles.suggestionGroup}>
-                    <Text style={styles.suggestionGroupTitle}>Watching</Text>
-                    <View style={styles.suggestionList}>{watchingSuggestions.map(renderSuggestionCard)}</View>
-                  </View>
-                ) : null}
-                {snoozedSuggestions.length > 0 ? (
-                  <View style={styles.suggestionGroup}>
-                    <Text style={styles.suggestionGroupTitle}>Snoozed</Text>
-                    <View style={styles.suggestionList}>{snoozedSuggestions.map(renderSuggestionCard)}</View>
-                  </View>
-                ) : null}
-                {acceptedSuggestions.length > 0 ? (
-                  <View style={styles.suggestionGroup}>
-                    <Text style={styles.suggestionGroupTitle}>Accepted</Text>
-                    <View style={styles.suggestionList}>{acceptedSuggestions.map(renderSuggestionCard)}</View>
-                  </View>
-                ) : null}
-              </ScrollView>
-            </View>
-          </KeyboardAvoidingView>
-        </View>
-      </Modal>
-
-      <Modal transparent animationType="slide" visible={Boolean(suggestionReview)} onRequestClose={closeSuggestionReview}>
-        <View style={styles.modalBackdrop}>
-          <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : undefined}
-            style={styles.modalAvoider}
-          >
-            <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 18 }]}>
-              <View style={styles.modalHeader}>
-                <View>
-                  <Text style={styles.modalTitle}>{suggestionReview?.title ?? "Review Suggestion"}</Text>
-                  <Text style={styles.modalSubtitle}>
-                    Select the photos you want, then create a memory or collection with your own title.
-                  </Text>
-                </View>
-                <Pressable style={styles.modalCloseButton} onPress={closeSuggestionReview}>
-                  <Ionicons name="close" size={22} color="#4A4239" />
-                </Pressable>
-              </View>
-
-              <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
-                {suggestionReview ? (
-                  <Text style={styles.suggestionMessage}>{suggestionReview.message}</Text>
-                ) : null}
-
-                {suggestionReviewCandidateRefs.length > 0 ? (
-                  <View style={styles.candidateGrid}>
-                    {suggestionReviewCandidateRefs.map((ref) => {
-                      const selected = suggestionSelectedPhotoIds.includes(ref.id);
-                      return (
-                        <Pressable
-                          key={ref.id}
-                          style={[styles.candidateGridItem, selected ? styles.candidateGridItemSelected : null]}
-                          onPress={() =>
-                            setSuggestionSelectedPhotoIds((prev) =>
-                              prev.includes(ref.id) ? prev.filter((id) => id !== ref.id) : [...prev, ref.id]
-                            )
-                          }
-                        >
-                          <Image source={{ uri: ref.uri }} style={styles.candidateGridImage} />
-                          <View style={[styles.candidateGridCheck, selected ? styles.candidateGridCheckSelected : null]}>
-                            <Ionicons
-                              name={selected ? "checkmark" : "add"}
-                              size={16}
-                              color={selected ? "#ffffff" : "#4A4239"}
-                            />
-                          </View>
-                          {ref.location ? (
-                            <View style={styles.mediaLibraryProbeBadge}>
-                              <Text style={styles.mediaLibraryProbeBadgeText}>GPS</Text>
-                            </View>
-                          ) : null}
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                ) : suggestionReviewPhotos.length > 0 ? (
-                  <View style={styles.candidateGrid}>
-                    {suggestionReviewPhotos.map((photo) => {
-                      const selected = suggestionSelectedPhotoIds.includes(photo.id);
-                      return (
-                        <Pressable
-                          key={photo.id}
-                          style={[styles.candidateGridItem, selected ? styles.candidateGridItemSelected : null]}
-                          onPress={() =>
-                            setSuggestionSelectedPhotoIds((prev) =>
-                              prev.includes(photo.id) ? prev.filter((id) => id !== photo.id) : [...prev, photo.id]
-                            )
-                          }
-                        >
-                          <Image source={{ uri: photo.uri }} style={styles.candidateGridImage} />
-                          <View style={[styles.candidateGridCheck, selected ? styles.candidateGridCheckSelected : null]}>
-                            <Ionicons
-                              name={selected ? "checkmark" : "add"}
-                              size={16}
-                              color={selected ? "#ffffff" : "#4A4239"}
-                            />
-                          </View>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                ) : (
-                  <View style={styles.emptyCard}>
-                    <Ionicons name="images-outline" size={30} color="#6B6156" />
-                    <Text style={styles.emptyTitle}>No preview photos</Text>
-                    <Text style={styles.emptyText}>This suggestion does not currently have candidate photos attached.</Text>
-                  </View>
-                )}
-
-                <View style={styles.modalActions}>
-                  <Pressable style={styles.deleteMemoryButton} onPress={closeSuggestionReview}>
-                    <Text style={styles.deleteMemoryButtonText}>Close</Text>
-                  </Pressable>
-                  {suggestionReview ? (
-                    <>
-                      <Pressable style={[styles.suggestionActionButton, styles.suggestionSecondaryAction]} onPress={() => {
-                        onSnoozeSuggestion(suggestionReview.id);
-                        closeSuggestionReview();
-                      }}>
-                        <Text style={styles.suggestionSecondaryActionText}>Snooze</Text>
-                      </Pressable>
-                      <Pressable style={[styles.suggestionActionButton, styles.suggestionDangerAction]} onPress={() => {
-                        onDismissSuggestion(suggestionReview.id);
-                        closeSuggestionReview();
-                      }}>
-                        <Text style={styles.suggestionDangerActionText}>Dismiss</Text>
-                      </Pressable>
-                    </>
-                  ) : null}
-                  <Pressable
-                    style={[
-                      styles.primaryAction,
-                      suggestionSelectedPhotoIds.length === 0 || activeSuggestionId === suggestionReview?.id
-                        ? styles.primaryActionDisabled
-                        : null
-                    ]}
-                    onPress={createMemoryFromReviewedSuggestion}
-                    disabled={suggestionSelectedPhotoIds.length === 0 || activeSuggestionId === suggestionReview?.id}
-                  >
-                    <Text style={styles.primaryActionText}>
-                      {activeSuggestionId === suggestionReview?.id
-                        ? "Importing..."
-                        : suggestionSelectedPhotoIds.length === 0
-                          ? "Select Photos"
-                          : "Create"}
-                    </Text>
-                  </Pressable>
-                </View>
-              </ScrollView>
-            </View>
-          </KeyboardAvoidingView>
-        </View>
-      </Modal>
-
-      <Modal transparent animationType="slide" visible={Boolean(candidateReviewMemory)} onRequestClose={closeCandidateReview}>
-        <View style={styles.modalBackdrop}>
-          <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : undefined}
-            style={styles.modalAvoider}
-          >
-            <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 18 }]}>
-              <View style={styles.modalHeader}>
-                <View>
-                  <Text style={styles.modalTitle}>Suggested Photos</Text>
-                  <Text style={styles.modalSubtitle}>
-                    {candidateReviewMemory
-                      ? `Review project-pool photos that may belong to "${candidateReviewMemory.title}".`
-                      : "Review project-pool photos for this memory."}
-                  </Text>
-                </View>
-                <Pressable style={styles.modalCloseButton} onPress={closeCandidateReview}>
-                  <Ionicons name="close" size={22} color="#4A4239" />
-                </Pressable>
-              </View>
-
-              <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
-                {candidateReviewPhotos.length > 0 ? (
-                  <View style={styles.candidateGrid}>
-                    {candidateReviewPhotos.map((photo) => {
-                      const selected = candidateSelectedPhotoIds.includes(photo.id);
-                      return (
-                        <Pressable
-                          key={photo.id}
-                          style={[styles.candidateGridItem, selected ? styles.candidateGridItemSelected : null]}
-                          onPress={() =>
-                            setCandidateSelectedPhotoIds((prev) =>
-                              prev.includes(photo.id) ? prev.filter((id) => id !== photo.id) : [...prev, photo.id]
-                            )
-                          }
-                        >
-                          <Image source={{ uri: photo.uri }} style={styles.candidateGridImage} />
-                          <View style={[styles.candidateGridCheck, selected ? styles.candidateGridCheckSelected : null]}>
-                            <Ionicons
-                              name={selected ? "checkmark" : "add"}
-                              size={16}
-                              color={selected ? "#ffffff" : "#4A4239"}
-                            />
-                          </View>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                ) : (
-                  <View style={styles.emptyCard}>
-                    <Ionicons name="sparkles-outline" size={30} color="#6B6156" />
-                    <Text style={styles.emptyTitle}>No candidate photos right now</Text>
-                    <Text style={styles.emptyText}>
-                      Add more project photos or widen the project pool to get stronger photo-addition suggestions.
-                    </Text>
-                  </View>
-                )}
-
-                <View style={styles.modalActions}>
-                  <Pressable style={styles.deleteMemoryButton} onPress={closeCandidateReview}>
-                    <Text style={styles.deleteMemoryButtonText}>Close</Text>
-                  </Pressable>
-                  <Pressable
-                    style={[
-                      styles.primaryAction,
-                      candidateSelectedPhotoIds.length === 0 ? styles.primaryActionDisabled : null
-                    ]}
-                    onPress={onApplyCandidatePhotos}
-                    disabled={candidateSelectedPhotoIds.length === 0}
-                  >
-                    <Text style={styles.primaryActionText}>
-                      {candidateSelectedPhotoIds.length === 0
-                        ? "Select Photos"
-                        : `Add ${pluralize(candidateSelectedPhotoIds.length, "photo")}`}
-                    </Text>
-                  </Pressable>
-                </View>
-              </ScrollView>
-            </View>
-          </KeyboardAvoidingView>
-        </View>
-      </Modal>
-
-      <Modal
-        transparent
-        animationType="slide"
-        visible={Boolean(finalizationReviewSuggestion)}
-        onRequestClose={closeFinalizationReview}
-      >
-        <View style={styles.modalBackdrop}>
-          <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : undefined}
-            style={styles.modalAvoider}
-          >
-            <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 18 }]}>
-              <View style={styles.modalHeader}>
-                <View>
-                  <Text style={styles.modalTitle}>{finalizationReviewSuggestion?.title ?? "Finalization Review"}</Text>
-                  <Text style={styles.modalSubtitle}>
-                    {finalizationReviewSuggestion?.message ??
-                      "Review these project photos before deciding whether they belong in a final memory or collection."}
-                  </Text>
-                </View>
-                <Pressable style={styles.modalCloseButton} onPress={closeFinalizationReview}>
-                  <Ionicons name="close" size={22} color="#4A4239" />
-                </Pressable>
-              </View>
-
-              <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
-                {finalizationReviewPhotos.length > 0 ? (
-                  <View style={styles.candidateGrid}>
-                    {finalizationReviewPhotos.map((photo) => (
-                      <View key={photo.id} style={styles.finalizationGridItem}>
-                        <Image source={{ uri: photo.uri }} style={styles.candidateGridImage} />
-                      </View>
-                    ))}
-                  </View>
-                ) : (
-                  <View style={styles.emptyCard}>
-                    <Ionicons name="albums-outline" size={30} color="#6B6156" />
-                    <Text style={styles.emptyTitle}>No review photos right now</Text>
-                    <Text style={styles.emptyText}>
-                      This finalization idea does not currently have a stable candidate set attached.
-                    </Text>
-                  </View>
-                )}
-
-                <View style={styles.modalActions}>
-                  <Pressable style={styles.deleteMemoryButton} onPress={closeFinalizationReview}>
-                    <Text style={styles.deleteMemoryButtonText}>Close</Text>
-                  </Pressable>
-                </View>
-              </ScrollView>
-            </View>
-          </KeyboardAvoidingView>
-        </View>
-      </Modal>
+      <FinalizationReviewModal
+        finalizationReviewSuggestion={finalizationReviewSuggestion}
+        closeFinalizationReview={closeFinalizationReview}
+        finalizationReviewPhotos={finalizationReviewPhotos}
+      />
 
       <AnalysisInspectorModal
         analysisInspectorVisible={analysisInspectorVisible}
@@ -2415,226 +1940,32 @@ export default function ProjectDetailsScreen() {
         onConfirm={importMediaLibraryProbePhoto}
       />
 
-      <Modal transparent animationType="slide" visible={composerVisible} onRequestClose={closeComposer}>
-        <View style={styles.modalBackdrop}>
-          <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : undefined}
-            style={styles.modalAvoider}
-          >
-            <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 18 }]}>
-              <View style={styles.modalHeader}>
-                <View>
-                  <Text style={styles.modalTitle}>
-                    {composerMode === "create"
-                      ? composerMemoryKind === "collection"
-                        ? "New Collection"
-                        : "New Memory"
-                      : composerMemoryKind === "collection"
-                        ? "Edit Collection"
-                        : "Edit Memory"}
-                  </Text>
-                  <Text style={styles.modalSubtitle}>
-                    {composerMemoryKind === "collection"
-                      ? "Set a title, pick starting photos, and choose the collection thumbnail."
-                      : "Set a title, pick starting photos, and choose the memory thumbnail."}
-                  </Text>
-                </View>
-                <Pressable style={styles.modalCloseButton} onPress={closeComposer}>
-                  <Ionicons name="close" size={22} color="#4A4239" />
-                </Pressable>
-              </View>
-
-              <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
-                <Text style={styles.fieldLabel}>
-                  {composerMemoryKind === "collection" ? "Collection Title" : "Memory Title"}
-                </Text>
-                <TextInput
-                  value={composerTitle}
-                  onChangeText={setComposerTitle}
-                  placeholder={composerMemoryKind === "collection" ? "Collection title" : "Memory title"}
-                  placeholderTextColor="#6B6156"
-                  style={styles.modalInput}
-                />
-
-                {composerMemoryKind === "collection" ? (
-                  <View style={styles.fieldGroup}>
-                    <Text style={styles.fieldLabel}>Collection Hooks</Text>
-                    <TextInput
-                      value={composerCollectionHooks}
-                      onChangeText={setComposerCollectionHooks}
-                      placeholder="Examples: hiking, family, sunsets"
-                      placeholderTextColor="#6B6156"
-                      style={styles.modalInput}
-                    />
-                    <Text style={styles.fieldHelperText}>
-                      Use simple comma-separated cues. They are stored with the collection and used to propose project
-                      photos without auto-adding them.
-                    </Text>
-                  </View>
-                ) : null}
-
-                {DEV_TOOLS_ENABLED && devToolsExpanded && composerMemoryKind === "collection" ? (
-                  <View style={styles.fieldGroup}>
-                    <Text style={styles.fieldLabel}>Suggested Project Photos</Text>
-                    <Text style={styles.fieldHelperText}>
-                      Tap any suggested photo to include it when you save this collection. Nothing is auto-added.
-                    </Text>
-                    {composerCandidateProjectPhotos.length > 0 ? (
-                      <ScrollView
-                        horizontal
-                        showsHorizontalScrollIndicator={false}
-                        contentContainerStyle={styles.collectionCandidateRow}
-                      >
-                        {composerCandidateProjectPhotos.map((photo) => {
-                          const selected = composerSelectedProjectPhotoIds.includes(photo.id);
-                          return (
-                            <Pressable
-                              key={photo.id}
-                              style={[
-                                styles.collectionCandidateCard,
-                                selected ? styles.collectionCandidateCardSelected : null
-                              ]}
-                              onPress={() =>
-                                setComposerSelectedProjectPhotoIds((prev) =>
-                                  prev.includes(photo.id) ? prev.filter((id) => id !== photo.id) : [...prev, photo.id]
-                                )
-                              }
-                            >
-                              <Image source={{ uri: photo.uri }} style={styles.collectionCandidateImage} />
-                              <View
-                                style={[
-                                  styles.collectionCandidateBadge,
-                                  selected ? styles.collectionCandidateBadgeSelected : null
-                                ]}
-                              >
-                                <Text
-                                  style={[
-                                    styles.collectionCandidateBadgeText,
-                                    selected ? styles.collectionCandidateBadgeTextSelected : null
-                                  ]}
-                                >
-                                  {selected ? "Include" : "Suggest"}
-                                </Text>
-                              </View>
-                            </Pressable>
-                          );
-                        })}
-                      </ScrollView>
-                    ) : (
-                      <View style={styles.thumbnailOptionEmpty}>
-                        <Ionicons name="sparkles-outline" size={24} color="#6B6156" />
-                      </View>
-                    )}
-                  </View>
-                ) : null}
-
-                <View style={styles.inlineActionRow}>
-                  <Text style={styles.fieldLabel}>Photos</Text>
-                  <Pressable style={styles.inlineButton} onPress={onPickComposerPhotos} disabled={composerPicking}>
-                    {composerPicking ? (
-                      <ActivityIndicator color="#4A4239" />
-                    ) : (
-                      <Text style={styles.inlineButtonText}>Add Photos</Text>
-                    )}
-                  </Pressable>
-                </View>
-
-                <View style={styles.thumbnailPreviewCard}>
-                  {composerThumbnailUri ? (
-                    <Image source={{ uri: composerThumbnailUri }} style={styles.thumbnailPreviewImage} />
-                  ) : (
-                    <View style={styles.thumbnailPreviewPlaceholder}>
-                      <Ionicons name="image-outline" size={32} color="#6B6156" />
-                      <Text style={styles.thumbnailPreviewPlaceholderText}>Select a thumbnail</Text>
-                    </View>
-                  )}
-                </View>
-
-                <Text style={styles.fieldLabel}>Thumbnail</Text>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.thumbnailPickerRow}
-                >
-                  {composerExistingPhotos.map((photo) => {
-                    const selected =
-                      composerThumbnailChoice?.kind === "existing" && composerThumbnailChoice.photoId === photo.id;
-                    return (
-                      <Pressable
-                        key={photo.id}
-                        onPress={() => setComposerThumbnailChoice({ kind: "existing", photoId: photo.id })}
-                        style={[styles.thumbnailOption, selected ? styles.thumbnailOptionSelected : null]}
-                      >
-                        <Image source={{ uri: photo.uri }} style={styles.thumbnailOptionImage} />
-                        <View style={styles.thumbTagExisting}>
-                          <Text style={styles.thumbTagText}>Current</Text>
-                        </View>
-                      </Pressable>
-                    );
-                  })}
-                  {composerSelectableProjectPhotos
-                    .filter((photo) => !composerExistingPhotos.some((existing) => existing.id === photo.id))
-                    .map((photo) => {
-                      const selected =
-                        composerThumbnailChoice?.kind === "existing" && composerThumbnailChoice.photoId === photo.id;
-                      return (
-                        <Pressable
-                          key={photo.id}
-                          onPress={() => setComposerThumbnailChoice({ kind: "existing", photoId: photo.id })}
-                          style={[styles.thumbnailOption, selected ? styles.thumbnailOptionSelected : null]}
-                        >
-                          <Image source={{ uri: photo.uri }} style={styles.thumbnailOptionImage} />
-                          <View style={styles.thumbTagNew}>
-                            <Text style={styles.thumbTagText}>Selected</Text>
-                          </View>
-                        </Pressable>
-                      );
-                    })}
-                  {composerStagedAssets.map((asset) => {
-                    const selected =
-                      composerThumbnailChoice?.kind === "staged" &&
-                      composerThumbnailChoice.stagedKey === asset.key;
-                    return (
-                      <Pressable
-                        key={asset.key}
-                        onPress={() => setComposerThumbnailChoice({ kind: "staged", stagedKey: asset.key })}
-                        style={[styles.thumbnailOption, selected ? styles.thumbnailOptionSelected : null]}
-                      >
-                        <Image source={{ uri: asset.uri }} style={styles.thumbnailOptionImage} />
-                        <View style={styles.thumbTagNew}>
-                          <Text style={styles.thumbTagText}>New</Text>
-                        </View>
-                      </Pressable>
-                    );
-                  })}
-                  {composerExistingPhotos.length === 0 && composerSelectableProjectPhotos.length === 0 && composerStagedAssets.length === 0 ? (
-                    <View style={[styles.thumbnailOption, styles.thumbnailOptionEmpty]}>
-                      <Ionicons name="images-outline" size={28} color="#6B6156" />
-                    </View>
-                  ) : null}
-                </ScrollView>
-
-                <View style={styles.modalActions}>
-                  {composerMode === "edit" ? (
-                    <Pressable style={styles.deleteMemoryButton} onPress={onDeleteComposerMemory}>
-                      <Text style={styles.deleteMemoryButtonText}>Delete Memory</Text>
-                    </Pressable>
-                  ) : null}
-                  <Pressable
-                    style={[styles.primaryAction, !composerCanSave ? styles.primaryActionDisabled : null]}
-                    onPress={onSaveComposer}
-                    disabled={!composerCanSave}
-                  >
-                    <Text style={styles.primaryActionText}>
-                      {composerSaving ? "Saving..." : composerMode === "create" ? "Create Memory" : "Save Changes"}
-                    </Text>
-                  </Pressable>
-                </View>
-              </ScrollView>
-            </View>
-          </KeyboardAvoidingView>
-        </View>
-      </Modal>
+      <MemoryComposerModal
+        composerVisible={composerVisible}
+        closeComposer={closeComposer}
+        composerMode={composerMode}
+        composerMemoryKind={composerMemoryKind}
+        composerTitle={composerTitle}
+        setComposerTitle={setComposerTitle}
+        composerCollectionHooks={composerCollectionHooks}
+        setComposerCollectionHooks={setComposerCollectionHooks}
+        devToolsExpanded={devToolsExpanded}
+        composerCandidateProjectPhotos={composerCandidateProjectPhotos}
+        composerSelectedProjectPhotoIds={composerSelectedProjectPhotoIds}
+        setComposerSelectedProjectPhotoIds={setComposerSelectedProjectPhotoIds}
+        onPickComposerPhotos={onPickComposerPhotos}
+        composerPicking={composerPicking}
+        composerThumbnailUri={composerThumbnailUri}
+        composerExistingPhotos={composerExistingPhotos}
+        composerSelectableProjectPhotos={composerSelectableProjectPhotos}
+        composerStagedAssets={composerStagedAssets}
+        composerThumbnailChoice={composerThumbnailChoice}
+        setComposerThumbnailChoice={setComposerThumbnailChoice}
+        onDeleteComposerMemory={onDeleteComposerMemory}
+        composerCanSave={composerCanSave}
+        onSaveComposer={onSaveComposer}
+        composerSaving={composerSaving}
+      />
     </View>
   );
 }
