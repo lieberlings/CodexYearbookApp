@@ -32,7 +32,7 @@ import {
   suggestCollectionCandidatePhotos
 } from "../../src/services/promptEngine";
 import { labelImageLocally, NativeImageLabelingResult } from "../../src/services/nativeImageLabeling";
-import { analyzePhotoSceneHeuristics, normalizeTagsFromNativeImageLabels } from "../../src/services/sceneAnalysisService";
+import { analyzePhotoSceneHeuristics } from "../../src/services/sceneAnalysisService";
 import {
   generateProjectPhotoClusters,
   ProjectPhotoCluster
@@ -45,35 +45,22 @@ import {
 } from "../../src/services/photoService";
 import { useEditorStore } from "../../src/state/editorStore";
 import { FinalizationSuggestion, Memory, PhotoItem, Suggestion } from "../../src/types";
+import { FinalizationSuggestionCard } from "../../src/features/projectScreen/components/FinalizationSuggestionCard";
+import { InlineProjectSections } from "../../src/features/projectScreen/components/InlineProjectSections";
 import { MemoryCollagePreview } from "../../src/features/projectScreen/components/MemoryCollagePreview";
+import { SuggestionCard } from "../../src/features/projectScreen/components/SuggestionCard";
+import { AnalysisInspectorModal } from "../../src/features/projectScreen/devTools/AnalysisInspectorModal";
+import { ClusterCard } from "../../src/features/projectScreen/devTools/ClusterCard";
+import { DevToolsSection } from "../../src/features/projectScreen/devTools/DevToolsSection";
 import { DEV_TOOLS_ENABLED } from "../../src/features/projectScreen/devTools/flags";
-import {
-  buildInspectorDebugReport,
-  formatAnalysisSource,
-  formatLocationLabel,
-  formatNativeFaceProbe,
-  formatNativeFaces,
-  formatNativeLabelProbe,
-  formatNativeLabels,
-  formatResolutionKind,
-  formatTagList,
-  getCapturedAtSourceLabel,
-  getLocationSourceLabel
-} from "../../src/features/projectScreen/devTools/inspector";
-import { InspectorField, InspectorSection } from "../../src/features/projectScreen/devTools/InspectorFields";
+import { buildInspectorDebugReport } from "../../src/features/projectScreen/devTools/inspector";
 import {
   buildFinalizationStateCard,
   buildProjectPhotoStateCard,
   buildStagedAssets,
   buildSuggestionStateCard,
-  formatClusterLocation,
-  formatClusterTimeRange,
-  formatSuggestionStatus,
   formatProjectStats,
-  getClusterTypeLabel,
-  getFinalizationTypeLabel,
   getMemoryKindLabel,
-  getSuggestionCandidateCount,
   getSuggestionCandidateRefs,
   getThumbnailUri,
   MemoryComposerMode,
@@ -87,7 +74,6 @@ import {
   StagedAsset,
   StatusCard,
   SUGGESTED_THEME_PAGE_LABELS,
-  getSuggestionTypeLabel,
   ThumbnailChoice
 } from "../../src/features/projectScreen/helpers";
 import { styles } from "../../src/features/projectScreen/styles";
@@ -95,36 +81,6 @@ import { styles } from "../../src/features/projectScreen/styles";
 const INLINE_PROJECT_SECTIONS_ENABLED = false;
 const PHOTO_PICKER_SELECTION_LIMIT = 50;
 const ANDROID_PHOTO_PICKER_IMPORTS_ENABLED = true;
-
-function getSuggestionStatusStyle(status: Suggestion["status"]) {
-  switch (status) {
-    case "accepted":
-      return {
-        badge: styles.suggestionStatusAccepted,
-        text: styles.suggestionStatusAcceptedText
-      };
-    case "dismissed":
-      return {
-        badge: styles.suggestionStatusDismissed,
-        text: styles.suggestionStatusDismissedText
-      };
-    case "watching":
-      return {
-        badge: styles.suggestionStatusWatching,
-        text: styles.suggestionStatusWatchingText
-      };
-    case "snoozed":
-      return {
-        badge: styles.suggestionStatusSnoozed,
-        text: styles.suggestionStatusSnoozedText
-      };
-    default:
-      return {
-        badge: styles.suggestionStatusNew,
-        text: styles.suggestionStatusNewText
-      };
-  }
-}
 
 export default function ProjectDetailsScreen() {
   const params = useLocalSearchParams<{ id: string }>();
@@ -1539,208 +1495,38 @@ export default function ProjectDetailsScreen() {
   }, [closeSuggestionReview, openCreateComposer, projectSuggestions, suggestionReviewId, suggestionSelectedPhotoIds]);
 
   const renderSuggestionCard = useCallback(
-    (suggestion: Suggestion) => {
-      const statusStyles = getSuggestionStatusStyle(suggestion.status);
-      const isBusy = activeSuggestionId === suggestion.id;
-      const candidateRefs = getSuggestionCandidateRefs(suggestion);
-      const candidateCount = getSuggestionCandidateCount(suggestion);
-      const candidatePreviewPhotos = suggestion.candidatePhotoIds
-        .map((photoId) => projectPhotos.find((photo) => photo.id === photoId))
-        .filter((photo): photo is PhotoItem => Boolean(photo))
-        .slice(0, 4);
-      const candidatePreviewRefs = candidateRefs.slice(0, 4);
-      const lifecycleNote =
-        suggestion.status === "accepted"
-          ? suggestion.acceptedMemoryId
-            ? "Accepted. A memory was created from this suggestion and linked below for testing."
-            : "Accepted. This suggestion is kept visible during Milestone 1 for traceability."
-          : suggestion.status === "watching"
-            ? "Watching. This collection idea is staged so it can accumulate value before becoming a full memory."
-          : suggestion.status === "snoozed"
-            ? "Snoozed. This suggestion is parked for later review."
-            : suggestion.status === "dismissed"
-              ? "Dismissed. Hidden by default to keep the scaffold readable during testing."
-              : "New. Ready to review and accept into a memory.";
-
-      return (
-        <View key={suggestion.id} style={styles.suggestionCard}>
-          <View style={styles.suggestionCardHeader}>
-            <Text style={styles.suggestionTitle}>{suggestion.title}</Text>
-            <View style={[styles.suggestionStatusBadge, statusStyles.badge]}>
-              <Text style={[styles.suggestionStatusText, statusStyles.text]}>
-                {formatSuggestionStatus(suggestion.status)}
-              </Text>
-            </View>
-          </View>
-          <Text style={styles.suggestionMessage}>{suggestion.message}</Text>
-          <Text style={styles.suggestionMeta}>
-            {getSuggestionTypeLabel(suggestion.type)} |{" "}
-            {candidateCount > 0 ? `${pluralize(candidateCount, "candidate photo")}` : "No candidate photos attached"}
-          </Text>
-          <Text style={styles.suggestionLifecycleNote}>{lifecycleNote}</Text>
-          {candidatePreviewRefs.length > 0 ? (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.suggestionPreviewRow}>
-              {candidatePreviewRefs.map((ref) => (
-                <Image key={ref.id} source={{ uri: ref.uri }} style={styles.suggestionPreviewThumb} />
-              ))}
-            </ScrollView>
-          ) : candidatePreviewPhotos.length > 0 ? (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.suggestionPreviewRow}>
-              {candidatePreviewPhotos.map((photo) => (
-                <Image key={photo.id} source={{ uri: photo.uri }} style={styles.suggestionPreviewThumb} />
-              ))}
-            </ScrollView>
-          ) : null}
-
-          <View style={styles.suggestionActionRow}>
-            {suggestion.status === "accepted" && suggestion.acceptedMemoryId ? (
-              <Pressable
-                style={[styles.suggestionActionButton, styles.suggestionPrimaryAction]}
-                onPress={() => router.push({ pathname: "/memory/[id]", params: { id: suggestion.acceptedMemoryId! } })}
-                >
-                  <Text style={styles.suggestionPrimaryActionText}>Open Memory</Text>
-                </Pressable>
-            ) : (
-              <Pressable
-                style={[
-                  styles.suggestionActionButton,
-                  styles.suggestionPrimaryAction,
-                  isBusy || suggestion.status === "accepted" || candidateCount === 0 ? styles.suggestionActionDisabled : null
-                ]}
-                onPress={() => openSuggestionReview(suggestion.id)}
-                disabled={isBusy || suggestion.status === "accepted" || candidateCount === 0}
-              >
-                <Text style={styles.suggestionPrimaryActionText}>{isBusy ? "Working..." : "Review"}</Text>
-              </Pressable>
-            )}
-
-            <Pressable
-              style={[
-                styles.suggestionActionButton,
-                styles.suggestionSecondaryAction,
-                suggestion.type === "collection"
-                  ? suggestion.status === "watching" || suggestion.status === "accepted"
-                    ? styles.suggestionActionDisabled
-                    : null
-                  : suggestion.status === "snoozed" || suggestion.status === "accepted"
-                  ? styles.suggestionActionDisabled
-                  : null
-              ]}
-              onPress={() =>
-                suggestion.type === "collection"
-                  ? onKeepWatchingSuggestion(suggestion.id)
-                  : onSnoozeSuggestion(suggestion.id)
-              }
-              disabled={
-                suggestion.type === "collection"
-                  ? suggestion.status === "watching" || suggestion.status === "accepted"
-                  : suggestion.status === "snoozed" || suggestion.status === "accepted"
-              }
-            >
-              <Text style={styles.suggestionSecondaryActionText}>
-                {suggestion.type === "collection" ? "Keep Watching" : "Snooze"}
-              </Text>
-            </Pressable>
-
-            <Pressable
-              style={[
-                styles.suggestionActionButton,
-                styles.suggestionDangerAction,
-                suggestion.status === "dismissed" || suggestion.status === "accepted"
-                  ? styles.suggestionActionDisabled
-                  : null
-              ]}
-              onPress={() => onDismissSuggestion(suggestion.id)}
-              disabled={suggestion.status === "dismissed" || suggestion.status === "accepted"}
-            >
-              <Text style={styles.suggestionDangerActionText}>Dismiss</Text>
-            </Pressable>
-          </View>
-        </View>
-      );
-    },
+    (suggestion: Suggestion) => (
+      <SuggestionCard
+        key={suggestion.id}
+        suggestion={suggestion}
+        activeSuggestionId={activeSuggestionId}
+        projectPhotos={projectPhotos}
+        openSuggestionReview={openSuggestionReview}
+        onKeepWatchingSuggestion={onKeepWatchingSuggestion}
+        onSnoozeSuggestion={onSnoozeSuggestion}
+        onDismissSuggestion={onDismissSuggestion}
+      />
+    ),
     [activeSuggestionId, onDismissSuggestion, onKeepWatchingSuggestion, onSnoozeSuggestion, openSuggestionReview, projectPhotos]
   );
 
-  const renderFinalizationSuggestionCard = useCallback((suggestion: FinalizationSuggestion) => {
-    const candidateCount = suggestion.candidatePhotoIds.length;
-
-    return (
-      <View key={suggestion.id} style={styles.suggestionCard}>
-        <View style={styles.suggestionCardHeader}>
-          <Text style={styles.suggestionTitle}>{suggestion.title}</Text>
-          <View style={[styles.suggestionStatusBadge, styles.finalizationStatusBadge]}>
-            <Text style={[styles.suggestionStatusText, styles.finalizationStatusText]}>
-              {getFinalizationTypeLabel(suggestion.type)}
-            </Text>
-          </View>
-        </View>
-        <Text style={styles.suggestionMessage}>{suggestion.message}</Text>
-        <Text style={styles.suggestionMeta}>
-          {candidateCount > 0 ? `${pluralize(candidateCount, "candidate photo")}` : "No candidate photos attached"}
-          {suggestion.highlightTag ? ` | ${suggestion.highlightTag}` : ""}
-        </Text>
-        <Text style={styles.suggestionLifecycleNote}>
-          Finalization stays optional. Review the photos here, then decide whether they belong in a new or expanded memory.
-        </Text>
-        <View style={styles.suggestionActionRow}>
-          <Pressable
-            style={[styles.suggestionActionButton, styles.suggestionPrimaryAction]}
-            onPress={() => setFinalizationReviewSuggestion(suggestion)}
-          >
-            <Text style={styles.suggestionPrimaryActionText}>Review Photos</Text>
-          </Pressable>
-        </View>
-      </View>
-    );
-  }, []);
+  const renderFinalizationSuggestionCard = useCallback((suggestion: FinalizationSuggestion) => (
+    <FinalizationSuggestionCard
+      key={suggestion.id}
+      suggestion={suggestion}
+      setFinalizationReviewSuggestion={setFinalizationReviewSuggestion}
+    />
+  ), []);
 
   const renderClusterCard = useCallback(
-    (cluster: ProjectPhotoCluster) => {
-      const bestPhotos = cluster.bestPhotoIds
-        .map((photoId) => projectPhotos.find((photo) => photo.id === photoId))
-        .filter((photo): photo is PhotoItem => Boolean(photo))
-        .slice(0, 4);
-
-      return (
-        <View key={cluster.id} style={styles.clusterCard}>
-          <View style={styles.suggestionCardHeader}>
-            <Text style={styles.suggestionTitle}>{getClusterTypeLabel(cluster.type)}</Text>
-            <View style={[styles.suggestionStatusBadge, styles.clusterScoreBadge]}>
-              <Text style={[styles.suggestionStatusText, styles.clusterScoreText]}>{cluster.score}</Text>
-            </View>
-          </View>
-          <Text style={styles.suggestionMessage}>{cluster.explanation}</Text>
-          <Text style={styles.suggestionMeta}>
-            {formatClusterTimeRange(cluster)} · {pluralize(cluster.photoCount, "photo")} |{" "}
-            {pluralize(cluster.bestPhotoIds.length, "best pick")}
-          </Text>
-          <Text style={styles.suggestionLifecycleNote}>{formatClusterLocation(cluster)}</Text>
-          <Text style={styles.suggestionLifecycleNote}>
-            Quality avg {cluster.qualitySummary.averageQuality} / best {cluster.qualitySummary.bestQuality} |{" "}
-            {cluster.faceSummary.facePhotoCount} face photos, {cluster.faceSummary.groupPhotoCount} group photos
-          </Text>
-          <Text style={styles.suggestionMeta}>
-            Cues: {cluster.cues.length > 0 ? cluster.cues.join(", ") : "none"}{"\n"}
-            Tags: {cluster.supportingTags.length > 0 ? cluster.supportingTags.join(", ") : "none"}
-          </Text>
-          {cluster.recurrence ? (
-            <Text style={styles.suggestionLifecycleNote}>
-              Recurs across {cluster.recurrence.distinctDays} days over {cluster.recurrence.spanDays} days.
-            </Text>
-          ) : null}
-          {bestPhotos.length > 0 ? (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.clusterBestPhotoRow}>
-              {bestPhotos.map((photo) => (
-                <Pressable key={photo.id} style={styles.clusterBestPhoto} onPress={() => openAnalysisInspector(photo.id)}>
-                  <Image source={{ uri: photo.uri }} style={styles.clusterBestPhotoImage} />
-                </Pressable>
-              ))}
-            </ScrollView>
-          ) : null}
-        </View>
-      );
-    },
+    (cluster: ProjectPhotoCluster) => (
+      <ClusterCard
+        key={cluster.id}
+        cluster={cluster}
+        projectPhotos={projectPhotos}
+        openAnalysisInspector={openAnalysisInspector}
+      />
+    ),
     [openAnalysisInspector, projectPhotos]
   );
 
@@ -1810,479 +1596,62 @@ export default function ProjectDetailsScreen() {
               <ProjectCoverCard projectId={project.id} />
               {memories.some(memory => memory.bookRole === "dedication") && bookPartCard("dedication")}
               {DEV_TOOLS_ENABLED && devToolsExpanded ? (
-                <View style={styles.devToolsSection}>
-                  <View style={styles.sectionHeaderRow}>
-                    <View>
-                      <Text style={styles.sectionHeading}>Developer Tools</Text>
-                      <Text style={styles.sectionSubheading}>
-                        Internal photo-pool, analysis, and clustering tools are hidden from the normal MVP flow.
-                      </Text>
-                    </View>
-                  </View>
-                  <>
-              <View style={[styles.sectionHeaderRow, styles.sectionHeaderRowStack]}>
-                <Text style={styles.sectionHeading}>Project Photos</Text>
-                <View style={[styles.sectionHeaderActions, styles.sectionHeaderActionsFullWidth]}>
-                  <Pressable style={styles.dismissedToggle} onPress={() => openAnalysisInspector()}>
-                    <Ionicons name="bug-outline" size={15} color="#6B6156" />
-                    <Text style={styles.dismissedToggleText}>Analysis Inspector</Text>
-                  </Pressable>
-                  <Pressable style={styles.dismissedToggle} onPress={openMediaLibraryPicker}>
-                    <Ionicons name="albums-outline" size={15} color="#6B6156" />
-                    <Text style={styles.dismissedToggleText}>Probe Media Asset</Text>
-                  </Pressable>
-                  <Pressable
-                    style={[styles.scanButton, projectPhotoIntakeBusy ? styles.scanButtonDisabled : null]}
-                    onPress={onAddProjectPhotos}
-                    disabled={projectPhotoIntakeBusy}
-                  >
-                    {projectPhotoIntakeBusy ? (
-                      <ActivityIndicator color="#4A4239" size="small" />
-                    ) : (
-                      <>
-                        <Ionicons name="images-outline" size={15} color="#4A4239" />
-                        <Text style={styles.scanButtonText}>Add Photos to Project</Text>
-                      </>
-                    )}
-                  </Pressable>
-                </View>
-              </View>
-              <Text style={styles.sectionSubheading}>
-                Photos added here stay in the project pool without being assigned to a memory until you use them.
-              </Text>
-              <Text style={styles.suggestionSummary}>
-                {pluralize(projectPhotos.length, "project photo")} · {pluralize(unassignedProjectPhotos.length, "unassigned photo")}
-              </Text>
-              {project && project.timelineMode !== "past" ? (
-                <View style={styles.projectPoolControlRow}>
-                  <Text style={styles.projectPoolControlText}>
-                    Future intake is {project.includeFutureProjectPhotos ? "on" : "paused"} for this {project.timelineMode} project.
-                  </Text>
-                  <Pressable
-                    style={styles.dismissedToggle}
-                    onPress={() =>
-                      updateProject(project.id, {
-                        includeFutureProjectPhotos: !project.includeFutureProjectPhotos
-                      })
-                    }
-                  >
-                    <Ionicons
-                      name={project.includeFutureProjectPhotos ? "flash-outline" : "pause-outline"}
-                      size={15}
-                      color="#6B6156"
-                    />
-                    <Text style={styles.dismissedToggleText}>
-                      {project.includeFutureProjectPhotos ? "Pause Future Intake" : "Include Future Photos"}
-                    </Text>
-                  </Pressable>
-                </View>
-              ) : null}
-              {projectPhotoStateCard ? (
-                <View
-                  style={[
-                    styles.suggestionsStateCard,
-                    projectPhotoStateCard.tone === "error" ? styles.suggestionsStateCardError : null,
-                    projectPhotoStateCard.tone === "info" ? styles.suggestionsStateCardInfo : null,
-                    projectPhotoStateCard.tone === "success" ? styles.suggestionsStateCardSuccess : null
-                  ]}
-                >
-                  <Ionicons
-                    name={projectPhotoStateCard.icon}
-                    size={24}
-                    color={projectPhotoStateCard.tone === "error" ? "#AD432F" : projectPhotoStateCard.tone === "success" ? "#327558" : "#6B5BD2"}
-                  />
-                  <Text style={styles.emptyTitle}>{projectPhotoStateCard.title}</Text>
-                  <Text style={styles.emptyText}>{projectPhotoStateCard.message}</Text>
-                </View>
-              ) : null}
-              {projectPhotoPreview.length > 0 ? (
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.projectPhotoStrip}
-                >
-                  {projectPhotoPreview.map((photo) => (
-                    <Pressable key={photo.id} style={styles.projectPhotoThumbWrap} onPress={() => openAnalysisInspector(photo.id)}>
-                      <Image source={{ uri: photo.uri }} style={styles.projectPhotoThumb} />
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              ) : null}
-
-              <View style={styles.sectionHeaderRow}>
-                <Text style={styles.sectionHeading}>Cluster Inspector</Text>
-                <View style={styles.sectionControlRow}>
-                  <Pressable
-                    style={[styles.dismissedToggle, clusterAnalysisBusy ? styles.scanButtonDisabled : null]}
-                    onPress={() => void analyzeAllProjectPhotosForClusters()}
-                    disabled={clusterAnalysisBusy}
-                  >
-                    {clusterAnalysisBusy ? (
-                      <ActivityIndicator color="#6B6156" size="small" />
-                    ) : (
-                      <Ionicons name="analytics-outline" size={15} color="#6B6156" />
-                    )}
-                    <Text style={styles.dismissedToggleText}>
-                      {clusterAnalysisBusy ? "Analyzing..." : "Analyze All"}
-                    </Text>
-                  </Pressable>
-                  <Pressable style={styles.dismissedToggle} onPress={() => setClusterInspectorExpanded((prev) => !prev)}>
-                    <Ionicons
-                      name={clusterInspectorExpanded ? "chevron-up-outline" : "chevron-down-outline"}
-                      size={15}
-                      color="#6B6156"
-                    />
-                    <Text style={styles.dismissedToggleText}>
-                      {clusterInspectorExpanded
-                        ? `Collapse clusters (${projectClusters.length})`
-                        : `Expand clusters (${projectClusters.length})`}
-                    </Text>
-                  </Pressable>
-                </View>
-              </View>
-              <Text style={styles.sectionSubheading}>
-                Developer-only grouping preview for event-like moments and recurring collection candidates. This does not create memories or suggestions.
-              </Text>
-              <Text style={styles.suggestionSummary}>
-                Vocabulary: time-burst, same-day, multi-day, location, faces, quality, scenic, food, pet, travel, recurring-theme.
-              </Text>
-              {clusterAnalysisFeedback ? (
-                <View
-                  style={[
-                    styles.suggestionsStateCard,
-                    clusterAnalysisFeedback.tone === "error" ? styles.suggestionsStateCardError : null,
-                    clusterAnalysisFeedback.tone === "info" ? styles.suggestionsStateCardInfo : null,
-                    clusterAnalysisFeedback.tone === "success" ? styles.suggestionsStateCardSuccess : null
-                  ]}
-                >
-                  {clusterAnalysisBusy ? (
-                    <ActivityIndicator color="#4A4239" />
-                  ) : (
-                    <Ionicons
-                      name={clusterAnalysisFeedback.icon}
-                      size={24}
-                      color={
-                        clusterAnalysisFeedback.tone === "error"
-                          ? "#AD432F"
-                          : clusterAnalysisFeedback.tone === "success"
-                            ? "#327558"
-                            : "#6B5BD2"
-                      }
-                    />
-                  )}
-                  <Text style={styles.emptyTitle}>{clusterAnalysisFeedback.title}</Text>
-                  <Text style={styles.emptyText}>{clusterAnalysisFeedback.message}</Text>
-                </View>
-              ) : null}
-              {clusterInspectorExpanded && projectClusters.length === 0 ? (
-                <View style={styles.suggestionsEmptyCard}>
-                  <Ionicons name="git-branch-outline" size={28} color="#6B6156" />
-                  <Text style={styles.emptyTitle}>No strong clusters yet</Text>
-                  <Text style={styles.emptyText}>
-                    Add or analyze more project photos. The first pass needs close time groups or repeated themes across days.
-                  </Text>
-                </View>
-              ) : null}
-              {clusterInspectorExpanded && topProjectClusters.length > 0 ? (
-                <View style={styles.suggestionList}>{topProjectClusters.map(renderClusterCard)}</View>
-              ) : null}
-                  </>
-                </View>
+                <DevToolsSection
+                  openAnalysisInspector={openAnalysisInspector}
+                  openMediaLibraryPicker={openMediaLibraryPicker}
+                  projectPhotoIntakeBusy={projectPhotoIntakeBusy}
+                  onAddProjectPhotos={onAddProjectPhotos}
+                  project={project}
+                  projectPhotos={projectPhotos}
+                  unassignedProjectPhotos={unassignedProjectPhotos}
+                  updateProject={updateProject}
+                  projectPhotoStateCard={projectPhotoStateCard}
+                  projectPhotoPreview={projectPhotoPreview}
+                  clusterAnalysisBusy={clusterAnalysisBusy}
+                  analyzeAllProjectPhotosForClusters={analyzeAllProjectPhotosForClusters}
+                  setClusterInspectorExpanded={setClusterInspectorExpanded}
+                  clusterInspectorExpanded={clusterInspectorExpanded}
+                  projectClusters={projectClusters}
+                  clusterAnalysisFeedback={clusterAnalysisFeedback}
+                  topProjectClusters={topProjectClusters}
+                  renderClusterCard={renderClusterCard}
+                />
               ) : null}
 
               {INLINE_PROJECT_SECTIONS_ENABLED ? (
-                <>
-              <View style={styles.sectionHeaderRow}>
-                <Text style={styles.sectionHeading}>Suggested Memories</Text>
-                <Pressable
-                  style={[styles.scanButton, scanningSuggestions ? styles.scanButtonDisabled : null]}
-                  onPress={onScanSuggestions}
-                  disabled={scanningSuggestions}
-                >
-                  {scanningSuggestions ? (
-                    <ActivityIndicator color="#4A4239" size="small" />
-                  ) : (
-                    <>
-                      <Ionicons name="search-outline" size={15} color="#4A4239" />
-                      <Text style={styles.scanButtonText}>Scan Memories</Text>
-                    </>
-                  )}
-                </Pressable>
-              </View>
-              <Text style={styles.sectionSubheading}>
-                Review suggested event memories for this project. Actions stay local and will not create pages automatically.
-              </Text>
-
-              {suggestionSummary ? <Text style={styles.suggestionSummary}>{suggestionSummary}</Text> : null}
-
-              {projectSuggestions.length > 0 ? (
-                <View style={styles.sectionControlRow}>
-                  <Pressable style={styles.dismissedToggle} onPress={() => setSuggestionsExpanded((prev) => !prev)}>
-                    <Ionicons
-                      name={suggestionsExpanded ? "chevron-up-outline" : "chevron-down-outline"}
-                      size={15}
-                      color="#6B6156"
-                    />
-                    <Text style={styles.dismissedToggleText}>
-                      {suggestionsExpanded
-                        ? `Collapse suggestions (${projectSuggestions.length})`
-                        : `Expand suggestions (${projectSuggestions.length})`}
-                    </Text>
-                  </Pressable>
-
-                  {suggestionsExpanded && dismissedSuggestions.length > 0 ? (
-                    <Pressable
-                      style={styles.dismissedToggle}
-                      onPress={() => setShowDismissedSuggestions((prev) => !prev)}
-                    >
-                      <Ionicons
-                        name={showDismissedSuggestions ? "eye-off-outline" : "eye-outline"}
-                        size={15}
-                        color="#6B6156"
-                      />
-                      <Text style={styles.dismissedToggleText}>
-                        {showDismissedSuggestions
-                          ? `Hide dismissed (${dismissedSuggestions.length})`
-                          : `Show dismissed (${dismissedSuggestions.length})`}
-                      </Text>
-                    </Pressable>
-                  ) : null}
-                </View>
-              ) : null}
-
-              {suggestionStateCard ? (
-                <View
-                  style={[
-                    styles.suggestionsStateCard,
-                    suggestionStateCard.tone === "error" ? styles.suggestionsStateCardError : null,
-                    suggestionStateCard.tone === "info" ? styles.suggestionsStateCardInfo : null,
-                    suggestionStateCard.tone === "success" ? styles.suggestionsStateCardSuccess : null
-                  ]}
-                >
-                  {suggestionScanState === "scanning" ? (
-                    <ActivityIndicator color="#4A4239" />
-                  ) : (
-                    <Ionicons
-                      name={suggestionStateCard.icon}
-                      size={24}
-                      color={
-                        suggestionStateCard.tone === "error"
-                          ? "#AD432F"
-                          : suggestionStateCard.tone === "success"
-                            ? "#327558"
-                            : "#6B5BD2"
-                      }
-                    />
-                  )}
-                  <Text style={styles.emptyTitle}>{suggestionStateCard.title}</Text>
-                  <Text style={styles.emptyText}>{suggestionStateCard.message}</Text>
-                </View>
-              ) : null}
-
-              {!suggestionsExpanded && projectSuggestions.length > 0 ? (
-                <Text style={styles.suggestionCollapsedHint}>
-                  Suggestion cards are hidden to keep this screen lighter. Expand them when you want to review or act on them.
-                </Text>
-              ) : null}
-
-              {suggestionsExpanded && newSuggestions.length > 0 ? (
-                <View style={styles.suggestionGroup}>
-                  <View style={styles.suggestionGroupHeader}>
-                    <Text style={styles.suggestionGroupTitle}>New</Text>
-                    <Text style={styles.suggestionGroupHint}>Ready to review and accept.</Text>
-                  </View>
-                  <View style={styles.suggestionList}>{newSuggestions.map(renderSuggestionCard)}</View>
-                </View>
-              ) : null}
-
-              {suggestionsExpanded && watchingSuggestions.length > 0 ? (
-                <View style={styles.suggestionGroup}>
-                  <View style={styles.suggestionGroupHeader}>
-                    <Text style={styles.suggestionGroupTitle}>Watching</Text>
-                    <Text style={styles.suggestionGroupHint}>
-                      Collection ideas that are staged for later growth without becoming full memories yet.
-                    </Text>
-                  </View>
-                  <View style={styles.suggestionList}>{watchingSuggestions.map(renderSuggestionCard)}</View>
-                </View>
-              ) : null}
-
-              {suggestionsExpanded && snoozedSuggestions.length > 0 ? (
-                <View style={styles.suggestionGroup}>
-                  <View style={styles.suggestionGroupHeader}>
-                    <Text style={styles.suggestionGroupTitle}>Snoozed</Text>
-                    <Text style={styles.suggestionGroupHint}>Parked for later so they stay visible during testing.</Text>
-                  </View>
-                  <View style={styles.suggestionList}>{snoozedSuggestions.map(renderSuggestionCard)}</View>
-                </View>
-              ) : null}
-
-              {suggestionsExpanded && acceptedSuggestions.length > 0 ? (
-                <View style={styles.suggestionGroup}>
-                  <View style={styles.suggestionGroupHeader}>
-                    <Text style={styles.suggestionGroupTitle}>Accepted</Text>
-                    <Text style={styles.suggestionGroupHint}>
-                      Kept visible in Milestone 1 so you can verify created memories.
-                    </Text>
-                  </View>
-                  <View style={styles.suggestionList}>{acceptedSuggestions.map(renderSuggestionCard)}</View>
-                </View>
-              ) : null}
-
-              {suggestionsExpanded && showDismissedSuggestions && dismissedSuggestions.length > 0 ? (
-                <View style={styles.suggestionGroup}>
-                  <View style={styles.suggestionGroupHeader}>
-                    <Text style={styles.suggestionGroupTitle}>Dismissed</Text>
-                    <Text style={styles.suggestionGroupHint}>Hidden by default to reduce clutter during testing.</Text>
-                  </View>
-                  <View style={styles.suggestionList}>{dismissedSuggestions.map(renderSuggestionCard)}</View>
-                </View>
-              ) : null}
-
-              <View style={styles.sectionHeaderRow}>
-                <Text style={styles.sectionHeading}>Suggested Theme Pages</Text>
-                <Pressable style={styles.scanButton} onPress={() => setThemePickerVisible(true)}>
-                  <Ionicons name="search-outline" size={15} color="#4A4239" />
-                  <Text style={styles.scanButtonText}>Pick Theme</Text>
-                </Pressable>
-              </View>
-              <Text style={styles.sectionSubheading}>
-                Theme pages are user-led in the MVP. Pick a theme, choose exact photos, then create or add to a collection.
-              </Text>
-              <View style={styles.themeSuggestionCard}>
-                <View style={styles.themeSuggestionHeader}>
-                  <Ionicons name="albums-outline" size={24} color="#6B5BD2" />
-                  <View style={styles.themeSuggestionTextBlock}>
-                    <Text style={styles.emptyTitle}>Theme picker</Text>
-                    <Text style={styles.emptyText}>
-                      Suggested themes open a picker. Nothing is imported until you select photos and choose where to put them.
-                    </Text>
-                  </View>
-                </View>
-                <View style={styles.themeChipRow}>
-                  {SUGGESTED_THEME_PAGE_LABELS.map((label) => (
-                    <Pressable key={label} style={styles.themeChip} onPress={() => void openThemePhotoPicker(label)}>
-                      <Text style={styles.themeChipText}>{label}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </View>
-
-              <View style={styles.sectionHeaderRow}>
-                <Text style={styles.sectionHeading}>Finalization</Text>
-                {project?.finalizationStatus === "idle" ? (
-                  <Pressable style={styles.scanButton} onPress={onStartFinalization}>
-                    <Ionicons name="flag-outline" size={15} color="#4A4239" />
-                    <Text style={styles.scanButtonText}>Start Finalization</Text>
-                  </Pressable>
-                ) : (
-                  <Pressable style={styles.scanButton} onPress={onCompleteFinalization}>
-                    <Ionicons name="checkmark-done-outline" size={15} color="#4A4239" />
-                    <Text style={styles.scanButtonText}>
-                      {project?.finalizationStatus === "reviewed" ? "Reviewed" : "Mark Reviewed"}
-                    </Text>
-                  </Pressable>
-                )}
-              </View>
-              <Text style={styles.sectionSubheading}>
-                A lightweight end-stage entry for reviewing accepted memories and theme pages before finishing the book.
-              </Text>
-              <Text style={styles.suggestionSummary}>{finalizationSummary}</Text>
-
-              {DEV_TOOLS_ENABLED && devToolsExpanded ? (
-                <View style={styles.sectionControlRow}>
-                <Pressable style={styles.dismissedToggle} onPress={() => setFinalizationExpanded((prev) => !prev)}>
-                  <Ionicons
-                    name={finalizationExpanded ? "chevron-up-outline" : "chevron-down-outline"}
-                    size={15}
-                    color="#6B6156"
-                  />
-                  <Text style={styles.dismissedToggleText}>
-                    {finalizationExpanded
-                      ? `Collapse finalization (${finalizationSuggestions.length})`
-                      : `Expand finalization (${finalizationSuggestions.length})`}
-                  </Text>
-                </Pressable>
-                </View>
-              ) : (
-                <Text style={styles.suggestionCollapsedHint}>
-                  Detailed finalization review is deferred until accepted-memory and theme-page inputs are wired for the MVP.
-                </Text>
-              )}
-
-              {finalizationStateCard ? (
-                <View
-                  style={[
-                    styles.suggestionsStateCard,
-                    finalizationStateCard.tone === "error" ? styles.suggestionsStateCardError : null,
-                    finalizationStateCard.tone === "info" ? styles.suggestionsStateCardInfo : null,
-                    finalizationStateCard.tone === "success" ? styles.suggestionsStateCardSuccess : null
-                  ]}
-                >
-                  <Ionicons
-                    name={finalizationStateCard.icon}
-                    size={24}
-                    color={
-                      finalizationStateCard.tone === "error"
-                        ? "#AD432F"
-                        : finalizationStateCard.tone === "success"
-                          ? "#327558"
-                          : "#6B5BD2"
-                    }
-                  />
-                  <Text style={styles.emptyTitle}>{finalizationStateCard.title}</Text>
-                  <Text style={styles.emptyText}>{finalizationStateCard.message}</Text>
-                </View>
-              ) : null}
-
-              {DEV_TOOLS_ENABLED && devToolsExpanded && !finalizationExpanded && finalizationSuggestions.length > 0 ? (
-                <Text style={styles.suggestionCollapsedHint}>
-                  Finalization ideas are hidden until you expand them, so the main project workflow stays uncluttered.
-                </Text>
-              ) : null}
-
-              {DEV_TOOLS_ENABLED && devToolsExpanded && finalizationExpanded && missingMomentFinalizationSuggestions.length > 0 ? (
-                <View style={styles.suggestionGroup}>
-                  <View style={styles.suggestionGroupHeader}>
-                    <Text style={styles.suggestionGroupTitle}>Missing Moments</Text>
-                    <Text style={styles.suggestionGroupHint}>
-                      Unassigned time clusters that may deserve a final event memory or recap page.
-                    </Text>
-                  </View>
-                  <View style={styles.suggestionList}>
-                    {missingMomentFinalizationSuggestions.map(renderFinalizationSuggestionCard)}
-                  </View>
-                </View>
-              ) : null}
-
-              {DEV_TOOLS_ENABLED && devToolsExpanded && finalizationExpanded && strongestUnusedFinalizationSuggestions.length > 0 ? (
-                <View style={styles.suggestionGroup}>
-                  <View style={styles.suggestionGroupHeader}>
-                    <Text style={styles.suggestionGroupTitle}>Strongest Unused Photos</Text>
-                    <Text style={styles.suggestionGroupHint}>
-                      High-value photos still outside memories near the end of the project.
-                    </Text>
-                  </View>
-                  <View style={styles.suggestionList}>
-                    {strongestUnusedFinalizationSuggestions.map(renderFinalizationSuggestionCard)}
-                  </View>
-                </View>
-              ) : null}
-
-              {DEV_TOOLS_ENABLED && devToolsExpanded && finalizationExpanded && highlightFinalizationSuggestions.length > 0 ? (
-                <View style={styles.suggestionGroup}>
-                  <View style={styles.suggestionGroupHeader}>
-                    <Text style={styles.suggestionGroupTitle}>Recurring Highlights</Text>
-                    <Text style={styles.suggestionGroupHint}>
-                      Repeating themes across the project that may work better as closing highlight collections.
-                    </Text>
-                  </View>
-                  <View style={styles.suggestionList}>
-                    {highlightFinalizationSuggestions.map(renderFinalizationSuggestionCard)}
-                  </View>
-                </View>
-              ) : null}
-                </>
+                <InlineProjectSections
+                  scanningSuggestions={scanningSuggestions}
+                  onScanSuggestions={onScanSuggestions}
+                  project={project}
+                  suggestionSummary={suggestionSummary}
+                  projectSuggestions={projectSuggestions}
+                  setSuggestionsExpanded={setSuggestionsExpanded}
+                  suggestionsExpanded={suggestionsExpanded}
+                  dismissedSuggestions={dismissedSuggestions}
+                  setShowDismissedSuggestions={setShowDismissedSuggestions}
+                  showDismissedSuggestions={showDismissedSuggestions}
+                  suggestionStateCard={suggestionStateCard}
+                  suggestionScanState={suggestionScanState}
+                  newSuggestions={newSuggestions}
+                  renderSuggestionCard={renderSuggestionCard}
+                  watchingSuggestions={watchingSuggestions}
+                  snoozedSuggestions={snoozedSuggestions}
+                  acceptedSuggestions={acceptedSuggestions}
+                  setThemePickerVisible={setThemePickerVisible}
+                  openThemePhotoPicker={openThemePhotoPicker}
+                  onStartFinalization={onStartFinalization}
+                  onCompleteFinalization={onCompleteFinalization}
+                  finalizationSummary={finalizationSummary}
+                  devToolsExpanded={devToolsExpanded}
+                  setFinalizationExpanded={setFinalizationExpanded}
+                  finalizationExpanded={finalizationExpanded}
+                  finalizationSuggestions={finalizationSuggestions}
+                  finalizationStateCard={finalizationStateCard}
+                  missingMomentFinalizationSuggestions={missingMomentFinalizationSuggestions}
+                  renderFinalizationSuggestionCard={renderFinalizationSuggestionCard}
+                  strongestUnusedFinalizationSuggestions={strongestUnusedFinalizationSuggestions}
+                  highlightFinalizationSuggestions={highlightFinalizationSuggestions}
+                />
               ) : null}
 
               <View style={styles.sectionHeaderRow}>
@@ -2964,428 +2333,27 @@ export default function ProjectDetailsScreen() {
         </View>
       </Modal>
 
-      <Modal
-        transparent
-        animationType="slide"
-        visible={DEV_TOOLS_ENABLED && analysisInspectorVisible}
-        onRequestClose={closeAnalysisInspector}
-      >
-        <View style={styles.modalBackdrop}>
-          <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : undefined}
-            style={styles.modalAvoider}
-          >
-            <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 18 }]}>
-              <View style={styles.modalHeader}>
-                <View>
-                  <Text style={styles.modalTitle}>Image Analysis Inspector</Text>
-                  <Text style={styles.modalSubtitle}>
-                    Developer-facing view of one photo’s persisted analysis metadata. It uses the current orchestrator
-                    and updates the live project photo record.
-                  </Text>
-                </View>
-                <Pressable style={styles.modalCloseButton} onPress={closeAnalysisInspector} disabled={analysisInspectorBusy}>
-                  <Ionicons name="close" size={22} color="#4A4239" />
-                </Pressable>
-              </View>
-
-              <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
-                {inspectorSelectablePhotos.length > 0 ? (
-                  <View style={styles.analysisPickerSection}>
-                    <Text style={styles.fieldLabel}>Target Photo</Text>
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      contentContainerStyle={styles.analysisPickerRow}
-                    >
-                      {inspectorSelectablePhotos.map((photo) => {
-                        const selected = selectedInspectorPhoto?.id === photo.id;
-                        return (
-                          <Pressable
-                            key={photo.id}
-                            style={[styles.analysisPickerCard, selected ? styles.analysisPickerCardSelected : null]}
-                            onPress={() => {
-                              setAnalysisInspectorPhotoId(photo.id);
-                              setAnalysisInspectorFeedback(undefined);
-                            }}
-                          >
-                            <Image source={{ uri: photo.uri }} style={styles.analysisPickerImage} />
-                            <View style={styles.analysisPickerMeta}>
-                              <Text style={styles.analysisPickerMetaText}>
-                                {photo.memoryId ? "Assigned" : "Project pool"}
-                              </Text>
-                            </View>
-                          </Pressable>
-                        );
-                      })}
-                    </ScrollView>
-                  </View>
-                ) : (
-                  <View style={styles.emptyCard}>
-                    <Ionicons name="images-outline" size={30} color="#6B6156" />
-                    <Text style={styles.emptyTitle}>No project photos to inspect</Text>
-                    <Text style={styles.emptyText}>
-                      Add project photos or memory photos in this project first, then reopen the inspector.
-                    </Text>
-                  </View>
-                )}
-
-                {analysisInspectorFeedback ? (
-                  <View
-                    style={[
-                      styles.suggestionsStateCard,
-                      analysisInspectorFeedback.tone === "error" ? styles.suggestionsStateCardError : null,
-                      analysisInspectorFeedback.tone === "info" ? styles.suggestionsStateCardInfo : null,
-                      analysisInspectorFeedback.tone === "success" ? styles.suggestionsStateCardSuccess : null
-                    ]}
-                  >
-                    {analysisInspectorBusy ? (
-                      <ActivityIndicator color="#4A4239" />
-                    ) : (
-                      <Ionicons
-                        name={analysisInspectorFeedback.icon}
-                        size={24}
-                        color={
-                          analysisInspectorFeedback.tone === "error"
-                            ? "#AD432F"
-                            : analysisInspectorFeedback.tone === "success"
-                              ? "#327558"
-                              : "#6B5BD2"
-                        }
-                      />
-                    )}
-                    <Text style={styles.emptyTitle}>{analysisInspectorFeedback.title}</Text>
-                    <Text style={styles.emptyText}>{analysisInspectorFeedback.message}</Text>
-                  </View>
-                ) : null}
-
-                {selectedInspectorPhoto ? (
-                  <>
-                    <View style={styles.analysisPreviewCard}>
-                      <Image source={{ uri: selectedInspectorPhoto.uri }} style={styles.analysisPreviewImage} />
-                    </View>
-
-                    <View style={styles.analysisActionRow}>
-                      <Pressable
-                        style={[styles.scanButton, analysisInspectorBusy ? styles.scanButtonDisabled : null]}
-                        onPress={() => runInspectorAnalysis(false)}
-                        disabled={analysisInspectorBusy}
-                      >
-                        {analysisInspectorBusy ? (
-                          <ActivityIndicator color="#4A4239" size="small" />
-                        ) : (
-                          <>
-                            <Ionicons name="analytics-outline" size={15} color="#4A4239" />
-                            <Text style={styles.scanButtonText}>Analyze Selected</Text>
-                          </>
-                        )}
-                      </Pressable>
-                      <Pressable
-                        style={[styles.dismissedToggle, analysisInspectorBusy ? styles.scanButtonDisabled : null]}
-                        onPress={() => runInspectorAnalysis(true)}
-                        disabled={analysisInspectorBusy}
-                      >
-                        <Ionicons name="refresh-outline" size={15} color="#6B6156" />
-                        <Text style={styles.dismissedToggleText}>Force Reanalyze</Text>
-                      </Pressable>
-                      <Pressable
-                        style={[styles.dismissedToggle, !inspectorDebugReport ? styles.scanButtonDisabled : null]}
-                        onPress={logInspectorDebugReport}
-                        disabled={!inspectorDebugReport}
-                      >
-                        <Ionicons name="terminal-outline" size={15} color="#6B6156" />
-                        <Text style={styles.dismissedToggleText}>Log Report</Text>
-                      </Pressable>
-                    </View>
-
-                    <InspectorSection title="Base Metadata">
-                      <InspectorField label="Photo ID" value={selectedInspectorPhoto.id} />
-                      <InspectorField label="Project ID" value={selectedInspectorPhoto.projectId} />
-                      <InspectorField label="Memory ID" value={selectedInspectorPhoto.memoryId} />
-                      <InspectorField label="Source Asset ID" value={selectedInspectorPhoto.importMetadata?.assetId} />
-                      <InspectorField label="URI" value={selectedInspectorPhoto.uri} />
-                      <InspectorField label="Width" value={selectedInspectorPhoto.width} />
-                      <InspectorField label="Height" value={selectedInspectorPhoto.height} />
-                      <InspectorField label="Captured At" value={selectedInspectorPhoto.capturedAt} />
-                      <InspectorField label="Added At" value={selectedInspectorPhoto.addedAt} />
-                      <InspectorField label="Location" value={formatLocationLabel(selectedInspectorPhoto)} />
-                    </InspectorSection>
-
-                    <InspectorSection title="Import Metadata Sources">
-                      <InspectorField
-                        label="Resolution Path"
-                        value={formatResolutionKind(selectedInspectorPhoto.importMetadata?.resolutionKind)}
-                      />
-                      <InspectorField
-                        label="Picker Asset ID Present"
-                        value={selectedInspectorPhoto.importMetadata?.pickerAssetIdPresent}
-                      />
-                      <InspectorField
-                        label="Picker EXIF Present"
-                        value={selectedInspectorPhoto.importMetadata?.pickerExifPresent}
-                      />
-                      <InspectorField
-                        label="Picker Key Sample"
-                        value={selectedInspectorPhoto.importMetadata?.pickerKeySample?.join(", ")}
-                      />
-                      <InspectorField
-                        label="Captured At Source"
-                        value={getCapturedAtSourceLabel(selectedInspectorPhoto)}
-                      />
-                      <InspectorField
-                        label="Location Source"
-                        value={getLocationSourceLabel(selectedInspectorPhoto)}
-                      />
-                    </InspectorSection>
-
-                    <InspectorSection title="Media Library Probe">
-                      <InspectorField
-                        label="Picker Asset ID"
-                        value={selectedInspectorPhoto.importMetadata?.assetId ?? "No assetId on picker result"}
-                      />
-                      <InspectorField
-                        label="Media Library Lookup"
-                        value={
-                          analysisInspectorProbeBusy
-                            ? "Checking..."
-                            : analysisInspectorProbe?.lookupAttempted
-                              ? "Called getAssetInfoAsync"
-                              : analysisInspectorProbe?.assetIdPresent
-                                ? analysisInspectorProbe?.permissionGranted
-                                  ? "Asset ID present, lookup not completed"
-                                  : "Permission unavailable"
-                                : "Skipped (no assetId)"
-                        }
-                      />
-                      <InspectorField
-                        label="AssetInfo Location Present"
-                        value={analysisInspectorProbeBusy ? "Checking..." : analysisInspectorProbe?.hasLocation}
-                      />
-                      <InspectorField
-                        label="AssetInfo EXIF Present"
-                        value={analysisInspectorProbeBusy ? "Checking..." : analysisInspectorProbe?.hasExif}
-                      />
-                      <InspectorField
-                        label="Final Stored Location"
-                        value={formatLocationLabel(selectedInspectorPhoto)}
-                      />
-                      <InspectorField
-                        label="Location Source Used"
-                        value={getLocationSourceLabel(selectedInspectorPhoto)}
-                      />
-                      <InspectorField
-                        label="Raw Location Preview"
-                        value={analysisInspectorProbeBusy ? "Checking..." : analysisInspectorProbe?.rawLocationPreview}
-                      />
-                      <InspectorField
-                        label="EXIF Key Sample"
-                        value={analysisInspectorProbe?.exifKeySample?.join(", ")}
-                      />
-                      <InspectorField label="Probe Error" value={analysisInspectorProbe?.error} />
-                    </InspectorSection>
-
-                    <InspectorSection title="Analysis">
-                      <InspectorField label="Analysis Version" value={selectedInspectorPhoto.analysis?.analysisVersion} />
-                      <InspectorField label="Analyzed At" value={selectedInspectorPhoto.analysis?.analyzedAt} />
-                    </InspectorSection>
-
-                    <InspectorSection title="Quality">
-                      <InspectorField label="Quality Score" value={selectedInspectorPhoto.analysis?.quality?.qualityScore} />
-                      <InspectorField
-                        label="Hero Candidate Score"
-                        value={selectedInspectorPhoto.analysis?.quality?.heroCandidateScore}
-                      />
-                      <InspectorField label="Is Blurry" value={selectedInspectorPhoto.analysis?.quality?.isBlurry} />
-                      <InspectorField label="Is Low Light" value={selectedInspectorPhoto.analysis?.quality?.isLowLight} />
-                    </InspectorSection>
-
-                    <InspectorSection title="Scene and Theme">
-                      <InspectorField
-                        label="Persisted Source"
-                        value={formatAnalysisSource(selectedInspectorPhoto.analysis?.sources?.scene)}
-                      />
-                      <InspectorField
-                        label="Scene Tags"
-                        value={formatTagList(selectedInspectorPhoto.analysis?.sceneTags)}
-                      />
-                      <InspectorField
-                        label="Theme Tags"
-                        value={formatTagList(selectedInspectorPhoto.analysis?.themeTags)}
-                      />
-                    </InspectorSection>
-
-                    <InspectorSection title="Heuristic Scene/Face Preview">
-                      <InspectorField label="Debug-only Field" value="Live fallback preview is not persisted here" />
-                      <InspectorField label="Heuristic Scene Tags" value={formatTagList(heuristicScenePreview?.sceneTags)} />
-                      <InspectorField label="Heuristic Theme Tags" value={formatTagList(heuristicScenePreview?.themeTags)} />
-                      <InspectorField
-                        label="Heuristic Portrait-like"
-                        value={heuristicScenePreview?.subjectCues?.portraitLike}
-                      />
-                      <InspectorField
-                        label="Heuristic Group-photo-like"
-                        value={heuristicScenePreview?.subjectCues?.groupPhotoLike}
-                      />
-                      <InspectorField label="Heuristic Face Count" value={heuristicFacePreview?.faces?.faceCount} />
-                      <InspectorField label="Heuristic Has Face" value={heuristicFacePreview?.faces?.hasFace} />
-                      <InspectorField
-                        label="Heuristic Has Multiple Faces"
-                        value={heuristicFacePreview?.faces?.hasMultipleFaces}
-                      />
-                    </InspectorSection>
-
-                    <InspectorSection title="Native Image Labels">
-                      <InspectorField
-                        label="Persisted Fields"
-                        value="analysis.nativeLabels, analysis.sceneTags, analysis.themeTags, analysis.safeExternalTags"
-                      />
-                      <InspectorField
-                        label="Product Behavior"
-                        value="Raw labels are inspector-first; broader behavior consumes only normalized app tags"
-                      />
-                      <InspectorField
-                        label="Persisted Native Labels"
-                        value={formatNativeLabels(selectedInspectorPhoto.analysis?.nativeLabels)}
-                      />
-                      <InspectorField
-                        label="Persisted Normalized Tags"
-                        value={formatTagList(selectedInspectorPhoto.analysis?.safeExternalTags)}
-                      />
-                    </InspectorSection>
-
-                    <InspectorSection title="ML Kit Live Probe">
-                      <InspectorField label="Debug-only Field" value="Native label probe result is not persisted" />
-                      <InspectorField
-                        label="Native Source"
-                        value={nativeLabelProbeBusy ? "Checking..." : nativeLabelProbe?.source}
-                      />
-                      <InspectorField
-                        label="Native Module Available"
-                        value={nativeLabelProbeBusy ? "Checking..." : nativeLabelProbe?.available}
-                      />
-                      <InspectorField
-                        label="Raw Native Labels"
-                        value={formatNativeLabelProbe(nativeLabelProbe, nativeLabelProbeBusy)}
-                      />
-                      <InspectorField
-                        label="Live Normalized Tags"
-                        value={
-                          nativeLabelProbe?.available
-                            ? formatTagList(normalizeTagsFromNativeImageLabels(nativeLabelProbe.labels))
-                            : "—"
-                        }
-                      />
-                    </InspectorSection>
-
-                    <InspectorSection title="Subject Cues">
-                      <InspectorField
-                        label="Portrait-like"
-                        value={selectedInspectorPhoto.analysis?.subjectCues?.portraitLike}
-                      />
-                      <InspectorField
-                        label="Group-photo-like"
-                        value={selectedInspectorPhoto.analysis?.subjectCues?.groupPhotoLike}
-                      />
-                    </InspectorSection>
-
-                    <InspectorSection title="Face Metadata">
-                      <InspectorField
-                        label="Persisted Source"
-                        value={formatAnalysisSource(selectedInspectorPhoto.analysis?.sources?.faces)}
-                      />
-                      <InspectorField label="Face Count" value={selectedInspectorPhoto.analysis?.faces?.faceCount} />
-                      <InspectorField label="Has Face" value={selectedInspectorPhoto.analysis?.faces?.hasFace} />
-                      <InspectorField
-                        label="Has Multiple Faces"
-                        value={selectedInspectorPhoto.analysis?.faces?.hasMultipleFaces}
-                      />
-                    </InspectorSection>
-
-                    <InspectorSection title="Native Face Detection">
-                      <InspectorField
-                        label="Persisted Fields"
-                        value="analysis.nativeFaces, analysis.faces, analysis.subjectCues"
-                      />
-                      <InspectorField
-                        label="Product Behavior"
-                        value="No person recognition; raw face boxes stay local/debug-facing"
-                      />
-                      <InspectorField
-                        label="Persisted Native Faces"
-                        value={formatNativeFaces(selectedInspectorPhoto.analysis?.nativeFaces)}
-                      />
-                    </InspectorSection>
-
-                    <InspectorSection title="ML Kit Face Live Probe">
-                      <InspectorField label="Debug-only Field" value="Native face probe result is not persisted" />
-                      <InspectorField
-                        label="Native Source"
-                        value={nativeFaceProbeBusy ? "Checking..." : nativeFaceProbe?.source}
-                      />
-                      <InspectorField
-                        label="Native Module Available"
-                        value={nativeFaceProbeBusy ? "Checking..." : nativeFaceProbe?.available}
-                      />
-                      <InspectorField
-                        label="Raw Native Faces"
-                        value={formatNativeFaceProbe(nativeFaceProbe, nativeFaceProbeBusy)}
-                      />
-                    </InspectorSection>
-
-                    <InspectorSection title="Similarity">
-                      <InspectorField
-                        label="Duplicate Cluster ID"
-                        value={selectedInspectorPhoto.analysis?.similarity?.duplicateClusterId}
-                      />
-                      <InspectorField
-                        label="Similarity Cluster ID"
-                        value={selectedInspectorPhoto.analysis?.similarity?.similarityClusterId}
-                      />
-                      <InspectorField
-                        label="Representative Score"
-                        value={selectedInspectorPhoto.analysis?.similarity?.representativeScore}
-                      />
-                    </InspectorSection>
-
-                    <InspectorSection title="External and Local-Only">
-                      <InspectorField
-                        label="Safe External Tags"
-                        value={selectedInspectorPhoto.analysis?.safeExternalTags?.join(", ")}
-                      />
-                      <InspectorField
-                        label="Private Face Data Ref"
-                        value={selectedInspectorPhoto.analysis?.localOnly?.privateFaceDataRef}
-                      />
-                      <InspectorField
-                        label="Local Embedding Ref"
-                        value={selectedInspectorPhoto.analysis?.localOnly?.localEmbeddingRef}
-                      />
-                    </InspectorSection>
-
-                    <InspectorSection title="Copyable Debug Report">
-                      <Text selectable style={styles.analysisCodeBlock}>
-                        {inspectorDebugReport}
-                      </Text>
-                    </InspectorSection>
-
-                    <InspectorSection title="Raw Analysis Snapshot">
-                      <Text selectable style={styles.analysisCodeBlock}>
-                        {JSON.stringify(selectedInspectorPhoto.analysis ?? {}, null, 2)}
-                      </Text>
-                    </InspectorSection>
-                  </>
-                ) : null}
-
-                <View style={styles.modalActions}>
-                  <Pressable style={styles.deleteMemoryButton} onPress={closeAnalysisInspector} disabled={analysisInspectorBusy}>
-                    <Text style={styles.deleteMemoryButtonText}>Close Inspector</Text>
-                  </Pressable>
-                </View>
-              </ScrollView>
-            </View>
-          </KeyboardAvoidingView>
-        </View>
-      </Modal>
+      <AnalysisInspectorModal
+        analysisInspectorVisible={analysisInspectorVisible}
+        closeAnalysisInspector={closeAnalysisInspector}
+        analysisInspectorBusy={analysisInspectorBusy}
+        inspectorSelectablePhotos={inspectorSelectablePhotos}
+        selectedInspectorPhoto={selectedInspectorPhoto}
+        setAnalysisInspectorPhotoId={setAnalysisInspectorPhotoId}
+        analysisInspectorFeedback={analysisInspectorFeedback}
+        setAnalysisInspectorFeedback={setAnalysisInspectorFeedback}
+        runInspectorAnalysis={runInspectorAnalysis}
+        inspectorDebugReport={inspectorDebugReport}
+        logInspectorDebugReport={logInspectorDebugReport}
+        analysisInspectorProbe={analysisInspectorProbe}
+        analysisInspectorProbeBusy={analysisInspectorProbeBusy}
+        heuristicScenePreview={heuristicScenePreview}
+        heuristicFacePreview={heuristicFacePreview}
+        nativeLabelProbe={nativeLabelProbe}
+        nativeLabelProbeBusy={nativeLabelProbeBusy}
+        nativeFaceProbe={nativeFaceProbe}
+        nativeFaceProbeBusy={nativeFaceProbeBusy}
+      />
 
       <MediaLibrarySelectionModal
         visible={DEV_TOOLS_ENABLED && projectPhotoPickerVisible}
