@@ -73,3 +73,24 @@ export function estimateTextBoxSize(text: string, fontSize: number, canvasSize: 
     height: clamp(heightPx / safeCanvasSize, 0.1, 0.56)
   };
 }
+
+// Where a new free text box goes: centered near the top, stepping down and
+// right past any existing box at the same spot so new boxes don't stack.
+export function nextTextBoxPosition(
+  existing: { x: number; y: number }[],
+  size: { width: number; height: number }
+): { x: number; y: number } {
+  const step = 0.05;
+  const startX = clamp(0.5 - size.width / 2, 0, 1 - size.width);
+  const startY = 0.12;
+  const maxSteps = Math.max(1, Math.floor((1 - size.height - startY) / step));
+  for (let index = 0; index <= maxSteps; index += 1) {
+    const x = clamp(startX + (index % 4) * step, 0, 1 - size.width);
+    const y = clamp(startY + index * step, 0, 1 - size.height);
+    const taken = existing.some((box) => Math.abs(box.x - x) < step / 2 && Math.abs(box.y - y) < step / 2);
+    if (!taken) {
+      return { x, y };
+    }
+  }
+  return { x: startX, y: startY };
+}

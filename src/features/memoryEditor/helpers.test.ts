@@ -4,6 +4,7 @@ import {
   applyColorOpacity,
   clamp,
   estimateTextBoxSize,
+  nextTextBoxPosition,
   groupTemplatesByPhotoCount,
   sameSectionOrder,
   sectionOrderKey
@@ -47,5 +48,18 @@ describe("memory editor helpers", () => {
     const huge = estimateTextBoxSize("x".repeat(500), 72, 320);
     expect(huge.width).toBeLessThanOrEqual(0.9);
     expect(huge.height).toBeLessThanOrEqual(0.56);
+  });
+
+  it("places new text boxes past existing ones instead of stacking them", () => {
+    const size = { width: 0.4, height: 0.1 };
+    const first = nextTextBoxPosition([], size);
+    expect(first.x).toBeCloseTo(0.3);
+    expect(first.y).toBeCloseTo(0.12);
+    const second = nextTextBoxPosition([first], size);
+    expect(second).not.toEqual(first);
+    const third = nextTextBoxPosition([first, second], size);
+    expect([first, second]).not.toContainEqual(third);
+    expect(third.x + size.width).toBeLessThanOrEqual(1);
+    expect(third.y + size.height).toBeLessThanOrEqual(1);
   });
 });
