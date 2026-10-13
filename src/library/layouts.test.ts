@@ -1,4 +1,4 @@
-import { figmaBatchTemplatePack } from "../layout/templatePacks/figmaBatchTemplates";
+import { createHash } from "node:crypto";
 import { runBuildLibraryWith } from "../test/librarySandbox";
 import { buildLayoutPacks, layoutPacks } from "./layouts";
 
@@ -23,17 +23,36 @@ const template = (overrides: Record<string, unknown> = {}) => ({
   ...overrides
 });
 
+// Same JSON with object keys sorted, so the fingerprint ignores key order.
+function canonical(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical((value as Record<string, unknown>)[key])]));
+  }
+  return value;
+}
+
+// Fingerprint of figmaBatchTemplatePack from the deleted
+// src/layout/templatePacks/figmaBatchTemplates.ts, taken when the pack was
+// converted to library/layouts/figma-batch (the conversion commit
+// deep-compared the two directly). Saved pages reference these templates.
+const figmaBatchFingerprint = "6aba488f9af32d08aed8e6910899f10bd5b36b6780df7df8029eb539cd98a35d";
+
 const manifest = (templates = [template()]) => ({ id: "test-layouts", label: "Test Layouts", templates });
 
 describe("layout library", () => {
   it("matches the figma-batch pack it was converted from", () => {
-    expect(layoutPacks).toHaveLength(1);
-    expect(layoutPacks[0]).toStrictEqual(figmaBatchTemplatePack);
+    expect(layoutPacks.map((pack) => pack.id)).toEqual(["figma-batch"]);
+    const [pack] = layoutPacks;
+    expect(pack.templates.map((item) => item.id)).toEqual(
+      Array.from({ length: 36 }, (_, index) => `figma-batch-${String(index + 1).padStart(2, "0")}`)
+    );
+    expect(createHash("sha256").update(JSON.stringify(canonical(pack))).digest("hex")).toBe(figmaBatchFingerprint);
   });
 
   it("serves every library template through templates.ts", () => {
     const { listAllTemplates } = jest.requireActual<typeof import("../layout/templates")>("../layout/templates");
-    expect(listAllTemplates().map((item) => item.id)).toEqual(figmaBatchTemplatePack.templates.map((item) => item.id));
+    expect(listAllTemplates()).toEqual(layoutPacks.flatMap((pack) => pack.templates));
   });
 
   it("hides retired layouts from pickers but still resolves them for saved pages", () => {
