@@ -30,7 +30,7 @@ The repository root is `C:\Users\Lieber\Documents\YearBookApp\CodexYearbookApp`.
 
 - `scanMediaLibrarySuggestionsForProject` exists and produces event suggestions from temporary MediaLibrary candidate refs.
 - Suggestion status is persisted and repeated scans should preserve accepted, dismissed, snoozed, and watching state.
-- Accepting a suggestion currently creates/links a memory first; importing only the user-selected candidate photos is the remaining product-critical step.
+- Accepting a suggestion opens a review where the user picks photos; only the selected candidate photos are imported into the new memory (`createMemoryFromReviewedSuggestion`).
 - Theme pages are currently represented through collection memories with `themeLabel`/`themeTags`; a separate `ThemePage` entity should not be introduced unless the product workflow needs it.
 - `DEV_TOOLS_ENABLED` / `__DEV__` is the expected boundary for analysis inspectors, cluster displays, and probe tools.
 
@@ -44,9 +44,9 @@ The repository root is `C:\Users\Lieber\Documents\YearBookApp\CodexYearbookApp`.
 
 ## Design Library
 
-- Backgrounds live in `library/backgrounds/<pack>/manifest.json` and are discovered by `scripts/build-library.cjs`, which writes `src/library/generated.ts` (do not edit it by hand). See `library/README.md`.
-- Read packs through `src/library/backgrounds.ts`; never import pack files directly or keep hand-written asset lists.
-- Retire shipped background ids with `"retired": true` instead of deleting or renaming them.
+- Backgrounds, page layouts and object shapes live in `library/{backgrounds,layouts,shapes}/<pack>/manifest.json` and are discovered by `scripts/build-library.cjs`, which writes `src/library/generated.ts` (do not edit it by hand). See `library/README.md`.
+- Read packs through `src/library/backgrounds.ts`, `src/library/layouts.ts` and `src/library/shapes.ts`; never import pack files directly or keep hand-written asset, template or shape lists.
+- Retire shipped background, layout and shape ids with `"retired": true` instead of deleting or renaming them.
 
 ## Working Agreements
 
