@@ -30,7 +30,7 @@ The repository root is `C:\Users\Lieber\Documents\YearBookApp\CodexYearbookApp`.
 
 - `scanMediaLibrarySuggestionsForProject` exists and produces event suggestions from temporary MediaLibrary candidate refs.
 - Suggestion status is persisted and repeated scans should preserve accepted, dismissed, snoozed, and watching state.
-- Accepting a suggestion currently creates/links a memory first; importing only the user-selected candidate photos is the remaining product-critical step.
+- Accepting a suggestion opens a review where the user picks photos; only the selected candidate photos are imported into the new memory (`createMemoryFromReviewedSuggestion`).
 - Theme pages are currently represented through collection memories with `themeLabel`/`themeTags`; a separate `ThemePage` entity should not be introduced unless the product workflow needs it.
 - `DEV_TOOLS_ENABLED` / `__DEV__` is the expected boundary for analysis inspectors, cluster displays, and probe tools.
 
