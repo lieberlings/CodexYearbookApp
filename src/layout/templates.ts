@@ -1,6 +1,6 @@
 import { PhotoItem } from "../types";
 import { LayoutSlot } from "./schemas";
-import { templatePacks } from "./templatePacks";
+import { layoutPacks } from "../library/layouts";
 import {
   PhotoOrientation,
   TemplateDefinition,
@@ -21,9 +21,10 @@ type TemplateEvaluation = {
   slots: LayoutSlot[];
 };
 
-const templates: TemplateDefinition[] = [
-  ...templatePacks.flatMap((pack) => pack.templates)
-];
+// Every template from the layout packs in library/layouts, including retired
+// ones so saved pages keep resolving them by id.
+const templates: TemplateDefinition[] = layoutPacks.flatMap((pack) => pack.templates);
+const selectableTemplates = templates.filter((template) => !template.retired);
 
 const duplicateTemplateIds = templates
   .map((template) => template.id)
@@ -34,11 +35,11 @@ if (__DEV__ && duplicateTemplateIds.length > 0) {
 }
 
 export function listTemplatesForPhotoCount(photoCount: number): TemplateDefinition[] {
-  return templates.filter((template) => template.photoCount === photoCount);
+  return selectableTemplates.filter((template) => template.photoCount === photoCount);
 }
 
 export function listAllTemplates(): TemplateDefinition[] {
-  return templates;
+  return selectableTemplates;
 }
 
 export function getTemplateById(templateId?: string): TemplateDefinition | undefined {

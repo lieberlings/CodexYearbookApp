@@ -112,3 +112,13 @@ export const backgroundPackSources: GeneratedPack[] = [
     }
   }
 ];
+
+export const layoutPackSources: unknown[] = [
+  require("../../library/layouts/figma-batch/manifest.json")
+];
+
+export const shapePackSources: unknown[] = [
+  require("../../library/shapes/basic/manifest.json")
+];
+
+export const shapeIds = ["rectangle", "circle", "heart", "star", "thought"] as const;

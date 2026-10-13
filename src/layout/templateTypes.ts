@@ -16,6 +16,8 @@ export type TemplateDefinition = {
   photoCount: number;
   baseScore: number;
   slots: TemplateSlotBlueprint[];
+  // Hidden from pickers and automatic selection; saved pages still resolve it by id.
+  retired?: boolean;
 };
 
 export type TemplatePack = {
