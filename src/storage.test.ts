@@ -1,6 +1,5 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { beforeEach, describe, expect, it, jest } from "@jest/globals";
-import { AppDataLoadError, loadAppData, saveAppData } from "./storage";
+import { createFakeSqlDriver, FakeSqlDriver } from "./test/fakeSqlDriver";
 import { AppData } from "./types";
 
 jest.mock("@react-native-async-storage/async-storage", () => ({
@@ -12,44 +11,61 @@ jest.mock("@react-native-async-storage/async-storage", () => ({
   }
 }));
 
-const mockedStorage = AsyncStorage as unknown as {
-  getItem: jest.Mock;
-  setItem: jest.Mock;
-  removeItem: jest.Mock;
-};
+// The SQLite file lives as long as mockDriver: tests that "relaunch" the app
+// get a fresh storage module (fresh in-memory caches) over the same database.
+let mockDriver: FakeSqlDriver;
+jest.mock("./data/expoSqliteDriver", () => ({ openExpoSqliteDriver: async () => mockDriver }));
+
+type StorageModule = typeof import("./storage");
+type StorageMock = { getItem: jest.Mock; setItem: jest.Mock; removeItem: jest.Mock };
+
+let storage: StorageModule;
+let mockedStorage: StorageMock;
+let blob: string | null;
+
+function launchApp() {
+  jest.resetModules();
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  mockedStorage = require("@react-native-async-storage/async-storage").default as StorageMock;
+  mockedStorage.getItem.mockImplementation(async () => blob);
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  storage = require("./storage") as StorageModule;
+  const { loadAppData, saveAppData, AppDataLoadError } = storage;
+  return { loadAppData, saveAppData, AppDataLoadError };
+}
+
+const empty: AppData = { projects: [], memories: [], pageSections: [], photos: [], suggestions: [] };
+
+beforeEach(() => {
+  mockDriver = createFakeSqlDriver();
+  blob = null;
+});
 
 it("persists hidden ZIP folder settings on pages", async () => {
   const data: AppData = { projects: [], memories: [], photos: [], suggestions: [], pageSections: [
     { id: "page", memoryId: "memory", order: 0, photoIds: [], exportToFolder: true, exportFolderName: "Beach photos" }
   ] };
-  await saveAppData(data);
-  const saved = (mockedStorage.setItem as jest.Mock).mock.calls.at(-1)?.[1] as string;
-  (mockedStorage.getItem as jest.Mock).mockImplementation(async () => saved);
-  expect((await loadAppData()).pageSections[0]).toEqual(data.pageSections[0]);
+  const first = launchApp();
+  await first.loadAppData();
+  await first.saveAppData(data);
+  expect((await launchApp().loadAppData()).pageSections[0]).toEqual(data.pageSections[0]);
 });
 
 it("round-trips freestyle geometry, text shapes, stickers and cover roles", async () => {
   const data: AppData = { projects: [], memories: [{ id: "cover", projectId: "project", title: "Front cover", bookRole: "front-cover", kind: "event", status: "active", order: 0, createdAt: "", updatedAt: "" }], photos: [], suggestions: [], pageSections: [
     { id: "page", memoryId: "cover", order: 0, photoIds: [], templateId: "freestyle", layoutLocked: true, freestyleSlots: [{ id: "frame", role: "photo", fitMode: "cover", photoScale: 1, photoOffsetX: 0, photoOffsetY: 0, rotation: 35, zIndex: 4, shape: "heart", frame: { x: .1, y: .2, width: .3, height: .4 } }], textBoxes: [{ id: "sticker", text: "😊", sticker: true, rotation: 10, zIndex: 5, shape: "thought", x: .1, y: .1, width: .2, height: .2 }] }
   ] };
-  await saveAppData(data);
-  const saved = mockedStorage.setItem.mock.calls.at(-1)?.[1] as string;
-  mockedStorage.getItem.mockImplementation(async () => saved);
-  const loaded = await loadAppData();
+  const first = launchApp();
+  await first.loadAppData();
+  await first.saveAppData(data);
+  const loaded = await launchApp().loadAppData();
   expect(loaded.pageSections).toEqual(data.pageSections);
   expect(loaded.memories[0].bookRole).toBe("front-cover");
 });
 
 describe("storage Milestone 2 foundations", () => {
-  beforeEach(() => {
-    mockedStorage.getItem.mockReset();
-    mockedStorage.setItem.mockReset();
-    mockedStorage.removeItem.mockReset();
-  });
-
   it("normalizes legacy saved data and preserves unassigned project photos", async () => {
-    (mockedStorage.getItem as jest.Mock).mockImplementation(async () =>
-      JSON.stringify({
+    blob = JSON.stringify({
         projects: [
           {
             id: "project-1",
@@ -101,10 +117,9 @@ describe("storage Milestone 2 foundations", () => {
             candidatePhotoIds: null
           }
         ]
-      })
-    );
+      });
 
-    const data = await loadAppData();
+    const data = await launchApp().loadAppData();
 
     expect(data.projects[0]).toMatchObject({
       id: "project-1",
@@ -146,6 +161,12 @@ describe("storage Milestone 2 foundations", () => {
       title: "Untitled suggestion",
       candidatePhotoIds: []
     });
+
+    // The migrated copy reads back identically on the next launch, and the
+    // AsyncStorage blob is left untouched as a backup.
+    expect(await launchApp().loadAppData()).toEqual(data);
+    expect(mockedStorage.setItem).not.toHaveBeenCalled();
+    expect(mockedStorage.removeItem).not.toHaveBeenCalled();
   });
 
   it("strips export data when saving persisted project-photo-pool data", async () => {
@@ -173,11 +194,13 @@ describe("storage Milestone 2 foundations", () => {
       suggestions: []
     };
 
+    const { loadAppData, saveAppData } = launchApp();
+    await loadAppData();
     await saveAppData(data);
 
-    expect(mockedStorage.setItem).toHaveBeenCalledTimes(1);
-    const [, persistedRaw] = mockedStorage.setItem.mock.calls[0] as [string, string];
-    const persisted = JSON.parse(persistedRaw) as AppData;
+    const rows = mockDriver.rows("photos");
+    expect(rows).toHaveLength(1);
+    const persisted = { photos: rows.map((row) => JSON.parse(row.data as string)) } as AppData;
 
     expect(persisted.photos[0]).toMatchObject({
       id: "photo-1",
@@ -192,34 +215,43 @@ describe("storage Milestone 2 foundations", () => {
       }
     });
     expect("exportDataUri" in (persisted.photos[0] as Record<string, unknown>)).toBe(false);
+    expect(mockedStorage.setItem).not.toHaveBeenCalled();
   });
 });
 
 describe("loading never erases saved data", () => {
-  beforeEach(() => {
-    mockedStorage.getItem.mockReset();
-    mockedStorage.setItem.mockReset();
-    mockedStorage.removeItem.mockReset();
-  });
-
   it("starts empty on a fresh install", async () => {
-    mockedStorage.getItem.mockImplementation(async () => null);
-    await expect(loadAppData()).resolves.toEqual({ projects: [], memories: [], pageSections: [], photos: [], suggestions: [] });
+    await expect(launchApp().loadAppData()).resolves.toEqual(empty);
   });
 
   it("reports an unreadable row instead of deleting it", async () => {
+    const { loadAppData, saveAppData, AppDataLoadError } = launchApp();
     mockedStorage.getItem.mockImplementation(async () => {
       throw new Error("Row too big to fit into CursorWindow");
     });
     await expect(loadAppData()).rejects.toBeInstanceOf(AppDataLoadError);
     expect(mockedStorage.removeItem).not.toHaveBeenCalled();
     expect(mockedStorage.setItem).not.toHaveBeenCalled();
+    // Saving stays refused, so an empty in-memory state cannot overwrite anything.
+    await expect(saveAppData(empty)).rejects.toThrow();
+    expect(mockDriver.rows("projects")).toEqual([]);
   });
 
   it("reports corrupt JSON instead of returning empty data", async () => {
-    mockedStorage.getItem.mockImplementation(async () => '{"projects": [');
+    blob = '{"projects": [';
+    const { loadAppData, AppDataLoadError } = launchApp();
     await expect(loadAppData()).rejects.toBeInstanceOf(AppDataLoadError);
     expect(mockedStorage.removeItem).not.toHaveBeenCalled();
     expect(mockedStorage.setItem).not.toHaveBeenCalled();
+  });
+
+  it("reports a corrupt database row instead of dropping it", async () => {
+    blob = JSON.stringify({ projects: [{ id: "project-1", name: "Trip", createdAt: "t", updatedAt: "t" }] });
+    await launchApp().loadAppData();
+    mockDriver.tables.get("projects")!.rows.get("project-1")!.data = "{";
+    const { loadAppData, AppDataLoadError } = launchApp();
+    await expect(loadAppData()).rejects.toBeInstanceOf(AppDataLoadError);
+    expect(mockDriver.rows("projects")).toHaveLength(1);
+    expect(mockedStorage.removeItem).not.toHaveBeenCalled();
   });
 });

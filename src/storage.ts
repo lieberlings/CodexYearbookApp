@@ -1,74 +1,35 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { AppData, PhotoItem } from "./types";
-import {
-  normalizeMemoryRecord,
-  normalizePhotoRecord,
-  normalizeProjectRecord,
-  normalizeSuggestionRecord
-} from "./context/appDataHelpers";
+import { AppData } from "./types";
+import { AppDataStore, createAppDataStore } from "./data/appDataStore";
+import { openExpoSqliteDriver } from "./data/expoSqliteDriver";
 
-const STORAGE_KEY = "yearbook-app-data-v1";
+export { AppDataLoadError } from "./data/errors";
 
-const defaultData: AppData = {
-  projects: [],
-  memories: [],
-  pageSections: [],
-  photos: [],
-  suggestions: []
-};
+// The pre-SQLite storage location. It is only ever read (once, to migrate) and
+// is kept on the device as a backup.
+export const LEGACY_STORAGE_KEY = "yearbook-app-data-v1";
 
-// Thrown when saved data exists but cannot be read or parsed. The stored value is
-// left untouched so the user's projects can still be recovered.
-export class AppDataLoadError extends Error {
-  constructor(message: string, readonly cause?: unknown) {
-    super(message);
-    this.name = "AppDataLoadError";
-  }
-}
+let store: AppDataStore | null = null;
 
-export async function loadAppData(): Promise<AppData> {
-  let raw: string | null = null;
-  try {
-    raw = await AsyncStorage.getItem(STORAGE_KEY);
-  } catch (error) {
-    // Android CursorWindow overflow can make an oversized row unreadable.
-    // Never delete it: that would erase every project.
-    throw new AppDataLoadError("Saved data could not be read.", error);
-  }
-
-  if (!raw) {
-    return defaultData;
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as AppData;
-    const normalizedMemories = (parsed.memories ?? []).map(normalizeMemoryRecord);
-    const memoryProjectIds = new Map(normalizedMemories.map((memory) => [memory.id, memory.projectId] as const));
-    const sanitizedPhotos = (parsed.photos ?? []).map((photo) => {
-      const { exportDataUri, ...rest } = photo;
-      return rest;
+function getStore(): AppDataStore {
+  if (!store) {
+    store = createAppDataStore({
+      openDriver: () => openExpoSqliteDriver(),
+      legacyBlob: { read: () => AsyncStorage.getItem(LEGACY_STORAGE_KEY) }
     });
-    return {
-      projects: (parsed.projects ?? []).map(normalizeProjectRecord),
-      memories: normalizedMemories,
-      pageSections: parsed.pageSections ?? [],
-      photos: sanitizedPhotos
-        .map((photo) => normalizePhotoRecord(photo, memoryProjectIds))
-        .filter((photo): photo is PhotoItem => Boolean(photo)),
-      suggestions: (parsed.suggestions ?? []).map(normalizeSuggestionRecord)
-    };
-  } catch (error) {
-    throw new AppDataLoadError("Saved data could not be parsed.", error);
   }
+  return store;
 }
 
-export async function saveAppData(data: AppData): Promise<void> {
-  const persistable: AppData = {
-    ...data,
-    photos: data.photos.map((photo) => {
-      const { exportDataUri, ...rest } = photo;
-      return rest;
-    })
-  };
-  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(persistable));
+// Loads saved data from the on-device SQLite database, migrating the legacy
+// AsyncStorage blob on first run. Throws AppDataLoadError when saved data exists
+// but cannot be read; nothing is deleted in that case.
+export function loadAppData(): Promise<AppData> {
+  return getStore().load();
+}
+
+// Writes only the records that changed since the last load/save. Calls are
+// serialized and coalesced; saving is refused until a load has succeeded.
+export function saveAppData(data: AppData): Promise<void> {
+  return getStore().save(data);
 }
