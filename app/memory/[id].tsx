@@ -44,7 +44,7 @@ import { useEditorStore } from "../../src/state/editorStore";
 import { pickImagesWithAndroidPhotoPicker } from "../../src/services/androidPhotoPicker";
 import { pickPhotosFromMediaLibraryByAssetIds } from "../../src/services/photoService";
 import { MemoryPageSection, PageTextBox } from "../../src/types";
-import { PHOTO_PICKER_SELECTION_LIMIT, ANDROID_PHOTO_PICKER_IMPORTS_ENABLED, DRAG_HOLD_MS, applyColorOpacity, sameSectionOrder, sectionOrderKey, clamp, TEXT_PLACEHOLDER, estimateTextBoxSize } from "../../src/features/memoryEditor/helpers";
+import { PHOTO_PICKER_SELECTION_LIMIT, ANDROID_PHOTO_PICKER_IMPORTS_ENABLED, DRAG_HOLD_MS, applyColorOpacity, sameSectionOrder, sectionOrderKey, clamp, TEXT_PLACEHOLDER, estimateTextBoxSize, nextTextBoxPosition } from "../../src/features/memoryEditor/helpers";
 import type { InspectorKind } from "../../src/features/memoryEditor/helpers";
 import { IconOrb } from "../../src/features/memoryEditor/EditorControls";
 import { styles } from "../../src/features/memoryEditor/styles";
@@ -429,6 +429,7 @@ export default function MemoryDetailsScreen() {
     const defaultSize = estimateTextBoxSize("", defaultFontSize, canvasSize);
     const width = slot ? slot.frame.width : defaultSize.width;
     const height = slot ? slot.frame.height : defaultSize.height;
+    const position = slot ? slot.frame : nextTextBoxPosition(activeTextBoxes, { width, height });
     const createdId = addPageTextBox(activeSection.id, {
       anchorSlotId: slot?.id,
       textColor: sectionStyle.textColor,
@@ -442,8 +443,8 @@ export default function MemoryDetailsScreen() {
       borderWidth: 1,
       borderColor: sectionStyle.textColor,
       cornerRadius: 8,
-      x: slot ? slot.frame.x : undefined,
-      y: slot ? slot.frame.y : undefined,
+      x: position.x,
+      y: position.y,
       width,
       height,
       autoSize: false
@@ -1380,8 +1381,8 @@ export default function MemoryDetailsScreen() {
                           />
                         ) : (
                           <Text
-                            adjustsFontSizeToFit={Boolean(shapeText)}
-                            numberOfLines={shapeText?.numberOfLines}
+                            adjustsFontSizeToFit={Boolean(shapeText) || !textBox.text}
+                            numberOfLines={shapeText?.numberOfLines ?? (textBox.text ? undefined : 1)}
                             minimumFontScale={0.01}
                             style={[
                               styles.textBoxText,

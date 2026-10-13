@@ -18,6 +18,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppData } from "../src/context/AppContext";
+import { DateField } from "../src/ui/DateField";
 import {
   ProjectAssistLevel,
   ProjectStyleIntensity,
@@ -457,28 +458,22 @@ export default function HomeScreen() {
                   <View style={styles.fieldGroup}>
                     <Text style={styles.fieldLabel}>Date Range</Text>
                     <View style={styles.dateRow}>
-                      <TextInput
+                      <DateField
                         value={composerStartDate}
-                        onChangeText={setComposerStartDate}
-                        placeholder="Start YYYY-MM-DD"
-                        placeholderTextColor="#6B6156"
-                        style={[styles.modalInput, styles.dateInput]}
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                        keyboardType={Platform.OS === "ios" ? "numbers-and-punctuation" : "default"}
+                        onChange={setComposerStartDate}
+                        placeholder="Start date"
+                        max={composerEndDate || undefined}
+                        style={styles.dateInput}
                       />
-                      <TextInput
+                      <DateField
                         value={composerEndDate}
-                        onChangeText={setComposerEndDate}
-                        placeholder="End YYYY-MM-DD"
-                        placeholderTextColor="#6B6156"
-                        style={[styles.modalInput, styles.dateInput]}
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                        keyboardType={Platform.OS === "ios" ? "numbers-and-punctuation" : "default"}
+                        onChange={setComposerEndDate}
+                        placeholder="End date"
+                        min={composerStartDate || undefined}
+                        style={styles.dateInput}
                       />
                     </View>
-                    <Text style={styles.fieldHelperText}>Leave either field blank if you want to fill it in later.</Text>
+                    <Text style={styles.fieldHelperText}>Leave either date blank if you want to fill it in later.</Text>
                   </View>
                 ) : null}
 

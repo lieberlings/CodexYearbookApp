@@ -73,3 +73,37 @@ export function estimateTextBoxSize(text: string, fontSize: number, canvasSize: 
     height: clamp(heightPx / safeCanvasSize, 0.1, 0.56)
   };
 }
+
+// Where a new free text box goes: the first spot, scanning rows top to bottom
+// (centre, then left, then right), whose rectangle doesn't overlap an existing
+// box. A full page falls back to the spot with the least overlap.
+type Rect = { x: number; y: number; width: number; height: number };
+
+function overlapArea(a: Rect, b: Rect): number {
+  const width = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
+  const height = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
+  return width > 0 && height > 0 ? width * height : 0;
+}
+
+export function nextTextBoxPosition(existing: Rect[], size: { width: number; height: number }): { x: number; y: number } {
+  const gap = 0.02;
+  const margin = 0.05;
+  const columns = [0.5 - size.width / 2, margin, 1 - margin - size.width].map((x) => clamp(x, 0, 1 - size.width));
+  let best = { x: columns[0], y: clamp(0.12, 0, 1 - size.height) };
+  let bestOverlap = Infinity;
+  for (let y = 0.12; y + size.height <= 1 - margin + 1e-9; y += size.height + gap) {
+    for (const x of columns) {
+      const candidate = { x, y, width: size.width, height: size.height };
+      const padded = { x: x - gap, y: y - gap, width: size.width + 2 * gap, height: size.height + 2 * gap };
+      const overlap = existing.reduce((total, box) => total + overlapArea(padded, box), 0);
+      if (overlap === 0) {
+        return { x: candidate.x, y: candidate.y };
+      }
+      if (overlap < bestOverlap) {
+        bestOverlap = overlap;
+        best = { x: candidate.x, y: candidate.y };
+      }
+    }
+  }
+  return best;
+}

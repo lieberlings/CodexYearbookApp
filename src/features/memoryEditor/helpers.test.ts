@@ -4,6 +4,7 @@ import {
   applyColorOpacity,
   clamp,
   estimateTextBoxSize,
+  nextTextBoxPosition,
   groupTemplatesByPhotoCount,
   sameSectionOrder,
   sectionOrderKey
@@ -47,5 +48,35 @@ describe("memory editor helpers", () => {
     const huge = estimateTextBoxSize("x".repeat(500), 72, 320);
     expect(huge.width).toBeLessThanOrEqual(0.9);
     expect(huge.height).toBeLessThanOrEqual(0.56);
+  });
+
+  it("places new text boxes where they don't overlap existing ones", () => {
+    const size = { width: 0.36, height: 0.1 };
+    const overlaps = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+      Math.abs(a.x - b.x) < size.width && Math.abs(a.y - b.y) < size.height;
+    const placed: { x: number; y: number; width: number; height: number }[] = [];
+    for (let i = 0; i < 6; i += 1) {
+      const next = nextTextBoxPosition(placed, size);
+      expect(placed.some((box) => overlaps(box, next))).toBe(false);
+      expect(next.x + size.width).toBeLessThanOrEqual(1);
+      expect(next.y + size.height).toBeLessThanOrEqual(1);
+      placed.push({ ...next, ...size });
+    }
+    expect(placed[0].x).toBeCloseTo(0.32);
+    expect(placed[0].y).toBeCloseTo(0.12);
+  });
+
+  it("avoids a wide box an older layout left at the top", () => {
+    const size = { width: 0.36, height: 0.1 };
+    const old = { x: 0.05, y: 0.1, width: 0.9, height: 0.15 };
+    const next = nextTextBoxPosition([old], size);
+    expect(next.y).toBeGreaterThanOrEqual(old.y + old.height);
+  });
+
+  it("still returns an on-page spot when the page is full", () => {
+    const size = { width: 0.36, height: 0.1 };
+    const next = nextTextBoxPosition([{ x: 0, y: 0, width: 1, height: 1 }], size);
+    expect(next.x).toBeGreaterThanOrEqual(0);
+    expect(next.y + size.height).toBeLessThanOrEqual(1);
   });
 });
