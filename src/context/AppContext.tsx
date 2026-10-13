@@ -384,7 +384,10 @@ export function AppProvider({ children }: PropsWithChildren) {
       return;
     }
     const normalizedSections = reconcilePageSections(memories, photos, pageSections);
-    void saveAppData({ projects, memories, pageSections: normalizedSections, photos, suggestions }).catch(() => undefined);
+    // saveAppData writes only changed records and coalesces bursts of calls.
+    void saveAppData({ projects, memories, pageSections: normalizedSections, photos, suggestions }).catch((error) =>
+      console.warn("Saving app data failed; the next change will retry.", error)
+    );
   }, [loading, persistenceBlocked, memories, pageSections, photos, projects, suggestions]);
 
   const pickProjectThumbnail = useCallback(async (): Promise<string | undefined> => {
