@@ -29,3 +29,6 @@ jobs:
         run: npm run lint
       - name: Tests
         run: npm test -- --ci
+      - name: Cloud access rules
+        if: hashFiles('supabase/tests/run.sh') != ''
+        run: bash supabase/tests/run.sh
