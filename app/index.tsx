@@ -369,10 +369,11 @@ export default function HomeScreen() {
       <View style={[styles.bottomToolbar, { height: bottomToolbarHeight, paddingBottom: insets.bottom + 18 }]}>
         <Pressable
           style={styles.toolbarItem}
-          onPress={() => Alert.alert("Settings", "Settings screen is not wired yet.")}
+          accessibilityLabel="Account"
+          onPress={() => router.push("/account")}
         >
-          <Ionicons name="settings-outline" size={22} color="#4A4239" />
-          <Text style={styles.toolbarLabel}>Settings</Text>
+          <Ionicons name="person-circle-outline" size={22} color="#4A4239" />
+          <Text style={styles.toolbarLabel}>Account</Text>
         </Pressable>
         <Pressable
           style={styles.toolbarItem}

@@ -15,3 +15,7 @@ yarn-error.*
 
 expo-env.d.ts
 # @end expo-cli
+
+# Local environment (Supabase URL / anon key for development builds)
+.env
+.env*.local

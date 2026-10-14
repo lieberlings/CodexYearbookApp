@@ -21,6 +21,7 @@ import {
 import DraggableFlatList, { ScaleDecorator } from "react-native-draggable-flatlist";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MediaLibrarySelectionModal } from "../../src/components/MediaLibrarySelectionModal";
+import { useCloud } from "../../src/cloud/CloudContext";
 import { useAppData } from "../../src/context/AppContext";
 import { formatPhotoLocation, normalizePhotoLocation } from "../../src/lib/photoLocation";
 import { exportProjectPhotosToZip, sharePhotoZip } from "../../src/services/photoZipExportService";
@@ -585,6 +586,7 @@ function MemoryCollagePreview({ photos, thumbnailUri }: { photos: PhotoItem[]; t
 }
 
 export default function ProjectDetailsScreen() {
+  const cloud = useCloud();
   const params = useLocalSearchParams<{ id: string }>();
   const projectId = Array.isArray(params.id) ? (params.id[0] ?? "") : (params.id ?? "");
   const insets = useSafeAreaInsets();
@@ -687,6 +689,7 @@ export default function ProjectDetailsScreen() {
   const [finalizationReviewSuggestion, setFinalizationReviewSuggestion] = useState<FinalizationSuggestion | null>(null);
 
   const project = getProjectById(projectId);
+  const projectBackedUp = project ? cloud.isProjectBackedUp(project.id) : false;
   const memories = useMemo(() => getMemoriesByProjectId(projectId), [getMemoriesByProjectId, projectId]);
   const regularMemories = useMemo(() => memories.filter(memory => !memory.bookRole), [memories]);
   const openingBookPart = useRef(false);
@@ -2969,6 +2972,26 @@ export default function ProjectDetailsScreen() {
                 <Ionicons name="construct-outline" size={20} color="#4A4239" />
                 <Text style={styles.actionMenuButtonText}>
                   {devToolsExpanded ? "Hide Developer Tools" : "Show Developer Tools"}
+                </Text>
+              </Pressable>
+            ) : null}
+            {cloud.enabled ? (
+              <Pressable
+                style={styles.actionMenuButton}
+                accessibilityRole="button"
+                disabled={projectBackedUp}
+                onPress={() => {
+                  setProjectMenuVisible(false);
+                  if (!cloud.user) {
+                    router.push("/account");
+                    return;
+                  }
+                  void cloud.backUpProject(project.id).catch((error: Error) => Alert.alert("Couldn't back up", error.message));
+                }}
+              >
+                <Ionicons name={projectBackedUp ? "cloud-done-outline" : "cloud-upload-outline"} size={20} color="#4A4239" />
+                <Text style={styles.actionMenuButtonText}>
+                  {projectBackedUp ? "Backed up to cloud" : cloud.user ? "Back up to cloud" : "Sign in to back up"}
                 </Text>
               </Pressable>
             ) : null}

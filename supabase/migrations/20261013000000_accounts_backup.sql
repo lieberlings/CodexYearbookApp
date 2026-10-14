@@ -124,7 +124,7 @@ create table public.photos (
   id text primary key,
   project_id text not null references public.projects (id) on delete cascade,
   memory_id text references public.memories (id) on delete set null,
-  added_by uuid not null references auth.users (id),
+  added_by uuid not null references auth.users (id) on delete cascade,
   storage_path text,                         -- set once the file is uploaded
   data jsonb not null,
   updated_at timestamptz not null default now(),
@@ -226,3 +226,27 @@ create policy "owner deletes photo files" on storage.objects
   for delete using (
     bucket_id = 'photos' and public.is_project_owner((storage.foldername(name))[1])
   );
+
+-- Account deletion --------------------------------------------------------
+-- Deletes the signed-in user. Cascades remove their profile, the projects they
+-- own (with everything in them), their memberships and the photos they added
+-- to other people's projects. Photo files must be removed through the Storage
+-- API first (the app does this), because Supabase blocks deleting storage
+-- objects from SQL.
+
+create function public.delete_my_account()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'Not signed in';
+  end if;
+  delete from auth.users where id = auth.uid();
+end;
+$$;
+
+revoke all on function public.delete_my_account() from public, anon;
+grant execute on function public.delete_my_account() to authenticated;

@@ -41,3 +41,7 @@ credentials.json
 *.jks
 *.keystore
 !android/app/debug.keystore
+
+# Local environment files; EAS builds take EXPO_PUBLIC_* from EAS environment variables
+.env
+.env*.local

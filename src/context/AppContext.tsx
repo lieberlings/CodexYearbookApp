@@ -4,6 +4,7 @@ import { Alert } from "react-native";
 import { makeId } from "../lib/id";
 import { normalizePhotoLocation } from "../lib/photoLocation";
 import { AppDataLoadError, loadAppData, saveAppData } from "../storage";
+import type { LocalPatch } from "../cloud/sync/model";
 import {
   applyPhotoAssignmentToMemory,
   buildMemorySeedFromSuggestion,
@@ -91,6 +92,8 @@ type AppContextValue = {
     }
   ) => void;
   deleteProject: (projectId: string) => void;
+  // Applies changes that came from cloud sync (see src/cloud/sync).
+  applyCloudPatch: (patch: LocalPatch) => void;
   getProjectById: (id: string) => Project | undefined;
   createMemory: (
     projectId: string,
@@ -1647,6 +1650,43 @@ export function AppProvider({ children }: PropsWithChildren) {
     [memories, pageSections, photos]
   );
 
+  const applyCloudPatch = useCallback((patch: LocalPatch) => {
+    const mergeById = <T extends { id: string }>(items: T[], upserts: T[], removed: Set<string>) => {
+      if (upserts.length === 0 && removed.size === 0) {
+        return items;
+      }
+      const byId = new Map(items.filter((item) => !removed.has(item.id)).map((item) => [item.id, item] as const));
+      for (const item of upserts) {
+        byId.set(item.id, item);
+      }
+      return [...byId.values()];
+    };
+    const removedProjects = new Set(patch.remove.projects);
+    const removedMemories = new Set(patch.remove.memories);
+    setProjects((prev) => mergeById(prev, patch.upsert.projects.map(normalizeProjectRecord), removedProjects));
+    setMemories((prev) => {
+      // A deleted project takes its memories with it, even if their own deletion hasn't arrived.
+      prev.forEach((memory) => {
+        if (removedProjects.has(memory.projectId)) removedMemories.add(memory.id);
+      });
+      return mergeById(prev, patch.upsert.memories.map(normalizeMemoryRecord), removedMemories);
+    });
+    setPageSections((prev) =>
+      mergeById(
+        prev.filter((section) => !removedMemories.has(section.memoryId)),
+        patch.upsert.pageSections,
+        new Set(patch.remove.pageSections)
+      )
+    );
+    setPhotos((prev) =>
+      mergeById(
+        prev.filter((photo) => !removedProjects.has(photo.projectId)),
+        patch.upsert.photos,
+        new Set(patch.remove.photos)
+      )
+    );
+  }, []);
+
   const value = useMemo(
     () => ({
       loading,
@@ -1670,6 +1710,7 @@ export function AppProvider({ children }: PropsWithChildren) {
       createProject,
       updateProject,
       deleteProject,
+      applyCloudPatch,
       getProjectById,
       createMemory,
       updateMemory,
@@ -1727,6 +1768,7 @@ export function AppProvider({ children }: PropsWithChildren) {
       deletePageSection,
       deletePhotos,
       deleteProject,
+      applyCloudPatch,
       getMemoriesByProjectId,
       getMemoryById,
       getMemoryThumbnailUri,

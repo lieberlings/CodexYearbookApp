@@ -222,6 +222,8 @@ export type PhotoItem = {
   projectId: string;
   memoryId?: string;
   uri: string;
+  // Account that added the photo, for photos in a cloud project.
+  addedBy?: string;
   exportDataUri?: string;
   width?: number;
   height?: number;
