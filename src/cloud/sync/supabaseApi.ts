@@ -22,7 +22,7 @@ function contentTypeFor(path: string): string {
   return "image/jpeg";
 }
 
-export function createSupabaseCloudApi(supabase: SupabaseClient): CloudApi {
+export function createSupabaseCloudApi(supabase: SupabaseClient, userId: string): CloudApi {
   return {
     async upsert(table: CloudTable, rows: CloudRow[]) {
       for (let start = 0; start < rows.length; start += PAGE_SIZE) {
@@ -92,6 +92,15 @@ export function createSupabaseCloudApi(supabase: SupabaseClient): CloudApi {
         throw new Error(`Photo download failed (${result.status})`);
       }
       return result.uri;
+    },
+
+    // Throws on any error: an empty answer would make the device drop every
+    // shared project, so it must only ever come from the server itself.
+    async listMyProjectIds() {
+      const { data, error } = await supabase.from("project_members").select("project_id").eq("user_id", userId);
+      fail("Loading memberships", error);
+      if (!data) throw new Error("Loading memberships: no answer");
+      return data.map((row) => row.project_id as string);
     }
   };
 }

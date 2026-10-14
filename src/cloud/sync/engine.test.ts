@@ -11,7 +11,7 @@ import {
   type SyncState
 } from "./model";
 
-// In-memory stand-in for the Supabase tables and photo bucket.
+// In-memory stand-in for the Supabase tables, photo bucket and access rules.
 class FakeServer {
   tables: Record<CloudTable, Map<string, CloudRow>> = {
     projects: new Map(),
@@ -20,6 +20,8 @@ class FakeServer {
     photos: new Map()
   };
   files = new Map<string, string>();
+  // project id -> user id -> role
+  members = new Map<string, Map<string, "owner" | "contributor">>();
   private clock = Date.parse("2026-10-14T00:00:00Z");
 
   private tick(): string {
@@ -27,36 +29,66 @@ class FakeServer {
     return new Date(this.clock).toISOString();
   }
 
-  api(device: string, failUploads = false): CloudApi {
+  addMember(projectId: string, userId: string, role: "owner" | "contributor") {
+    if (!this.members.has(projectId)) this.members.set(projectId, new Map());
+    this.members.get(projectId)!.set(userId, role);
+  }
+
+  private role(projectId: string, userId: string) {
+    return this.members.get(projectId)?.get(userId);
+  }
+
+  // Mirrors the row-level security rules in supabase/migrations.
+  private assertMayWrite(table: CloudTable, row: CloudRow, userId: string) {
+    const projectId = table === "projects" ? row.id : row.project_id!;
+    if (table === "projects" && !this.tables.projects.has(row.id) && row.owner_id === userId) return;
+    const role = this.role(projectId, userId);
+    if (role === "owner") return;
+    const existing = this.tables[table].get(row.id);
+    if (role === "contributor" && table === "photos" && row.added_by === userId && (!existing || existing.added_by === userId)) {
+      return;
+    }
+    throw new Error(`denied: ${userId} writing ${table} ${row.id}`);
+  }
+
+  api(userId: string, device: string, options: { failUploads?: boolean } = {}): CloudApi {
     return {
       upsert: async (table, rows) => {
         for (const row of rows) {
           const existing = this.tables[table].get(row.id);
+          this.assertMayWrite(table, { ...existing, ...row }, userId);
           this.tables[table].set(row.id, { ...existing, ...row, updated_at: this.tick(), deleted_at: null });
+          if (table === "projects" && !existing) this.addMember(row.id, userId, "owner");
         }
       },
       markDeleted: async (table, ids) => {
         for (const id of ids) {
           const existing = this.tables[table].get(id);
-          if (existing) this.tables[table].set(id, { ...existing, deleted_at: this.tick(), updated_at: this.tick() });
+          if (!existing) continue;
+          this.assertMayWrite(table, existing, userId);
+          this.tables[table].set(id, { ...existing, deleted_at: this.tick(), updated_at: this.tick() });
         }
       },
       pullSince: async (table, cursor) =>
         [...this.tables[table].values()]
+          .filter((row) => this.role(table === "projects" ? row.id : row.project_id!, userId))
           .filter((row) => !cursor || (row.updated_at ?? "") > cursor)
           .sort((a, b) => (a.updated_at ?? "").localeCompare(b.updated_at ?? "")),
       uploadPhotoFile: async (path, localUri) => {
-        if (failUploads) throw new Error("offline");
+        if (options.failUploads) throw new Error("offline");
         this.files.set(path, `bytes of ${localUri}`);
       },
       setPhotoStoragePath: async (photoId, path) => {
         const existing = this.tables.photos.get(photoId)!;
+        this.assertMayWrite("photos", existing, userId);
         this.tables.photos.set(photoId, { ...existing, storage_path: path, updated_at: this.tick() });
       },
       downloadPhotoFile: async (path, photoId) => {
         if (!this.files.has(path)) throw new Error("missing file");
         return `file:///${device}/photos/${photoId}.jpg`;
-      }
+      },
+      listMyProjectIds: async () =>
+        [...this.members.entries()].filter(([, users]) => users.has(userId)).map(([projectId]) => projectId)
     };
   }
 }
@@ -96,7 +128,7 @@ function deviceA(): { records: CloudRecords; state: SyncState } {
 }
 
 async function sync(server: FakeServer, device: string, records: CloudRecords, state: SyncState) {
-  const result = await runSync(server.api(device), records, state);
+  const result = await runSync(server.api(state.userId, device), records, state);
   return { ...result, records: applyPatch(records, result.patch) };
 }
 
@@ -179,10 +211,10 @@ it("leaves projects that aren't backed up alone", async () => {
 it("reports a failed photo upload and retries it next time", async () => {
   const server = new FakeServer();
   const a = deviceA();
-  const failed = await runSync(server.api("a", true), a.records, a.state);
+  const failed = await runSync(server.api("user-1", "a", { failUploads: true }), a.records, a.state);
   expect(failed.report.fileErrors).toEqual(["Upload ph1: offline"]);
   expect(failed.state.uploadedFiles).toEqual({});
-  const retried = await runSync(server.api("a"), applyPatch(a.records, failed.patch), failed.state);
+  const retried = await runSync(server.api("user-1", "a"), applyPatch(a.records, failed.patch), failed.state);
   expect(retried.report.uploaded).toBe(1);
   expect(server.tables.photos.get("ph1")!.storage_path).toBe("p1/ph1.jpg");
 });
@@ -191,8 +223,82 @@ it("marks restored photos as waiting for their file until it downloads", async (
   const server = new FakeServer();
   const a = deviceA();
   // Push the rows but fail the file upload, so the cloud has no file yet.
-  await runSync(server.api("a", true), a.records, a.state);
+  await runSync(server.api("user-1", "a", { failUploads: true }), a.records, a.state);
   const b = await sync(server, "b", { projects: [], memories: [], pageSections: [], photos: [] }, emptySyncState("user-1"));
   expect(b.records.photos[0].uri).toBe(CLOUD_URI_PREFIX);
   expect(b.report.downloaded).toBe(0);
+});
+
+describe("sharing with a contributor", () => {
+  const empty = (): CloudRecords => ({ projects: [], memories: [], pageSections: [], photos: [] });
+
+  async function sharedSetup() {
+    const server = new FakeServer();
+    const a = deviceA();
+    const owner = await sync(server, "owner", a.records, a.state);
+    server.addMember("p1", "user-2", "contributor");
+    const guest = await sync(server, "guest", empty(), emptySyncState("user-2"));
+    return { server, owner, guest };
+  }
+
+  it("lets a contributor see the project and add a photo, which reaches the owner", async () => {
+    const { server, owner, guest } = await sharedSetup();
+    expect(guest.records.projects.map((item) => item.id)).toEqual(["p1"]);
+    expect(guest.state.roles).toEqual({ p1: "contributor" });
+
+    const guestPhoto = { id: "ph2", projectId: "p1", memoryId: "m1", uri: "file:///guest/photos/ph2.jpg", capturedAt: "c", addedAt: "b" } as PhotoItem;
+    const added = await sync(server, "guest", { ...guest.records, photos: [...guest.records.photos, guestPhoto] }, guest.state);
+    expect(added.report).toMatchObject({ pushed: 1, uploaded: 1, fileErrors: [] });
+    expect(server.tables.photos.get("ph2")!.added_by).toBe("user-2");
+
+    const ownerAfter = await sync(server, "owner", owner.records, owner.state);
+    const arrived = ownerAfter.records.photos.find((item) => item.id === "ph2")!;
+    expect(arrived.addedBy).toBe("user-2");
+    expect(arrived.uri).toBe("file:///owner/photos/ph2.jpg");
+
+    // The owner editing that photo keeps who added it, and the server accepts it.
+    const edited = {
+      ...ownerAfter.records,
+      photos: ownerAfter.records.photos.map((item) => (item.id === "ph2" ? { ...item, capturedAt: "fixed" } : item))
+    };
+    const ownerEdit = await sync(server, "owner", edited, ownerAfter.state);
+    expect(ownerEdit.report.pushed).toBe(1);
+    expect(server.tables.photos.get("ph2")!.added_by).toBe("user-2");
+  });
+
+  it("never sends a contributor's layout edits and lets the owner's version win", async () => {
+    const { server, owner, guest } = await sharedSetup();
+    const edited = { ...guest.records, memories: [{ ...guest.records.memories[0], title: "Guest rename" }] };
+    const result = await sync(server, "guest", edited, guest.state);
+    expect(result.report.pushed).toBe(0);
+    expect((server.tables.memories.get("m1")!.data as Memory).title).toBe("Beach");
+
+    await sync(server, "owner", { ...owner.records, memories: [{ ...memory, title: "Owner rename" }] }, owner.state);
+    const guestAfter = await sync(server, "guest", result.records, result.state);
+    expect(guestAfter.records.memories[0].title).toBe("Owner rename");
+  });
+
+  it("does not delete the owner's photos when they are missing on a contributor's phone", async () => {
+    const { server, guest } = await sharedSetup();
+    const result = await sync(server, "guest", { ...guest.records, photos: [] }, guest.state);
+    expect(result.report.pushed).toBe(0);
+    expect(server.tables.photos.get("ph1")!.deleted_at).toBeFalsy();
+  });
+
+  it("removes the project from a contributor's phone after they are removed", async () => {
+    const { server, guest } = await sharedSetup();
+    server.members.get("p1")!.delete("user-2");
+    const after = await sync(server, "guest", guest.records, guest.state);
+    expect(after.records.projects).toEqual([]);
+    expect(after.records.memories).toEqual([]);
+    expect(after.records.photos).toEqual([]);
+    expect(after.state.syncedProjectIds).toEqual([]);
+  });
+
+  it("keeps an owner's own projects even if the membership list comes back without them", async () => {
+    const { server, owner } = await sharedSetup();
+    server.members.get("p1")!.delete("user-1");
+    const after = await sync(server, "owner", owner.records, owner.state);
+    expect(after.records.projects.map((item) => item.id)).toEqual(["p1"]);
+  });
 });

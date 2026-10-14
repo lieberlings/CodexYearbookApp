@@ -1,6 +1,6 @@
 # Accounts and sharing
 
-Status: design, phase 1 in progress (2026-10-13).
+Status: phases 1 (accounts, backup) and 2 (sharing) implemented, not yet run against a live Supabase project (2026-10-14).
 
 ## Goal
 
@@ -104,23 +104,81 @@ The local blob stays the app's working copy in phase 1. Sync works through the s
    - A view-only role.
    - Transfer ownership.
 
-## What phase 1 needs before it can run
+## What's built (2026-10-14)
 
-- A Supabase project (Alex). Then:
-  1. Apply the migration (`supabase db push`, or paste it into the SQL editor).
-  2. Enable Google and email sign-in.
-  3. Add redirect URLs for `yearbookapp://` and `yearbookapp-dev://`.
-- The project URL and the anon key, provided as `EXPO_PUBLIC_SUPABASE_URL` and
-  `EXPO_PUBLIC_SUPABASE_ANON_KEY` in a local `.env` (never committed) and as EAS
-  environment variables. The anon key is designed to ship in apps; row-level
-  security is what protects the data.
-- A Google OAuth client for Android (package `com.lieber.yearbookapp` and the
-  `.dev` variant, plus their signing SHA-1s) and a web client for Supabase.
-- New dependencies, which need approval per `AGENTS.md`:
-  - `@supabase/supabase-js` (JS only).
-  - `react-native-url-polyfill` (JS only).
-  - `expo-web-browser` and `expo-auth-session` for the sign-in redirect. These are
-    Expo modules and need a native rebuild.
+Phases 1 and 2 are implemented and unit-tested against an in-memory server that
+enforces the same access rules. They haven't run against a real Supabase project
+yet; that's the next step once the project exists (see Setup).
+
+- **Accounts:** Account screen (home → Account).
+  - Sign in with a 6-digit email code. There's no password and no redirect link,
+    so there's no Google or redirect-URL setup.
+  - Sign out keeps every project on the phone.
+  - Delete account removes the photo files through the Storage API, then calls
+    `delete_my_account()`.
+- **Backup and restore:**
+  - Project menu → Back up to cloud.
+  - Changes sync about 8 s after edits, when the app returns to the foreground, and
+    on Sync now.
+  - Signing in on another phone pulls every backed-up project; photo files download
+    in the background.
+- **Sharing:**
+  - Project menu → People & sharing → Share an invite. This sends a link plus a
+    plain code, valid 14 days.
+  - The invitee opens the link (`app/invite/[token]`) or pastes the code under
+    Account → Join a shared project.
+  - Contributors get `app/shared/[id]`: memories, photos and Add photos. There are
+    no editing tools there, and the full editor redirects them to it.
+  - The owner can remove people. A contributor can leave. A removed contributor's
+    phone drops the project on its next sync.
+- **Code:**
+  - `src/cloud/sync/model.ts`: pure rules for rows, fingerprints, push plan, pull
+    merge and roles.
+  - `src/cloud/sync/engine.ts`: one sync round behind the `CloudApi` interface.
+  - `src/cloud/sync/supabaseApi.ts`: the real `CloudApi`. Photos stream from disk
+    through signed URLs.
+  - `src/cloud/CloudContext.tsx`: session, scheduling and sharing actions.
+  - `AppContext.applyCloudPatch` applies pulled changes without overwriting edits
+    made meanwhile.
+- **Not built yet:**
+  - "New from Sam" badges for the owner. Contributors' photos arrive unplaced in
+    the memory's photo strip.
+  - Project thumbnails in the cloud.
+  - Push notifications.
+  - A view-only role.
+  - Transfer ownership.
+  - Contributors seeing the designed pages.
+
+## Setup (one time, about 15 minutes)
+
+1. Create a project at supabase.com (the free tier is enough to start).
+2. SQL editor: run `supabase/migrations/20261013000000_accounts_backup.sql`, then
+   `supabase/migrations/20261014000000_sharing.sql`. Or run `supabase db push` with
+   the Supabase CLI.
+3. Authentication → Sign In / Providers → Email: keep it enabled.
+4. Authentication → Emails: edit both the "Confirm signup" template (first sign-in
+   of a new email) and the "Magic Link" template (later sign-ins) to include the
+   code, for example `Your sign-in code is {{ .Token }}`. Without `{{ .Token }}`
+   the email only contains a link, and the app needs the 6-digit code.
+5. Project Settings → API: copy the Project URL and the anon public key into a local
+   `.env` (see `.env.example`). Never use the service_role key in the app.
+6. For EAS builds, add the same two values as EAS environment variables
+   (`EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`).
+7. Supabase's built-in email sender is rate-limited (a few emails per hour). Set up
+   custom SMTP (Authentication → Emails → SMTP) before inviting real people.
+
+With no values set, the app builds and runs exactly as before. The Account screen
+then says accounts aren't set up.
+
+## Decisions taken
+
+- Sign-in uses email codes only for now. Google sign-in can be added later; it needs
+  `expo-auth-session`, OAuth clients and redirect URLs.
+- Contributors can change and remove only the photos they added.
+- Invites are reusable links for one project that expire after 14 days.
+- Photos sync without the on-device face and label analysis, which can be
+  recomputed. Photo metadata from `importMetadata` (dates, location) does sync.
+- Suggestions and project thumbnails stay on the device.
 
 ## Open questions
 

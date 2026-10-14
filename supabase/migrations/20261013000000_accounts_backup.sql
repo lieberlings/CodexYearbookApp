@@ -196,8 +196,10 @@ create policy "owner writes page sections" on public.page_sections
 
 create policy "members read photos" on public.photos
   for select using (public.is_project_member(project_id));
+-- No added_by check for the owner: an upsert also runs the insert check, and the
+-- owner re-saving a photo a contributor added (phase 2) keeps that person's id.
 create policy "owner adds photos" on public.photos
-  for insert with check (public.is_project_owner(project_id) and added_by = auth.uid());
+  for insert with check (public.is_project_owner(project_id));
 -- The owner may also update or delete photos someone else added (phase 2),
 -- for example to move a contributor's photo to another memory.
 create policy "owner updates photos" on public.photos

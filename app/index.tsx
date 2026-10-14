@@ -17,6 +17,8 @@ import {
   View
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useCloud } from "../src/cloud/CloudContext";
+import { isCloudPlaceholderUri } from "../src/cloud/sync/model";
 import { useAppData } from "../src/context/AppContext";
 import {
   ProjectAssistLevel,
@@ -61,6 +63,7 @@ function formatProjectStats(memoryCount: number, pageCount: number, photoCount: 
 }
 
 export default function HomeScreen() {
+  const cloud = useCloud();
   const insets = useSafeAreaInsets();
   const bottomToolbarHeight = insets.bottom + 76;
   const {
@@ -321,21 +324,30 @@ export default function HomeScreen() {
               previewUri: project.thumbnailUri
             };
 
+            // Projects someone else shared open the contributor view instead of the editor.
+            const sharedWithMe = cloud.projectRole(project.id) === "contributor";
+            const previewUri = stats.previewUri && !isCloudPlaceholderUri(stats.previewUri) ? stats.previewUri : undefined;
             return (
               <View key={project.id} style={styles.projectCard}>
                 <Pressable
-                  onPress={() => router.push({ pathname: "/project/[id]", params: { id: project.id } })}
+                  onPress={() =>
+                    router.push(
+                      sharedWithMe
+                        ? { pathname: "/shared/[id]", params: { id: project.id } }
+                        : { pathname: "/project/[id]", params: { id: project.id } }
+                    )
+                  }
                   style={styles.projectCardPressable}
                 >
-                  {stats.previewUri ? (
-                    <Image source={{ uri: stats.previewUri }} style={styles.projectPreview} />
+                  {previewUri ? (
+                    <Image source={{ uri: previewUri }} style={styles.projectPreview} />
                   ) : (
                     <View style={[styles.projectPreview, styles.projectPreviewPlaceholder]}>
                       <Ionicons name="images-outline" size={42} color="#6B6156" />
                     </View>
                   )}
                   <View style={styles.projectInfo}>
-                    <Text style={styles.timelineBadge}>{project.timelineMode}</Text>
+                    <Text style={styles.timelineBadge}>{sharedWithMe ? "shared with you" : project.timelineMode}</Text>
                     <Text numberOfLines={1} style={styles.projectTitle}>
                       {project.name}
                     </Text>
@@ -344,9 +356,11 @@ export default function HomeScreen() {
                     </Text>
                   </View>
                 </Pressable>
-                <Pressable hitSlop={10} onPress={() => openEditComposer(project.id)} style={styles.projectMenuButton}>
-                  <Ionicons name="ellipsis-horizontal" size={18} color="#4A4239" />
-                </Pressable>
+                {sharedWithMe ? null : (
+                  <Pressable hitSlop={10} onPress={() => openEditComposer(project.id)} style={styles.projectMenuButton}>
+                    <Ionicons name="ellipsis-horizontal" size={18} color="#4A4239" />
+                  </Pressable>
+                )}
               </View>
             );
           })}

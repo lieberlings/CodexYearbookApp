@@ -4,10 +4,12 @@ import {
   CLOUD_TABLES,
   confirmPush,
   emptyPatch,
+  forgetLostProjects,
   photoStoragePath,
   photosNeedingDownload,
   photosNeedingUpload,
   planPush,
+  roleIn,
   type CloudRecords,
   type CloudRow,
   type CloudTable,
@@ -26,6 +28,8 @@ export interface CloudApi {
   setPhotoStoragePath(photoId: string, path: string): Promise<void>;
   // Downloads a photo file to app storage and returns its local uri.
   downloadPhotoFile(path: string, photoId: string): Promise<string>;
+  // Ids of every project this account is currently a member of.
+  listMyProjectIds(): Promise<string[]>;
 }
 
 const PULL_OVERLAP_MS = 2 * 60 * 1000;
@@ -81,6 +85,13 @@ export async function runSync(api: CloudApi, records: CloudRecords, initialState
   state = applied.state;
   const patch = applied.patch;
 
+  // Shared projects this account was removed from disappear from this device.
+  if (state.syncedProjectIds.some((id) => roleIn(state, id) === "contributor")) {
+    const lost = forgetLostProjects(mergeForFiles(records, patch), state, new Set(await api.listMyProjectIds()));
+    state = lost.state;
+    mergePatch(patch, lost.patch);
+  }
+
   // 3. Upload files of photos the cloud doesn't have yet.
   const recordsAfterPull = mergeForFiles(records, patch);
   for (const photo of photosNeedingUpload(recordsAfterPull, state)) {
@@ -117,6 +128,14 @@ function mergeForFiles(records: CloudRecords, patch: LocalPatch): CloudRecords {
     photos.set(photo.id, photo);
   }
   return { ...records, photos: [...photos.values()] };
+}
+
+function mergePatch(into: LocalPatch, from: LocalPatch) {
+  for (const key of ["projects", "memories", "pageSections", "photos"] as const) {
+    const removed = new Set(from.remove[key]);
+    (into.upsert[key] as { id: string }[]) = (into.upsert[key] as { id: string }[]).filter((item) => !removed.has(item.id));
+    into.remove[key].push(...from.remove[key]);
+  }
 }
 
 function upsertPhoto(patch: LocalPatch, photo: PhotoItem) {

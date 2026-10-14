@@ -16,7 +16,17 @@ import { deleteCloudAccount } from "./account";
 import { cloudEnabled } from "./config";
 import { getSupabase } from "./supabaseClient";
 import { runSync, type SyncReport } from "./sync/engine";
-import { emptySyncState, isEmptyPatch, type SyncState } from "./sync/model";
+import {
+  emptySyncState,
+  forgetProjects,
+  isEmptyPatch,
+  removeProjectsPatch,
+  roleIn,
+  type ProjectRole,
+  type SyncState
+} from "./sync/model";
+import * as sharing from "./sharing";
+import type { ProjectInvite, ProjectMember } from "./sharing";
 import { createSupabaseCloudApi } from "./sync/supabaseApi";
 
 // Accounts and cloud backup. Everything here is inert when the build has no
@@ -43,6 +53,13 @@ type CloudContextValue = {
   deleteAccount: () => Promise<void>;
   backUpProject: (projectId: string) => Promise<void>;
   syncNow: () => Promise<void>;
+  // Sharing. Role is undefined for projects that aren't in the cloud.
+  projectRole: (projectId: string) => ProjectRole | undefined;
+  createInvite: (projectId: string) => Promise<ProjectInvite>;
+  joinWithInvite: (code: string) => Promise<string>;
+  listMembers: (projectId: string) => Promise<ProjectMember[]>;
+  removeMember: (projectId: string, userId: string) => Promise<void>;
+  leaveProject: (projectId: string) => Promise<void>;
 };
 
 const CloudContext = createContext<CloudContextValue | undefined>(undefined);
@@ -147,7 +164,7 @@ export function CloudProvider({ children }: PropsWithChildren) {
         if (!state) return;
         setSyncStatus("syncing");
         try {
-          const result = await runSync(createSupabaseCloudApi(supabase), recordsRef.current, state);
+          const result = await runSync(createSupabaseCloudApi(supabase, state.userId), recordsRef.current, state);
           if (!isEmptyPatch(result.patch)) {
             applyCloudPatch(result.patch);
           }
@@ -206,6 +223,69 @@ export function CloudProvider({ children }: PropsWithChildren) {
     [commitState, syncNow]
   );
 
+  const projectRole = useCallback(
+    (projectId: string): ProjectRole | undefined =>
+      syncState?.syncedProjectIds.includes(projectId) ? roleIn(syncState, projectId) : undefined,
+    [syncState]
+  );
+
+  const requireSession = useCallback(() => {
+    if (!supabase || !userId) throw new Error("Sign in first.");
+    return { supabase, userId };
+  }, [supabase, userId]);
+
+  const createInvite = useCallback(
+    async (projectId: string) => {
+      const { supabase: client, userId: me } = requireSession();
+      if (!syncStateRef.current?.syncedProjectIds.includes(projectId)) {
+        throw new Error("Back up the project before inviting people.");
+      }
+      // The project has to exist on the server before an invite can point at it.
+      await syncNow();
+      return sharing.createInvite(client, projectId, me);
+    },
+    [requireSession, syncNow]
+  );
+
+  const joinWithInvite = useCallback(
+    async (code: string) => {
+      const { supabase: client } = requireSession();
+      const projectId = await sharing.acceptInvite(client, code);
+      const state = syncStateRef.current;
+      if (state) {
+        // The joined project's rows are older than this device's pull cursor,
+        // so pull everything once. Unchanged rows are skipped.
+        await commitState({ ...state, pullCursor: undefined });
+      }
+      await syncNow();
+      return projectId;
+    },
+    [commitState, requireSession, syncNow]
+  );
+
+  const listMembers = useCallback(
+    async (projectId: string) => sharing.listMembers(requireSession().supabase, projectId),
+    [requireSession]
+  );
+
+  const removeMember = useCallback(
+    async (projectId: string, memberId: string) => sharing.removeMember(requireSession().supabase, projectId, memberId),
+    [requireSession]
+  );
+
+  // Leaves a project someone else shared. It disappears from this phone; the
+  // photos you added stay in the owner's book.
+  const leaveProject = useCallback(
+    async (projectId: string) => {
+      const { supabase: client, userId: me } = requireSession();
+      await sharing.removeMember(client, projectId, me);
+      applyCloudPatch(removeProjectsPatch(recordsRef.current, [projectId]));
+      const state = syncStateRef.current;
+      if (state) await commitState(forgetProjects(state, [projectId]));
+    },
+    [applyCloudPatch, commitState, requireSession]
+  );
+
   const sendSignInCode = useCallback(
     async (email: string) => {
       if (!supabase) throw new Error("Accounts aren't available in this build.");
@@ -255,7 +335,13 @@ export function CloudProvider({ children }: PropsWithChildren) {
       signOut,
       deleteAccount,
       backUpProject,
-      syncNow
+      syncNow,
+      projectRole,
+      createInvite,
+      joinWithInvite,
+      listMembers,
+      removeMember,
+      leaveProject
     }),
     [
       ready,
@@ -270,7 +356,13 @@ export function CloudProvider({ children }: PropsWithChildren) {
       signOut,
       deleteAccount,
       backUpProject,
-      syncNow
+      syncNow,
+      projectRole,
+      createInvite,
+      joinWithInvite,
+      listMembers,
+      removeMember,
+      leaveProject
     ]
   );
 

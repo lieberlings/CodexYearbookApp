@@ -34,12 +34,35 @@ export type SyncState = {
   syncedProjectIds: string[];
   // Per table, the fingerprint of each record as last agreed with the server,
   // and which project it belongs to.
-  confirmed: Record<CloudTable, Record<string, { hash: string; projectId: string }>>;
+  confirmed: Record<CloudTable, Record<string, ConfirmedEntry>>;
+  // This account's role in each synced project. Missing means owner (a project
+  // backed up from this device).
+  roles?: Record<string, ProjectRole>;
   // Newest server `updated_at` already pulled.
   pullCursor?: string;
   // Photo id -> storage path, once the photo's file is in the cloud.
   uploadedFiles: Record<string, string>;
 };
+
+export type ProjectRole = "owner" | "contributor";
+
+type ConfirmedEntry = {
+  hash: string;
+  projectId: string;
+  // For photos: added by this account, so this device may change or remove it.
+  own?: boolean;
+};
+
+export function roleIn(state: SyncState, projectId: string): ProjectRole {
+  return state.roles?.[projectId] ?? "owner";
+}
+
+// A contributor only ever writes the photos they added. Everything else in a
+// shared project is the owner's, and the owner's version always wins.
+function mayWrite(state: SyncState, table: CloudTable, projectId: string, addedBy?: string | null): boolean {
+  if (roleIn(state, projectId) === "owner") return true;
+  return table === "photos" && addedBy === state.userId;
+}
 
 export function emptySyncState(userId: string): SyncState {
   return {
@@ -47,6 +70,7 @@ export function emptySyncState(userId: string): SyncState {
     userId,
     syncedProjectIds: [],
     confirmed: { projects: {}, memories: {}, page_sections: {}, photos: {} },
+    roles: {},
     uploadedFiles: {}
   };
 }
@@ -149,7 +173,8 @@ export function planPush(records: CloudRecords, state: SyncState): PushPlan {
     const present = new Set<string>();
     for (const row of rows[table]) {
       present.add(row.id);
-      if (confirmed[row.id]?.hash !== fingerprint(row)) {
+      const projectId = row.project_id ?? row.id;
+      if (confirmed[row.id]?.hash !== fingerprint(row) && mayWrite(state, table, projectId, row.added_by)) {
         plan.upserts[table].push(row);
       }
     }
@@ -157,7 +182,8 @@ export function planPush(records: CloudRecords, state: SyncState): PushPlan {
       // Only delete what belongs to a project this device still syncs. A project
       // the user stopped syncing keeps its cloud copy.
       if (!present.has(id) && syncedProjects.has(entry.projectId)) {
-        plan.deletions[table].push(id);
+        const allowed = roleIn(state, entry.projectId) === "owner" || (table === "photos" && entry.own);
+        if (allowed) plan.deletions[table].push(id);
       }
     }
   }
@@ -169,7 +195,11 @@ export function confirmPush(state: SyncState, plan: PushPlan): SyncState {
   const confirmed = cloneConfirmed(state.confirmed);
   for (const table of CLOUD_TABLES) {
     for (const row of plan.upserts[table]) {
-      confirmed[table][row.id] = { hash: fingerprint(row), projectId: row.project_id ?? row.id };
+      confirmed[table][row.id] = {
+        hash: fingerprint(row),
+        projectId: row.project_id ?? row.id,
+        own: table === "photos" ? row.added_by === state.userId : undefined
+      };
     }
     for (const id of plan.deletions[table]) {
       delete confirmed[table][id];
@@ -229,6 +259,7 @@ export function applyPulledRows(
   const confirmed = cloneConfirmed(state.confirmed);
   const synced = new Set(state.syncedProjectIds);
   const uploadedFiles = { ...state.uploadedFiles };
+  const roles = { ...state.roles };
   let cursor = state.pullCursor;
   const local = toCloudRows(records, records.projects.map((project) => project.id), state.userId);
   const localById: Record<CloudTable, Map<string, CloudRow>> = {
@@ -246,9 +277,19 @@ export function applyPulledRows(
         cursor = row.updated_at;
       }
       const projectId = table === "projects" ? row.id : row.project_id ?? "";
+      if (table === "projects" && row.owner_id) {
+        roles[row.id] = row.owner_id === state.userId ? "owner" : "contributor";
+      }
       const localRow = localById[table].get(row.id);
       const known = confirmed[table][row.id];
-      const locallyChanged = Boolean(localRow && known && fingerprint(localRow) !== known.hash);
+      // Local edits only count where this account may write; in someone else's
+      // project the server copy always wins.
+      const locallyChanged = Boolean(
+        localRow &&
+          known &&
+          fingerprint(localRow) !== known.hash &&
+          mayWrite({ ...state, roles }, table, projectId, row.added_by)
+      );
 
       if (row.deleted_at) {
         if (localRow && !locallyChanged) {
@@ -264,7 +305,11 @@ export function applyPulledRows(
       if (locallyChanged) {
         continue;
       }
-      confirmed[table][row.id] = { hash: fingerprint(row), projectId };
+      confirmed[table][row.id] = {
+        hash: fingerprint(row),
+        projectId,
+        own: table === "photos" ? row.added_by === state.userId : undefined
+      };
       if (table === "projects") {
         synced.add(row.id);
       }
@@ -295,7 +340,7 @@ export function applyPulledRows(
   }
   return {
     patch,
-    state: { ...state, confirmed, syncedProjectIds: [...synced], pullCursor: cursor, uploadedFiles }
+    state: { ...state, confirmed, roles, syncedProjectIds: [...synced], pullCursor: cursor, uploadedFiles }
   };
 }
 
@@ -305,6 +350,7 @@ export function photosNeedingUpload(records: CloudRecords, state: SyncState): Ph
   return records.photos.filter(
     (photo) =>
       synced.has(photo.projectId) &&
+      mayWrite(state, "photos", photo.projectId, photo.addedBy ?? state.userId) &&
       !state.uploadedFiles[photo.id] &&
       !isCloudPlaceholderUri(photo.uri) &&
       !photo.uri.startsWith("data:")
@@ -322,4 +368,49 @@ export function photosNeedingDownload(records: CloudRecords, state: SyncState): 
 export function photoStoragePath(photo: PhotoItem): string {
   const extension = photo.uri.match(/\.([a-zA-Z0-9]{3,4})(?:\?|$)/)?.[1]?.toLowerCase() ?? "jpg";
   return `${photo.projectId}/${photo.id}.${extension}`;
+}
+
+// Drops projects this account was removed from (or left) on another device:
+// they are still synced here but the server no longer lists a membership.
+export function forgetLostProjects(
+  records: CloudRecords,
+  state: SyncState,
+  memberOf: Set<string>
+): { patch: LocalPatch; state: SyncState } {
+  const patch = emptyPatch();
+  const lost = state.syncedProjectIds.filter((id) => roleIn(state, id) === "contributor" && !memberOf.has(id));
+  if (lost.length === 0) {
+    return { patch, state };
+  }
+  return { patch: removeProjectsPatch(records, lost), state: forgetProjects(state, lost) };
+}
+
+export function removeProjectsPatch(records: CloudRecords, projectIds: string[]): LocalPatch {
+  const patch = emptyPatch();
+  const gone = new Set(projectIds);
+  const memoryIds = new Set(records.memories.filter((memory) => gone.has(memory.projectId)).map((memory) => memory.id));
+  patch.remove.projects = [...gone];
+  patch.remove.memories = [...memoryIds];
+  patch.remove.pageSections = records.pageSections.filter((section) => memoryIds.has(section.memoryId)).map((section) => section.id);
+  patch.remove.photos = records.photos.filter((photo) => gone.has(photo.projectId)).map((photo) => photo.id);
+  return patch;
+}
+
+// Stops syncing projects without touching their cloud copy.
+export function forgetProjects(state: SyncState, projectIds: string[]): SyncState {
+  const gone = new Set(projectIds);
+  const confirmed = cloneConfirmed(state.confirmed);
+  for (const table of CLOUD_TABLES) {
+    for (const [id, entry] of Object.entries(confirmed[table])) {
+      if (gone.has(entry.projectId)) delete confirmed[table][id];
+    }
+  }
+  const roles = { ...state.roles };
+  projectIds.forEach((id) => delete roles[id]);
+  return {
+    ...state,
+    confirmed,
+    roles,
+    syncedProjectIds: state.syncedProjectIds.filter((id) => !gone.has(id))
+  };
 }

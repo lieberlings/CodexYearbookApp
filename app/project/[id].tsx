@@ -690,6 +690,13 @@ export default function ProjectDetailsScreen() {
 
   const project = getProjectById(projectId);
   const projectBackedUp = project ? cloud.isProjectBackedUp(project.id) : false;
+  // A project someone else shared can't be edited here; contributors get their own view.
+  const sharedWithMe = cloud.projectRole(projectId) === "contributor";
+  useEffect(() => {
+    if (sharedWithMe) {
+      router.replace({ pathname: "/shared/[id]", params: { id: projectId } });
+    }
+  }, [projectId, sharedWithMe]);
   const memories = useMemo(() => getMemoriesByProjectId(projectId), [getMemoriesByProjectId, projectId]);
   const regularMemories = useMemo(() => memories.filter(memory => !memory.bookRole), [memories]);
   const openingBookPart = useRef(false);
@@ -2993,6 +3000,19 @@ export default function ProjectDetailsScreen() {
                 <Text style={styles.actionMenuButtonText}>
                   {projectBackedUp ? "Backed up to cloud" : cloud.user ? "Back up to cloud" : "Sign in to back up"}
                 </Text>
+              </Pressable>
+            ) : null}
+            {cloud.enabled && projectBackedUp ? (
+              <Pressable
+                style={styles.actionMenuButton}
+                accessibilityRole="button"
+                onPress={() => {
+                  setProjectMenuVisible(false);
+                  router.push({ pathname: "/project/[id]/people", params: { id: project.id } });
+                }}
+              >
+                <Ionicons name="people-outline" size={20} color="#4A4239" />
+                <Text style={styles.actionMenuButtonText}>People & sharing</Text>
               </Pressable>
             ) : null}
             <Pressable

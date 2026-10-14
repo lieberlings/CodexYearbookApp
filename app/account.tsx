@@ -1,8 +1,9 @@
-import { Stack } from "expo-router";
+import { router, Stack } from "expo-router";
 import { useState } from "react";
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCloud } from "../src/cloud/CloudContext";
+import { parseInviteCode } from "../src/cloud/sharing";
 import { useAppData } from "../src/context/AppContext";
 import { Button } from "../src/ui/Button";
 import { colors, radii, spacing, type } from "../src/ui/theme";
@@ -21,6 +22,7 @@ export default function AccountScreen() {
   const [code, setCode] = useState("");
   const [codeSent, setCodeSent] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [inviteCode, setInviteCode] = useState("");
 
   async function run(action: () => Promise<void>) {
     setBusy(true);
@@ -67,6 +69,33 @@ export default function AccountScreen() {
                     : `Last synced ${formatTime(cloud.lastSyncedAt)}`}
               </Text>
               <Button label="Sync now" icon="sync-outline" busy={cloud.syncStatus === "syncing"} onPress={() => void cloud.syncNow()} />
+            </View>
+            <View style={styles.card}>
+              <Text style={styles.heading}>Join a shared project</Text>
+              <Text style={styles.body}>Got an invite? Paste the code (or the whole message) here.</Text>
+              <TextInput
+                accessibilityLabel="Invite code"
+                value={inviteCode}
+                onChangeText={setInviteCode}
+                autoCapitalize="none"
+                autoCorrect={false}
+                placeholder="Invite code"
+                placeholderTextColor={colors.textMuted}
+                style={styles.input}
+              />
+              <Button
+                label="Join"
+                variant="primary"
+                busy={busy}
+                disabled={!parseInviteCode(inviteCode)}
+                onPress={() =>
+                  void run(async () => {
+                    const projectId = await cloud.joinWithInvite(inviteCode);
+                    setInviteCode("");
+                    router.push({ pathname: "/shared/[id]", params: { id: projectId } });
+                  })
+                }
+              />
             </View>
             <View style={styles.card}>
               <Text style={styles.body}>
