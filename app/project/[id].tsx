@@ -25,6 +25,7 @@ import { useAppData } from "../../src/context/AppContext";
 import { formatPhotoLocation, normalizePhotoLocation } from "../../src/lib/photoLocation";
 import { exportProjectPhotosToZip, sharePhotoZip } from "../../src/services/photoZipExportService";
 import { exportProjectToPdf, sharePdf } from "../../src/services/exportService";
+import { confirmLowResolutionPhotos } from "../../src/features/export/lowResolutionAlert";
 import { detectPhotoFacesHeuristic } from "../../src/services/faceDetectionService";
 import { detectFacesLocally, NativeFaceDetectionResult } from "../../src/services/nativeFaceDetection";
 import { pickImagesWithAndroidPhotoPicker } from "../../src/services/androidPhotoPicker";
@@ -1520,14 +1521,17 @@ export default function ProjectDetailsScreen() {
       const pageSectionsByMemoryId = Object.fromEntries(
         memories.map((memory) => [memory.id, getPageSectionsByMemoryId(memory.id)])
       );
-      const pdfUri = await exportProjectToPdf(
+      const result = await exportProjectToPdf(
         project,
         memories,
         photosByMemoryId,
         pageSectionsByMemoryId,
         slotOverridesByPage
       );
-      await sharePdf(pdfUri);
+      if (result.lowResolutionPhotos.length > 0 && !(await confirmLowResolutionPhotos(result.lowResolutionPhotos))) {
+        return;
+      }
+      await sharePdf(result.uri);
     } catch (error) {
       Alert.alert("Unable to export PDF", (error as Error).message);
     } finally {
