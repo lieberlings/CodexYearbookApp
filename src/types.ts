@@ -35,7 +35,17 @@ export type CoverDesign = {
   spineWidthMm?: number;
 };
 
+// Cloud state for a project that is backed up or shared. Absent for projects
+// that only live on this phone.
+export type ProjectCloudInfo = {
+  role: "owner" | "contributor" | "viewer";
+  ownerId: string;
+  // Set when this account lost access; the local copy is kept read-only.
+  accessRemovedAt?: string;
+};
+
 export type Project = {
+  cloud?: ProjectCloudInfo;
   coverDesign?: CoverDesign;
   id: string;
   name: string;
@@ -58,6 +68,8 @@ export type MemoryKind = "event" | "collection" | "hybrid";
 export type MemoryStatus = "suggested" | "watching" | "active" | "finalized" | "archived";
 
 export type Memory = {
+  // Who may edit this memory in a shared project. Null means the owner.
+  cloud?: { createdBy?: string; controllerId?: string | null };
   bookRole?: "front-cover" | "back-cover" | "dedication";
   id: string;
   projectId: string;
@@ -218,6 +230,8 @@ export type PhotoAnalysisMetadata = {
 };
 
 export type PhotoItem = {
+  // Where the shared print-quality copy lives, and who added the photo.
+  cloud?: { path?: string; addedBy?: string };
   id: string;
   projectId: string;
   memoryId?: string;

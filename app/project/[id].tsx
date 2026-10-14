@@ -24,6 +24,7 @@ import { MediaLibrarySelectionModal } from "../../src/components/MediaLibrarySel
 import { useAppData } from "../../src/context/AppContext";
 import { formatPhotoLocation, normalizePhotoLocation } from "../../src/lib/photoLocation";
 import { exportProjectPhotosToZip, sharePhotoZip } from "../../src/services/photoZipExportService";
+import { useCloud, useProjectAccess } from "../../src/cloud/CloudContext";
 import { exportProjectToPdf, sharePdf } from "../../src/services/exportService";
 import { detectPhotoFacesHeuristic } from "../../src/services/faceDetectionService";
 import { detectFacesLocally, NativeFaceDetectionResult } from "../../src/services/nativeFaceDetection";
@@ -616,6 +617,8 @@ export default function ProjectDetailsScreen() {
     addPhotoAssetsToProject,
     assignPhotosToMemory
   } = useAppData();
+  const cloud = useCloud();
+  const access = useProjectAccess(projectId);
   const slotOverridesByPage = useEditorStore((state) => state.slotOverridesByPage);
 
   const [exporting, setExporting] = useState(false);
@@ -2318,10 +2321,32 @@ export default function ProjectDetailsScreen() {
           </Text>
           <Text style={styles.projectStats}>{projectStats.text}</Text>
         </View>
+        {cloud.configured ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Share"
+            style={styles.topIconButton}
+            onPress={() => router.push({ pathname: "/project/[id]/share", params: { id: project.id } })}
+          >
+            <Ionicons name={project.cloud ? "people" : "people-outline"} size={24} color="#241F1B" />
+          </Pressable>
+        ) : null}
         <Pressable style={styles.topIconButton} onPress={onOpenProjectMenu}>
           <Ionicons name="ellipsis-horizontal" size={24} color="#241F1B" />
         </Pressable>
       </View>
+      {access.shared && access.role !== "owner" ? (
+        <View style={styles.sharedBanner}>
+          <Ionicons name={access.accessRemoved ? "lock-closed-outline" : "people-outline"} size={16} color="#4E3FBC" />
+          <Text style={styles.sharedBannerText}>
+            {access.accessRemoved
+              ? "You no longer have access. This copy won't update."
+              : access.role === "contributor"
+                ? "Shared with you. Add photos to any memory, and edit the memories you're in charge of."
+                : "Shared with you to look at."}
+          </Text>
+        </View>
+      ) : null}
 
       <View style={styles.contentArea}>
         <DraggableFlatList
@@ -2834,6 +2859,9 @@ export default function ProjectDetailsScreen() {
             </View>
           }
           onDragEnd={({ data, from, to }) => {
+            if (!access.canManageProject) {
+              return;
+            }
             setMemoryListData(data);
             if (from === to) {
               return;
@@ -2860,7 +2888,7 @@ export default function ProjectDetailsScreen() {
                 <View style={[styles.memoryCardShell, isActive ? styles.memoryCardShellActive : null]}>
                   <Pressable
                     delayLongPress={180}
-                    onLongPress={drag}
+                    onLongPress={access.canManageProject ? drag : undefined}
                     onPress={() => {
                       if (!isActive) {
                         router.push({ pathname: "/memory/[id]", params: { id: item.id } });
@@ -2926,10 +2954,12 @@ export default function ProjectDetailsScreen() {
         />
       </View>
 
-      <Pressable onPress={openProjectAddMenu} style={[styles.addButton, { bottom: bottomToolbarHeight + 12 }]}>
-        <Ionicons name="add" size={22} color="#ffffff" />
-        <Text style={styles.addButtonLabel}>Add memory</Text>
-      </Pressable>
+      {access.canCreateMemories ? (
+        <Pressable onPress={openProjectAddMenu} style={[styles.addButton, { bottom: bottomToolbarHeight + 12 }]}>
+          <Ionicons name="add" size={22} color="#ffffff" />
+          <Text style={styles.addButtonLabel}>Add memory</Text>
+        </Pressable>
+      ) : null}
 
       <View style={[styles.bottomToolbar, { height: bottomToolbarHeight, paddingBottom: insets.bottom + 18 }]}>
         <Pressable style={styles.toolbarItem} onPress={() => router.replace("/")}>
@@ -4246,6 +4276,18 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: "#E8DFD2"
   },
+  sharedBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginHorizontal: 16,
+    marginBottom: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    backgroundColor: "#EDE8FA"
+  },
+  sharedBannerText: { flex: 1, color: "#4E3FBC", fontSize: 13, lineHeight: 18 },
   topIconButton: {
     width: 40,
     height: 40,

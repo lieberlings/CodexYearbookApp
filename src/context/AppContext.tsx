@@ -4,6 +4,7 @@ import { Alert } from "react-native";
 import { makeId } from "../lib/id";
 import { normalizePhotoLocation } from "../lib/photoLocation";
 import { AppDataLoadError, loadAppData, saveAppData } from "../storage";
+import { applyPatchPart, CloudPatch } from "../cloud/syncTypes";
 import {
   applyPhotoAssignmentToMemory,
   buildMemorySeedFromSuggestion,
@@ -24,6 +25,7 @@ import {
   PhotoItem,
   Project,
   ProjectAssistLevel,
+  ProjectCloudInfo,
   ProjectFinalizationStatus,
   ProjectStyleIntensity,
   ProjectTimelineMode,
@@ -42,6 +44,11 @@ import { scanMediaLibrarySuggestionsForProject } from "../services/librarySugges
 
 type AppContextValue = {
   loading: boolean;
+  // True when saved data couldn't be loaded; nothing is saved or synced then.
+  persistenceBlocked: boolean;
+  // Merges changes pulled from the cloud, skipping records edited meanwhile.
+  applyCloudPatch: (patch: CloudPatch) => void;
+  setProjectCloud: (projectId: string, cloud: ProjectCloudInfo | undefined) => void;
   projects: Project[];
   memories: Memory[];
   pageSections: MemoryPageSection[];
@@ -389,6 +396,17 @@ export function AppProvider({ children }: PropsWithChildren) {
       console.warn("Saving app data failed; the next change will retry.", error)
     );
   }, [loading, persistenceBlocked, memories, pageSections, photos, projects, suggestions]);
+
+  const applyCloudPatch = useCallback((patch: CloudPatch) => {
+    setProjects((prev) => applyPatchPart(prev, patch.projects));
+    setMemories((prev) => applyPatchPart(prev, patch.memories));
+    setPageSections((prev) => applyPatchPart(prev, patch.pageSections));
+    setPhotos((prev) => applyPatchPart(prev, patch.photos));
+  }, []);
+
+  const setProjectCloud = useCallback((projectId: string, cloud: ProjectCloudInfo | undefined) => {
+    setProjects((prev) => prev.map((project) => (project.id === projectId ? { ...project, cloud } : project)));
+  }, []);
 
   const pickProjectThumbnail = useCallback(async (): Promise<string | undefined> => {
     const asset = await pickSingleImageFromLibrary();
@@ -1653,6 +1671,9 @@ export function AppProvider({ children }: PropsWithChildren) {
   const value = useMemo(
     () => ({
       loading,
+      persistenceBlocked,
+      applyCloudPatch,
+      setProjectCloud,
       projects,
       memories,
       pageSections,
@@ -1773,7 +1794,10 @@ export function AppProvider({ children }: PropsWithChildren) {
       replaceMemoryPages,
       patchPageSection,
       updateMemory,
-      updateProject
+      updateProject,
+      persistenceBlocked,
+      applyCloudPatch,
+      setProjectCloud
     ]
   );
 

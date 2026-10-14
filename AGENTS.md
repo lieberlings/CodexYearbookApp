@@ -48,6 +48,13 @@ The repository root is `C:\Users\Lieber\Documents\YearBookApp\CodexYearbookApp`.
 - Read packs through `src/library/backgrounds.ts`; never import pack files directly or keep hand-written asset lists.
 - Retire shipped background ids with `"retired": true` instead of deleting or renaming them.
 
+## Accounts, Backup and Sharing
+
+- Supabase backs accounts, cloud backup and sharing. Setup and design: `docs/engineering/supabase_setup.md`. Without `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY` the app runs fully on-device and hides account UI.
+- The schema and access rules live in `supabase/migrations/`; add new migration files instead of editing shipped ones, and extend `supabase/tests/access_rules.sql` (run with `bash supabase/tests/run.sh`).
+- Client code is in `src/cloud/`. `records.ts` decides what leaves the phone (no exact GPS, file paths or analysis) and mirrors the access rules; keep it in step with the SQL policies.
+- Only the anon key may ship in the app. The service_role key never goes in the app or the repo.
+
 ## Working Agreements
 
 - Prefer small, focused changes that match the existing Expo Router and service/context layout.
