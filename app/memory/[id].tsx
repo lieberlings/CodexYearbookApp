@@ -48,6 +48,8 @@ import { PHOTO_PICKER_SELECTION_LIMIT, ANDROID_PHOTO_PICKER_IMPORTS_ENABLED, DRA
 import type { InspectorKind } from "../../src/features/memoryEditor/helpers";
 import { IconOrb } from "../../src/features/memoryEditor/EditorControls";
 import { styles } from "../../src/features/memoryEditor/styles";
+import { useProjectAccess } from "../../src/cloud/CloudContext";
+import { SharedMemoryBanner } from "../../src/features/cloud/SharedMemoryBanner";
 import { BackgroundPanel } from "../../src/features/memoryEditor/panels/BackgroundPanel";
 import { BordersPanel } from "../../src/features/memoryEditor/panels/BordersPanel";
 import { PagesPanel } from "../../src/features/memoryEditor/panels/PagesPanel";
@@ -159,6 +161,9 @@ export default function MemoryDetailsScreen() {
   });
 
   const memory = getMemoryById(memoryId);
+  const access = useProjectAccess(memory?.projectId);
+  // False when this memory belongs to a shared project and someone else edits it.
+  const editable = access.canEditMemory(memoryId);
   const photos = useMemo(() => getPhotosByMemoryId(memoryId), [getPhotosByMemoryId, memoryId]);
   const pageSections = useMemo(() => getPageSectionsByMemoryId(memoryId), [getPageSectionsByMemoryId, memoryId]);
   const project = memory ? getProjectById(memory.projectId) : undefined;
@@ -1107,14 +1112,26 @@ export default function MemoryDetailsScreen() {
           </Text>
           <Text style={styles.topBarSubtitle}>{editingTextBoxId ? "Editing text" : topBarMeta}</Text>
         </View>
-        <Pressable accessibilityLabel="Undo" disabled={!history.canUndo} onPress={history.undo} style={{ padding: 8, opacity: history.canUndo ? 1 : .3 }}><Ionicons name="arrow-undo" size={22} color="#6B5BD2" /></Pressable>
-        <Pressable accessibilityLabel="Redo" disabled={!history.canRedo} onPress={history.redo} style={{ padding: 8, opacity: history.canRedo ? 1 : .3 }}><Ionicons name="arrow-redo" size={22} color="#6B5BD2" /></Pressable>
+        {editable ? <><Pressable accessibilityLabel="Undo" disabled={!history.canUndo} onPress={history.undo} style={{ padding: 8, opacity: history.canUndo ? 1 : .3 }}><Ionicons name="arrow-undo" size={22} color="#6B5BD2" /></Pressable>
+        <Pressable accessibilityLabel="Redo" disabled={!history.canRedo} onPress={history.redo} style={{ padding: 8, opacity: history.canRedo ? 1 : .3 }}><Ionicons name="arrow-redo" size={22} color="#6B5BD2" /></Pressable></> : null}
         {selectedTextBox ? (
           <Button variant="primary" size="sm" label="Done" onPress={saveTextEditing} />
         ) : <View style={styles.topBarGhost} />}
       </View>
+      {!editable ? (
+        <SharedMemoryBanner
+          access={access}
+          projectId={memory.projectId}
+          memoryId={memory.id}
+          onAddPhotos={() => void onAddPhotos()}
+        />
+      ) : null}
       {(memory.bookRole === "front-cover" || memory.bookRole === "back-cover") && <CoverEditorStrip projectId={memory.projectId} panel={memory.bookRole === "front-cover" ? "front" : "back"} />}
-      <View onLayout={(event) => setEditorHeight(event.nativeEvent.layout.height - insets.bottom - 24)} style={[styles.container, { paddingBottom: insets.bottom + 12 }]}>
+      <View
+        onLayout={(event) => setEditorHeight(event.nativeEvent.layout.height - insets.bottom - 24)}
+        pointerEvents={editable ? "auto" : "none"}
+        style={[styles.container, { paddingBottom: insets.bottom + 12 }]}
+      >
         {activeSection && activeRenderedPage ? (() => {
           const section = activeSection;
           const renderedPage = activeRenderedPage;

@@ -17,6 +17,7 @@ import {
   View
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useCloud } from "../src/cloud/CloudContext";
 import { useAppData } from "../src/context/AppContext";
 import {
   ProjectAssistLevel,
@@ -76,6 +77,7 @@ export default function HomeScreen() {
     getPageSectionsByMemoryId,
     getMemoryThumbnailUri
   } = useAppData();
+  const cloud = useCloud();
 
   const [composerVisible, setComposerVisible] = useState(false);
   const [composerMode, setComposerMode] = useState<ProjectComposerMode>("create");
@@ -310,6 +312,17 @@ export default function HomeScreen() {
           <View style={styles.headerTextWrap}>
             <Text style={styles.screenTitle}>Your books</Text>
           </View>
+          {cloud.configured ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={cloud.userId ? "Account" : "Sign in"}
+              hitSlop={10}
+              onPress={() => router.push("/account")}
+              style={styles.accountButton}
+            >
+              <Ionicons name={cloud.userId ? "person-circle" : "person-circle-outline"} size={30} color="#4A4239" />
+            </Pressable>
+          ) : null}
         </View>
 
         <View style={styles.projectList}>
@@ -335,7 +348,14 @@ export default function HomeScreen() {
                     </View>
                   )}
                   <View style={styles.projectInfo}>
-                    <Text style={styles.timelineBadge}>{project.timelineMode}</Text>
+                    <View style={styles.badgeRow}>
+                      <Text style={styles.timelineBadge}>{project.timelineMode}</Text>
+                      {project.cloud ? (
+                        <Text style={[styles.timelineBadge, styles.cloudBadge]}>
+                          {project.cloud.accessRemovedAt ? "No access" : project.cloud.role === "owner" ? "Backed up" : "Shared with you"}
+                        </Text>
+                      ) : null}
+                    </View>
                     <Text numberOfLines={1} style={styles.projectTitle}>
                       {project.name}
                     </Text>
@@ -562,6 +582,9 @@ const styles = StyleSheet.create({
     borderRadius: 13, paddingHorizontal: 11, paddingVertical: 6,
     fontSize: 11, fontWeight: "700", letterSpacing: 1, textTransform: "uppercase", marginBottom: 7
   },
+  badgeRow: { flexDirection: "row", gap: 6, flexWrap: "wrap" },
+  cloudBadge: { backgroundColor: "#EDE8FA", color: "#4E3FBC" },
+  accountButton: { padding: 2 },
   addButtonLabel: { color: "#FFFFFF", fontSize: 15, fontWeight: "700" },
   screen: {
     flex: 1,

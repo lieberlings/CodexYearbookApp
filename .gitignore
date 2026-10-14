@@ -15,3 +15,6 @@ yarn-error.*
 
 expo-env.d.ts
 # @end expo-cli
+
+# Local environment (Supabase settings and other machine-only config)
+.env*.local
