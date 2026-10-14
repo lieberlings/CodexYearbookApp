@@ -30,6 +30,24 @@ export function effectivePrintPpi(slot: LayoutSlot, image: PrintImageDimensions,
   return Math.min(image.width * 25.4 / (widthMm * metrics.width), image.height * 25.4 / (heightMm * metrics.height));
 }
 
+// Width the whole image is drawn at, cropped-away parts included. Multiply by
+// the target PPI to get the pixel width worth embedding for this slot.
+export function renderedImageWidthInches(slot: LayoutSlot, imageAspect: number, size: PrintSize): number | undefined {
+  validatePrintSize(size);
+  if (![imageAspect, slot.frame.width, slot.frame.height, slot.photoScale].every(value => Number.isFinite(value) && value > 0)) return undefined;
+  const widthMm = size.widthMm * slot.frame.width;
+  const heightMm = size.heightMm * slot.frame.height;
+  const metrics = getPhotoRenderMetrics({
+    containerAspect: widthMm / heightMm,
+    imageAspect,
+    fitMode: slot.fitMode,
+    scale: slot.photoScale,
+    offsetX: slot.photoOffsetX,
+    offsetY: slot.photoOffsetY
+  });
+  return widthMm * metrics.width / 25.4;
+}
+
 export function printResolutionStatus(ppi: number | undefined): "unknown" | "low" | "below-recommended" | "recommended" {
   if (ppi === undefined || !Number.isFinite(ppi) || ppi <= 0) return "unknown";
   if (ppi < 220) return "low";

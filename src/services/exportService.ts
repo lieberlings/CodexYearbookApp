@@ -10,6 +10,40 @@ import { getBackgroundAssetSourceUri } from "../layout/backgroundAssets";
 import { getPhotoAspect, getPhotoRenderMetrics } from "../layout/photoMetrics";
 import { SlotOverride } from "../state/editorStore";
 import { Memory, MemoryPageSection, PhotoItem, Project } from "../types";
+import type { LayoutSlot } from "../layout/schemas";
+import { effectivePrintPpi, printResolutionStatus, renderedImageWidthInches, type PrintSize } from "./bookfactoryPrintPlan";
+import { BookSize, getBookSize, mmToPoints, pdfPageSizePoints } from "./bookSizes";
+
+// Text sizes and stroke widths are authored against a 620 px wide page.
+const DESIGN_CANVAS_PX = 620;
+const CSS_PX_PER_MM = 96 / 25.4;
+const TARGET_PRINT_PPI = 300;
+const PRINT_JPEG_QUALITY = 0.9;
+// Slots this close to a trim edge are stretched into the bleed so a slightly
+// off cut doesn't leave a white sliver.
+const EDGE_SNAP = 0.005;
+
+export type PdfExportOptions = {
+  bookSizeId?: string;
+};
+
+export type LowResolutionPhoto = {
+  photoId: string;
+  pageLabel: string;
+  ppi: number;
+};
+
+export type PdfExportResult = {
+  uri: string;
+  bookSize: BookSize;
+  lowResolutionPhotos: LowResolutionPhoto[];
+};
+
+type EmbeddedImage = {
+  src: string;
+  width?: number;
+  height?: number;
+};
 
 function escapeHtml(value: string): string {
   return value
@@ -39,30 +73,48 @@ function applyColorOpacity(color: string | undefined, opacity: number | undefine
   return `rgba(${r}, ${g}, ${b}, ${normalizedOpacity})`;
 }
 
-async function toEmbeddableImageSource(photo: PhotoItem): Promise<string | undefined> {
+// Embed each photo at the pixel width its largest placement needs for
+// TARGET_PRINT_PPI, never upscaling past the original.
+async function toEmbeddableImage(photo: PhotoItem, neededWidthInches: number | undefined): Promise<EmbeddedImage | undefined> {
   if (photo.exportDataUri?.startsWith("data:image/")) {
-    return photo.exportDataUri;
+    return { src: photo.exportDataUri, width: photo.width, height: photo.height };
   }
   if (photo.uri.startsWith("data:image/")) {
-    return photo.uri;
+    return { src: photo.uri, width: photo.width, height: photo.height };
   }
+  const fallback = photo.uri.startsWith("file://") ? { src: photo.uri, width: photo.width, height: photo.height } : undefined;
   try {
-    const manipulated = await ImageManipulator.manipulateAsync(
-      photo.uri,
-      [{ resize: { width: 1100 } }],
-      {
-        compress: 0.48,
-        format: ImageManipulator.SaveFormat.JPEG,
-        base64: true
-      }
-    );
-    if (manipulated.base64) {
-      return `data:image/jpeg;base64,${manipulated.base64}`;
+    // Measure the decoded image (orientation applied) rather than trusting library metadata.
+    const original = await ImageManipulator.manipulateAsync(photo.uri, [], {
+      compress: 0,
+      format: ImageManipulator.SaveFormat.JPEG
+    });
+    const targetWidth = neededWidthInches ? Math.ceil(neededWidthInches * TARGET_PRINT_PPI) : original.width;
+    const actions = targetWidth < original.width ? [{ resize: { width: targetWidth } }] : [];
+    const embedded = await ImageManipulator.manipulateAsync(photo.uri, actions, {
+      compress: PRINT_JPEG_QUALITY,
+      format: ImageManipulator.SaveFormat.JPEG,
+      base64: true
+    });
+    if (embedded.base64) {
+      return { src: `data:image/jpeg;base64,${embedded.base64}`, width: embedded.width, height: embedded.height };
     }
   } catch {
-    return photo.uri.startsWith("file://") ? photo.uri : undefined;
+    return fallback;
   }
-  return photo.uri.startsWith("file://") ? photo.uri : undefined;
+  return fallback;
+}
+
+function snapToBleed(frame: LayoutSlot["frame"], rotation: number | undefined, bleedX: number, bleedY: number): LayoutSlot["frame"] {
+  if (rotation) {
+    return frame;
+  }
+  let { x, y, width, height } = frame;
+  if (x <= EDGE_SNAP) { width += x + bleedX; x = -bleedX; }
+  if (y <= EDGE_SNAP) { height += y + bleedY; y = -bleedY; }
+  if (x + width >= 1 - EDGE_SNAP) { width = 1 + bleedX - x; }
+  if (y + height >= 1 - EDGE_SNAP) { height = 1 + bleedY - y; }
+  return { x, y, width, height };
 }
 
 async function renderPhotoBlock(src: string | undefined): Promise<string> {
@@ -77,26 +129,44 @@ export async function exportProjectToPdf(
   memories: Memory[],
   photosByMemoryId: Record<string, PhotoItem[]>,
   pageSectionsByMemoryId?: Record<string, MemoryPageSection[]>,
-  slotOverridesByPage?: Record<string, Record<string, SlotOverride>>
-): Promise<string> {
+  slotOverridesByPage?: Record<string, Record<string, SlotOverride>>,
+  options: PdfExportOptions = {}
+): Promise<PdfExportResult> {
+  const bookSize = getBookSize(options.bookSizeId);
+  const trim: PrintSize = { widthMm: bookSize.trimWidthMm, heightMm: bookSize.trimHeightMm };
+  const pagePoints = pdfPageSizePoints(bookSize);
+  const bleedX = bookSize.bleedMm / bookSize.trimWidthMm;
+  const bleedY = bookSize.bleedMm / bookSize.trimHeightMm;
+  const canvasHeightPx = DESIGN_CANVAS_PX * bookSize.trimHeightMm / bookSize.trimWidthMm;
+  const canvasScale = (bookSize.trimWidthMm * CSS_PX_PER_MM) / DESIGN_CANVAS_PX;
+
   const baseDocument = buildLayoutDocument(project, memories, photosByMemoryId, pageSectionsByMemoryId, "portrait");
   const pages = baseDocument.pages.map((page) => applySlotOverridesToPage(page, slotOverridesByPage?.[page.id]));
-  const sourceCache = new Map<string, string | undefined>();
   const photosById = Object.fromEntries(Object.values(photosByMemoryId).flat().map((photo) => [photo.id, photo] as const));
+  const printFrame = (slot: LayoutSlot) => snapToBleed(slot.frame, slot.rotation, bleedX, bleedY);
 
-  async function getSource(photo: PhotoItem): Promise<string | undefined> {
-    if (sourceCache.has(photo.id)) {
-      return sourceCache.get(photo.id);
+  // Size each photo once, for the largest place it prints.
+  const neededWidthInches = new Map<string, number>();
+  for (const page of pages) {
+    for (const slot of page.slots) {
+      const photo = slot.photoId ? photosById[slot.photoId] : undefined;
+      if (!photo) continue;
+      const inches = renderedImageWidthInches({ ...slot, frame: printFrame(slot) }, getPhotoAspect(photo), trim);
+      if (inches) neededWidthInches.set(photo.id, Math.max(inches, neededWidthInches.get(photo.id) ?? 0));
     }
-    const source = await toEmbeddableImageSource(photo);
-    sourceCache.set(photo.id, source);
-    return source;
+  }
+  const imageCache = new Map<string, EmbeddedImage | undefined>();
+  async function getImage(photo: PhotoItem): Promise<EmbeddedImage | undefined> {
+    if (!imageCache.has(photo.id)) {
+      imageCache.set(photo.id, await toEmbeddableImage(photo, neededWidthInches.get(photo.id)));
+    }
+    return imageCache.get(photo.id);
   }
 
+  const lowResolutionPhotos: LowResolutionPhoto[] = [];
   let pageHtml = "";
   for (const page of pages) {
-    const isBookPart = memories.some(memory => memory.id === page.memoryId && memory.bookRole);
-    const pageTitle = page.pageCount > 1 ? `${page.memoryTitle} (${page.pageIndex + 1}/${page.pageCount})` : page.memoryTitle;
+    const pageLabel = page.pageCount > 1 ? `${page.memoryTitle} (${page.pageIndex + 1}/${page.pageCount})` : page.memoryTitle;
     const backgroundUri = getBackgroundAssetSourceUri(page.backgroundAssetId);
     const backgroundSource = backgroundUri
       ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(await loadSvgAssetXml(backgroundUri))}`
@@ -110,9 +180,17 @@ export async function exportProjectToPdf(
       if (!photo && textAnchorSlotIds.has(slot.id)) {
         continue;
       }
-      const src = photo ? await getSource(photo) : undefined;
+      const image = photo ? await getImage(photo) : undefined;
+      const src = image?.src;
+      const frame = printFrame(slot);
+      if (photo && image?.width && image.height) {
+        const ppi = effectivePrintPpi({ ...slot, frame }, { width: image.width, height: image.height }, trim);
+        if (ppi !== undefined && printResolutionStatus(ppi) === "low") {
+          lowResolutionPhotos.push({ photoId: photo.id, pageLabel, ppi: Math.round(ppi) });
+        }
+      }
       const photoMetrics = getPhotoRenderMetrics({
-        containerAspect: slot.frame.width / Math.max(0.0001, slot.frame.height),
+        containerAspect: frame.width / Math.max(0.0001, frame.height),
         imageAspect: getPhotoAspect(photo),
         fitMode: slot.fitMode,
         scale: slot.photoScale ?? 1,
@@ -124,10 +202,10 @@ export async function exportProjectToPdf(
           class="slot"
           style="
             transform:rotate(${slot.rotation ?? 0}deg); z-index:${slot.zIndex ?? 2}; background:${slot.shape && slot.shape !== "rectangle" ? "transparent" : "#f8fafc"};
-            left:${(slot.frame.x * 100).toFixed(4)}%;
-            top:${(slot.frame.y * 100).toFixed(4)}%;
-            width:${(slot.frame.width * 100).toFixed(4)}%;
-            height:${(slot.frame.height * 100).toFixed(4)}%;
+            left:${(frame.x * 100).toFixed(4)}%;
+            top:${(frame.y * 100).toFixed(4)}%;
+            width:${(frame.width * 100).toFixed(4)}%;
+            height:${(frame.height * 100).toFixed(4)}%;
             border-color:${escapeAttr(page.slotBorderColor ?? "#e2e8f0")};
             border-width:${(slot.shape && slot.shape !== "rectangle" ? 0 : page.slotBorderWidth ?? 1).toFixed(2)}px;
             border-radius:${(page.slotCornerRadius ?? 0).toFixed(2)}px;
@@ -178,49 +256,57 @@ export async function exportProjectToPdf(
       `;
     }
 
+    // The page is the full bleed area; the design canvas sits on the trim box.
     pageHtml += `
-      <section class="page">
-        ${isBookPart ? "" : `<div class="page-title" style="
-          color:${escapeAttr(page.textColor ?? "#0f172a")};
-          font-size:${(page.textSize ?? 22).toFixed(0)}px;
-          font-weight:${escapeAttr(page.textWeight ?? "700")};
-          font-family:${escapeAttr(page.textFontFamily ?? "Arial, sans-serif")};
-        ">${escapeHtml(pageTitle)}</div>`}
-        ${page.themeLabel ? `<div class="page-theme" style="color:${escapeAttr(page.textColor ?? "#64748b")};">${escapeHtml(page.themeLabel)}</div>` : ""}
-        <div class="canvas" style="background:${escapeAttr(page.backgroundColor ?? "#ffffff")}; border-radius:0;">
-          ${backgroundSource ? `<img class="background-image" src="${escapeAttr(backgroundSource)}" />` : ""}
-          ${slotsHtml || (textBoxesHtml ? '' : '<div class="empty">No photos on this page.</div>')}
+      <section class="page" style="background:${escapeAttr(page.backgroundColor ?? "#ffffff")};">
+        ${backgroundSource ? `<img class="background-image" src="${escapeAttr(backgroundSource)}" />` : ""}
+        <div class="canvas">
+          ${slotsHtml}
           ${textBoxesHtml}
         </div>
       </section>
     `;
   }
 
+  // One point short of the PDF page so rounding never spills onto a blank page.
+  const pageCss = `width:${pagePoints.width}pt;height:${pagePoints.height - 1}pt;`;
   const html = `
     <html>
       <head>
         <meta charset="utf-8" />
         <style>
           @page {
-            size: 20cm 20cm;
-            margin: 1cm;
+            size: ${pagePoints.width}pt ${pagePoints.height}pt;
+            margin: 0;
+          }
+          html, body {
+            margin: 0;
+            padding: 0;
+            background: #ffffff;
           }
           body {
             font-family: Arial, sans-serif;
             color: #1f2937;
-            margin: 0;
-            background: #ffffff;
+          }
+          .page, .project-cover {
+            position: relative;
+            ${pageCss}
+            overflow: hidden;
+            page-break-after: always;
+            break-after: page;
+          }
+          .page:last-child {
+            page-break-after: auto;
+            break-after: auto;
           }
           .project-cover {
-            page-break-after: always;
-            min-height: 18cm;
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
             text-align: center;
-            padding: 24px;
             box-sizing: border-box;
+            padding: ${mmToPoints(bookSize.bleedMm + 15).toFixed(2)}pt;
           }
           .project-title {
             font-size: 34px;
@@ -233,32 +319,14 @@ export async function exportProjectToPdf(
             color: #64748b;
             text-transform: capitalize;
           }
-          .page {
-            page-break-after: always;
-            min-height: 18cm;
-            padding: 4px;
-            box-sizing: border-box;
-          }
-          .page:last-child {
-            page-break-after: auto;
-          }
-          .page-title {
-            font-size: 22px;
-            font-weight: 700;
-            margin-bottom: 4px;
-            line-height: 1.2;
-          }
-          .page-theme {
-            font-size: 13px;
-            color: #64748b;
-            margin-bottom: 8px;
-          }
           .canvas {
-            position: relative;
-            width: 16.4cm;
-            height: 16.4cm;
-            margin-top: 0.3cm;
-            overflow: hidden;
+            position: absolute;
+            left: ${bookSize.bleedMm}mm;
+            top: ${bookSize.bleedMm}mm;
+            width: ${DESIGN_CANVAS_PX}px;
+            height: ${canvasHeightPx.toFixed(3)}px;
+            transform: scale(${canvasScale.toFixed(6)});
+            transform-origin: 0 0;
           }
           .background-image {
             position: absolute;
@@ -294,10 +362,6 @@ export async function exportProjectToPdf(
             background: #f8fafc;
             font-size: 12px;
           }
-          .empty {
-            color: #64748b;
-            margin-top: 8px;
-          }
           .text-box {
             position: absolute;
             box-sizing: border-box;
@@ -314,13 +378,13 @@ export async function exportProjectToPdf(
       </head>
       <body>
         ${memories.some(memory => memory.bookRole === "front-cover") ? "" : `<section class="project-cover"><div class="project-title">${escapeHtml(project.name)}</div><div class="project-type">${escapeHtml(project.projectType)}</div></section>`}
-        ${pageHtml || '<section class="page"><div class="empty">No memories yet.</div></section>'}
+        ${pageHtml || '<section class="page"></section>'}
       </body>
     </html>
   `;
 
-  const result = await Print.printToFileAsync({ html });
-  return result.uri;
+  const result = await Print.printToFileAsync({ html, width: pagePoints.width, height: pagePoints.height });
+  return { uri: result.uri, bookSize, lowResolutionPhotos };
 }
 
 export async function sharePdf(pdfUri: string): Promise<void> {

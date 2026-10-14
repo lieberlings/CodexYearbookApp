@@ -1,4 +1,4 @@
-import { effectivePrintPpi, printResolutionStatus, splitPrintPages, validatePrintSize } from "./bookfactoryPrintPlan";
+import { effectivePrintPpi, renderedImageWidthInches, printResolutionStatus, splitPrintPages, validatePrintSize } from "./bookfactoryPrintPlan";
 import type { LayoutPage, LayoutSlot } from "../layout/schemas";
 import type { Memory } from "../types";
 
@@ -36,4 +36,12 @@ it("separates covers while retaining dedication and content order", () => {
   expect(result.front.map(page => page.id)).toEqual(["f"]);
   expect(result.back.map(page => page.id)).toEqual(["b"]);
   expect(pages).toHaveLength(4);
+});
+
+it("measures how wide a photo is drawn so it can be sized for print", () => {
+  // A 3:2 photo covering a square 203.2 mm (8 in) page is drawn 12 in wide.
+  expect(renderedImageWidthInches(slot, 1.5, size)).toBeCloseTo(12);
+  expect(renderedImageWidthInches({ ...slot, fitMode: "contain" }, 1.5, size)).toBeCloseTo(8);
+  expect(renderedImageWidthInches({ ...slot, photoScale: 2, frame: { x: 0, y: 0, width: .5, height: .5 } }, 1, size)).toBeCloseTo(8);
+  expect(renderedImageWidthInches(slot, 0, size)).toBeUndefined();
 });
